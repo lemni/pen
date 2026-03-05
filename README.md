@@ -2,7 +2,7 @@
 
 # Pen
 
-An open-source, headless, extension-first editor engine for human-AI co-authoring
+## An open-source, headless, extension-first editor engine for human-AI co-authoring
 
 </div>
 
