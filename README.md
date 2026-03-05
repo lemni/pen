@@ -2,7 +2,7 @@
 
 # Pen
 
-<h3 align="center" style="max-width: 400px; margin: 0 auto;">
+<h3 align="center" style="max-width: 200px; margin: 0 auto;">
 An open-source, headless, extension-first editor engine for human-AI co-authoring
 </h3>
 
