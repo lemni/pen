@@ -1,10 +1,26 @@
+<div align="center">
+
 # Pen
 
-Pen is an open-source, headless, extension-first editor engine built for human-AI co-authoring.
+An open-source, headless, extension-first editor engine for human-AI co-authoring
 
-It provides unstyled behavioral primitives, a schema-driven block system, and a tool surface that lets any LLM read, write, and manipulate documents. Pen is model-agnostic: a minimal `ModelAdapter` interface works with any LLM client -- including the Vercel AI SDK and its 25+ providers -- while `@pen/mcp` exposes the same tools to bidirectional protocol clients.
+</div>
 
-Pen provides headless editor primitives and you bring the experience. The rich-text toolbar, the AI command palette, the slash menu, the collaboration cursors -- these are all composable, unstyled behavioral layers that consumers style and assemble.
+```bash
+npm install @pen/core @pen/react
+```
+
+## Table of Contents
+
+1. [Why Pen?](#why-pen)
+2. [Quick Start](#quick-start)
+3. [Architecture](#architecture)
+4. [Packages](#packages)
+5. [Development](#development)
+6. [Milestones](#milestones)
+7. [Contributing](#contributing)
+8. [Authors](#authors)
+9. [License](#license)
 
 ```
 ProseMirror / Lexical       Pen                      TipTap / Plate / BlockNote
@@ -16,14 +32,14 @@ build everything        primitives + AI-native        some assembly required
                         you bring the design          design decisions made
 ```
 
-## Core Thesis
+## Why Pen?
 
-1. **Headless** -- Behavior and state separated from rendering. Same engine powers Notion-style, Docs-style, Markdown-first, or headless CMS.
-2. **AI-native** -- Document model, operation format, and extension architecture designed around how LLMs generate and how humans collaborate with them.
-3. **Extension-first** -- Core is tiny. Everything -- blocks, formatting, AI, multiplayer, execution, apps -- is an extension. Extensions have rich lifecycle hooks.
-4. **Schema-driven** -- Block types, layout rules, and content defined as declarative schemas. Compile to React, Vue, Svelte, HTML, or SSR without changing the definition.
-5. **Binary-first** -- Documents are stored and transmitted as binary CRDT state. JSON, Markdown, and HTML are derived views at serialization boundaries.
-6. **CRDT-portable (Yjs-first)** -- Yjs is the default and directly integrated CRDT implementation. The architecture supports future portability to Loro or Automerge, but the abstraction layer hardens based on real adapter implementations, not upfront speculation.
+- **Headless:** Behavior and state separated from rendering. Same engine powers Notion-style, Docs-style, Markdown-first, or headless CMS.
+- **AI-native:** Document model, operation format, and extension architecture designed around how LLMs generate and how humans collaborate with them.
+- **Extension-first:** Core is tiny. Everything -- blocks, formatting, AI, multiplayer, execution, apps -- is an extension.
+- **Schema-driven:** Block types, layout rules, and content as declarative schemas. Compile to React, Vue, Svelte, HTML, or SSR without changing the definition.
+- **CRDT-first:** Documents stored and transmitted as binary CRDT state. Yjs default, with future portability to Loro or Automerge.
+- **Model-agnostic:** A minimal `ModelAdapter` interface works with any LLM client, including the Vercel AI SDK and its 25+ providers.
 
 ## Quick Start
 
