@@ -1,6 +1,6 @@
 <h1 align="center">Pen</h1>
 <h3 align="center">
-  An open-source, headless, extension-first<br />editor engine for human-AI co-authoring
+  A headless, extension-first<br />editor engine for human-AI co-authoring
 </h3>
 
 <p align="center">
