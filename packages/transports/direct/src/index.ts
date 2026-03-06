@@ -1,7 +1,7 @@
-import type { Transport } from "@pen/core";
+import type { PenTransport } from "@pen/core";
 
-export type { Transport };
+export type { PenTransport };
 
-export function directTransport(): Transport {
+export function directTransport(): PenTransport {
   throw new Error("Not implemented");
 }

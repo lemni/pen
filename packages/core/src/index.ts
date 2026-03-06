@@ -9,6 +9,11 @@ export type AppId = string & { readonly __brand: "AppId" };
 export type ZoneId = string & { readonly __brand: "ZoneId" };
 export type DocId = string & { readonly __brand: "DocId" };
 
+export function blockId(raw: string): BlockId { return raw as BlockId; }
+export function appId(raw: string): AppId { return raw as AppId; }
+export function zoneId(raw: string): ZoneId { return raw as ZoneId; }
+export function docId(raw: string): DocId { return raw as DocId; }
+
 // ── Origin ──────────────────────────────────────────────────
 
 export type OpOrigin =
@@ -16,7 +21,16 @@ export type OpOrigin =
   | "ai"
   | "collaborator"
   | "extension"
-  | "history";
+  | "history"
+  | "input-rule"
+  | "app"
+  | "import"
+  | "system";
+
+export interface ApplyOptions {
+  origin?: OpOrigin;
+  undoGroup?: boolean;
+}
 
 // ── Position ────────────────────────────────────────────────
 
@@ -93,6 +107,7 @@ export type SelectionState =
   | TextSelection
   | BlockSelection
   | AppSelection
+  | CellSelection
   | null;
 
 export interface TextSelection {
@@ -115,6 +130,13 @@ export interface BlockSelection {
 export interface AppSelection {
   type: "app";
   appId: string;
+}
+
+export interface CellSelection {
+  type: "cell";
+  blockId: string;
+  anchor: { row: number; col: number };
+  head: { row: number; col: number };
 }
 
 // ── Serialization node types ────────────────────────────────
@@ -158,7 +180,7 @@ export function isNestedContent(content: ContentType): content is BlockSchema[] 
 // ── Layout ──────────────────────────────────────────────────
 
 export interface LayoutSchema {
-  readonly modes: readonly ("flex" | "grid")[];
+  modes: readonly ("flex" | "grid")[];
   defaultMode: "flex" | "grid";
   allowedChildren?: string[];
   minChildren?: number;
@@ -172,12 +194,12 @@ export interface LayoutProps {
   gap?: number | string;
   alignItems?: "start" | "center" | "end" | "stretch" | "baseline";
   justifyContent?:
-    | "start"
-    | "center"
-    | "end"
-    | "between"
-    | "around"
-    | "evenly";
+  | "start"
+  | "center"
+  | "end"
+  | "between"
+  | "around"
+  | "evenly";
   columns?: string;
   rows?: string;
   autoFlow?: "row" | "column" | "dense";
@@ -244,7 +266,18 @@ export interface BlockSchema<
   normalize?: (block: Block<Type, InferProps<Props>>) => Block<Type, InferProps<Props>>;
   validateProps?: (raw: Record<string, unknown>) => InferProps<Props>;
   fieldEditor?: FieldEditorType;
+  keyBindings?: readonly KeyBinding[];
+  display?: BlockDisplay;
+  isContainer?: boolean;
   aiDescription?: string;
+}
+
+export interface BlockDisplay {
+  title: string;
+  description?: string;
+  icon?: string;
+  group?: string;
+  aliases?: string[];
 }
 
 type InferProps<P extends Record<string, PropSchema>> = {
@@ -287,6 +320,8 @@ export interface SchemaRegistry {
   resolveLayout(type: string): LayoutSchema | null;
   allBlocks(): readonly BlockSchema[];
   allInlines(): readonly InlineSchema[];
+  allApps(): readonly AppSchema[];
+  allBlockDisplays(): readonly (BlockSchema & { display: BlockDisplay })[];
 
   onUnknownBlock?: (
     type: string,
@@ -303,9 +338,10 @@ export interface SchemaRegistry {
 // extend/without/override belong on the schema object, not the registry.
 
 export interface ComposableSchema extends SchemaRegistry {
-  extend(schemas: BlockSchema[]): ComposableSchema;
-  without(types: string[]): ComposableSchema;
+  extend(schemas: readonly (BlockSchema | InlineSchema)[]): ComposableSchema;
+  without(types: readonly string[]): ComposableSchema;
   override(type: string, overrides: Partial<BlockSchema>): ComposableSchema;
+  overrideSystemMark(type: string, schema: InlineSchema): ComposableSchema;
 }
 
 // ── App Schema ──────────────────────────────────────────────
@@ -353,11 +389,11 @@ export interface BlockHandle {
 
   anchoredApps(): readonly AppHandle[];
 
-  textContent(): string;
+  textContent(options?: { resolved?: boolean }): string;
+  textDeltas(): Array<{ insert: string; attributes?: Record<string, unknown> }>;
   length(): number;
 
   meta(namespace: string): Readonly<Record<string, unknown>> | null;
-  setMeta(namespace: string, data: Record<string, unknown>): void;
 }
 
 export interface AppHandle {
@@ -368,12 +404,35 @@ export interface AppHandle {
   readonly anchorBlock: BlockHandle | null;
 }
 
+// ── CRDT Abstract Collections ───────────────────────────────
+
+export interface CRDTArray<T> {
+  readonly length: number;
+  get(index: number): T;
+  toArray(): T[];
+  [Symbol.iterator](): Iterator<T>;
+}
+
+export interface CRDTMap<T> {
+  get(key: string): T | undefined;
+  has(key: string): boolean;
+  entries(): IterableIterator<[string, T]>;
+  keys(): IterableIterator<string>;
+  readonly size: number;
+}
+
 // ── Document State ──────────────────────────────────────────
 
 export interface DocumentState {
-  blocks: Iterable<BlockHandle>;
-  selection: SelectionState;
-  generation: number;
+  readonly blockOrder: readonly string[];
+  readonly blockCount: number;
+  readonly blocks: Iterable<BlockHandle>;
+  readonly isEmpty: boolean;
+  readonly generation: number;
+  allBlocks(): Iterable<BlockHandle>;
+  blockAt(index: number): string | null;
+  indexOf(blockId: string): number;
+  parentOf(blockId: string): string | null;
 }
 
 // ── CRDT Types ──────────────────────────────────────────────
@@ -410,6 +469,19 @@ export interface CRDTAdapter {
   getClientId(doc: CRDTDocument): number;
 
   raw<T>(doc: CRDTDocument): T;
+
+  createMap(): unknown;
+  createArray(): unknown;
+  createText(): unknown;
+  initBlockMap(doc: CRDTDocument, blockId: string, blockType: string, contentType: "inline" | "nested" | "table" | "none"): unknown;
+
+  getAttributionRanges?(doc: CRDTDocument, blockId: string): AttributionRange[];
+}
+
+export interface AttributionRange {
+  offset: number;
+  length: number;
+  clientId: number;
 }
 
 export interface CRDTDocument {
@@ -417,10 +489,10 @@ export interface CRDTDocument {
 }
 
 export interface PenDocument {
-  readonly blockOrder: unknown;
-  readonly blocks: unknown;
-  readonly apps: unknown;
-  readonly metadata: unknown;
+  readonly blockOrder: CRDTArray<string>;
+  readonly blocks: CRDTMap<unknown>;
+  readonly apps: CRDTMap<unknown>;
+  readonly metadata: CRDTMap<unknown>;
   readonly adapter: CRDTAdapter;
 }
 
@@ -432,11 +504,19 @@ export interface CRDTUndoManager {
   stopCapturing(): void;
 }
 
+export interface AwarenessChangeEvent {
+  added: number[];
+  updated: number[];
+  removed: number[];
+}
+
 export interface Awareness {
+  getLocalState(): Record<string, unknown> | null;
   setLocalState(state: Record<string, unknown>): void;
   getStates(): Map<number, Record<string, unknown>>;
-  on(event: "change", callback: () => void): void;
-  off(event: "change", callback: () => void): void;
+  on(event: "change", callback: (changes: AwarenessChangeEvent) => void): void;
+  off(event: "change", callback: (changes: AwarenessChangeEvent) => void): void;
+  destroy(): void;
 }
 
 // ── Generation Zone ─────────────────────────────────────────
@@ -470,7 +550,17 @@ export type DocumentOp =
   | InsertTextOp
   | DeleteTextOp
   | FormatTextOp
+  | ReplaceTextOp
+  | InsertInlineNodeOp
+  | RemoveInlineNodeOp
   | UpdateLayoutOp
+  | InsertTableRowOp
+  | DeleteTableRowOp
+  | InsertTableColumnOp
+  | DeleteTableColumnOp
+  | MergeTableCellsOp
+  | SplitTableCellOp
+  | SetMetaOp
   | CreateAppOp
   | UpdateAppOp
   | DeleteAppOp
@@ -556,6 +646,48 @@ export interface DeleteAppOp {
   type: "delete-app";
   appId: string;
 }
+export interface ReplaceTextOp {
+  type: "replace-text";
+  blockId: string;
+  offset: number;
+  length: number;
+  text: string;
+  marks?: Record<string, unknown>;
+}
+export interface InsertInlineNodeOp {
+  type: "insert-inline-node";
+  blockId: string;
+  offset: number;
+  nodeType: string;
+  props: Record<string, unknown>;
+}
+export interface RemoveInlineNodeOp {
+  type: "remove-inline-node";
+  blockId: string;
+  offset: number;
+}
+export interface InsertTableRowOp { type: "insert-table-row"; blockId: string; index: number }
+export interface DeleteTableRowOp { type: "delete-table-row"; blockId: string; index: number }
+export interface InsertTableColumnOp { type: "insert-table-column"; blockId: string; index: number }
+export interface DeleteTableColumnOp { type: "delete-table-column"; blockId: string; index: number }
+export interface MergeTableCellsOp {
+  type: "merge-table-cells";
+  blockId: string;
+  anchor: { row: number; col: number };
+  head: { row: number; col: number };
+}
+export interface SplitTableCellOp {
+  type: "split-table-cell";
+  blockId: string;
+  row: number;
+  col: number;
+}
+export interface SetMetaOp {
+  type: "set-meta";
+  blockId: string;
+  namespace: string;
+  data: Record<string, unknown> | null;
+}
 export interface SetSelectionOp {
   type: "set-selection";
   selection: SelectionState;
@@ -589,9 +721,9 @@ export type PenStreamPart =
   | DonePart;
 
 export interface GenStartPart { type: "gen-start"; zoneId: string; blockId: string }
-export interface GenDeltaPart { type: "gen-delta"; delta: string }
-export interface GenEndPart { type: "gen-end"; status: "complete" | "cancelled" | "error" }
-export interface BlockInsertPart { type: "block-insert"; blockId: string; blockType: string; props: Record<string, unknown>; position: Position }
+export interface GenDeltaPart { type: "gen-delta"; zoneId: string; delta: string }
+export interface GenEndPart { type: "gen-end"; zoneId: string; status: "complete" | "cancelled" | "error" }
+export interface BlockInsertPart { type: "block-insert"; blockId: string; blockType: string; props?: Record<string, unknown>; position: Position }
 export interface BlockUpdatePart { type: "block-update"; blockId: string; props: Record<string, unknown> }
 export interface BlockDeletePart { type: "block-delete"; blockId: string }
 export interface BlockMovePart { type: "block-move"; blockId: string; position: Position }
@@ -599,32 +731,47 @@ export interface LayoutUpdatePart { type: "layout-update"; blockId: string; layo
 export interface AppCreatePart { type: "app-create"; appId: string; appType: string; config: Record<string, unknown>; placement: AppPlacement }
 export interface AppUpdatePart { type: "app-update"; appId: string; patch: Record<string, unknown> }
 export interface AppDeletePart { type: "app-delete"; appId: string }
-export interface StepStartPart { type: "step-start"; stepId: string; label?: string }
-export interface StepEndPart { type: "step-end"; stepId: string }
-export interface ToolInputStartPart { type: "tool-input-start"; toolName: string }
-export interface ToolInputDeltaPart { type: "tool-input-delta"; delta: string }
-export interface ToolInputAvailablePart { type: "tool-input-available"; toolName: string; input: Record<string, unknown> }
-export interface ToolOutputPart { type: "tool-output"; toolName: string; output: unknown }
-export interface ToolErrorPart { type: "tool-error"; toolName: string; error: string }
-export interface DataPart { type: "data"; key: string; value: unknown }
-export interface ErrorPart { type: "error"; message: string }
-export interface AbortPart { type: "abort" }
+export interface StepStartPart { type: "step-start"; stepIndex: number; label?: string }
+export interface StepEndPart { type: "step-end"; stepIndex: number }
+export interface ToolInputStartPart { type: "tool-input-start"; toolCallId: string; toolName: string }
+export interface ToolInputDeltaPart { type: "tool-input-delta"; toolCallId: string; inputDelta: string }
+export interface ToolInputAvailablePart { type: "tool-input-available"; toolCallId: string; toolName: string; input: unknown }
+export interface ToolOutputPart { type: "tool-output"; toolCallId: string; output: unknown }
+export interface ToolErrorPart { type: "tool-error"; toolCallId: string; error: string }
+export interface DataPart { type: `data-${string}`; id?: string; data: unknown; transient?: boolean }
+export interface ErrorPart { type: "error"; errorText: string; code?: string }
+export interface AbortPart { type: "abort"; reason: string }
 export interface PingPart { type: "ping" }
 export interface DonePart { type: "done" }
 
 export interface PenStreamRequest {
-  docId: string;
-  prompt?: string;
-  selection?: SelectionState;
-  context?: Record<string, unknown>;
+  prompt: string;
+  context?: {
+    editor?: unknown;
+    docId?: string;
+    selection?: SelectionState;
+    blockId?: string;
+  };
+  tools?: ToolSchema[];
+  toolCalls?: Array<{
+    toolCallId: string;
+    name: string;
+    input: unknown;
+  }>;
+  messages?: ModelMessage[];
+  signal?: AbortSignal;
   streamId?: string;
 }
 
 // ── Transport ───────────────────────────────────────────────
 
-export interface Transport {
-  send(request: PenStreamRequest): AsyncIterable<PenStreamPart>;
-  close(): void;
+export interface PenTransport {
+  stream(request: PenStreamRequest): AsyncIterable<PenStreamPart>;
+  reconnect?(streamId: string): AsyncIterable<PenStreamPart>;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  readonly connected: boolean;
+  onConnectionChange(callback: (connected: boolean) => void): Unsubscribe;
 }
 
 // ── Field Editor ────────────────────────────────────────────
@@ -633,16 +780,21 @@ export interface FieldEditor {
   readonly activeBlockId: string | null;
   readonly activeBlockIds: readonly string[];
   readonly isEditing: boolean;
-  readonly selection: SelectionState;
+  readonly inputMode: "richtext" | "code" | "table" | "none";
+  selection: SelectionState | null;
 
+  focus(): void;
+  blur(): void;
   activate(blockId: string): void;
   deactivate(): void;
 
   expandTo(blockId: string): void;
   contractToFocused(): void;
 
-  readonly delegate: BlockSchema | null;
-  readonly inputMode: "keyboard" | "ime" | "voice" | "ai-stream";
+  attachElement(el: HTMLElement): void;
+  delegate(blockSchema: BlockSchema): boolean;
+
+  destroy(): void;
 
   onActivate(callback: (blockIds: string[]) => void): Unsubscribe;
   onDeactivate(callback: (blockIds: string[]) => void): Unsubscribe;
@@ -667,14 +819,14 @@ export interface InlineDecoration {
   blockId: string;
   from: number;
   to: number;
-  attrs: Record<string, string | number | boolean>;
+  attributes: Record<string, string | number | boolean>;
   key?: string;
 }
 
 export interface BlockDecoration {
   type: "block";
   blockId: string;
-  attrs: Record<string, string | number | boolean>;
+  attributes: Record<string, string | number | boolean>;
   position?: "before" | "after" | "wrap";
 }
 
@@ -706,7 +858,8 @@ export function emptyDecorationSet(): DecorationSet {
 }
 
 export interface PositionMapping {
-  map(pos: number, blockId: string): number;
+  readonly affectedBlocks: readonly string[];
+  mapOffset(blockId: string, offset: number): number;
 }
 
 // ── Undo Manager ────────────────────────────────────────────
@@ -779,22 +932,30 @@ export interface Extension {
   state?: ExtensionStateSpec<unknown>;
 }
 
+export interface InputRuleContext {
+  editor: Editor;
+  blockId: string;
+  blockType: string;
+  textBefore: string;
+  fullText: string;
+}
+
+export type InputRuleHandler = (
+  match: RegExpMatchArray,
+  context: InputRuleContext,
+) => DocumentOp[] | null;
+
 export interface InputRule {
+  id: string;
   match: RegExp;
-  handler: (match: RegExpMatchArray, editor: Editor, blockId: string) => void;
+  handler: InputRuleHandler;
   blockTypes?: string[];
 }
 
 export interface KeyBinding {
   key: string;
-  handler: (editor: Editor, event: KeyboardEvent) => boolean;
-  priority?: number;
-  context?: {
-    blockType?: string[];
-    hasSelection?: boolean;
-    collapsed?: boolean;
-    withinLayout?: string[];
-  };
+  handler: (editor: Editor) => boolean;
+  description?: string;
 }
 
 export interface ExtensionStateSpec<T> {
@@ -803,6 +964,52 @@ export interface ExtensionStateSpec<T> {
 }
 
 // ── Tool Context ────────────────────────────────────────────
+
+export interface ToolServer {
+  registerTool(def: ToolDefinition): void;
+  unregisterTool(name: string): void;
+  listTools(): readonly ToolDefinition[];
+  executeTool(name: string, input: unknown, ctx: ToolContext): Promise<unknown> | AsyncIterable<unknown>;
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: PropSchema;
+  handler: (input: unknown, ctx: ToolContext) => Promise<unknown> | AsyncIterable<unknown>;
+}
+
+export interface ModelAdapter {
+  stream(options: {
+    messages: ModelMessage[];
+    tools: ToolSchema[];
+    signal?: AbortSignal;
+  }): AsyncIterable<ModelStreamEvent>;
+}
+
+export type ModelStreamEvent =
+  | { type: "text-delta"; delta: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
+  | { type: "done"; usage?: { promptTokens: number; completionTokens: number } }
+  | { type: "error"; error: unknown };
+
+export interface ToolSchema {
+  name: string;
+  description: string;
+  inputSchema: PropSchema;
+}
+
+export interface ModelMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | ModelMessagePart[];
+  toolCallId?: string;
+  toolName?: string;
+}
+
+export type ModelMessagePart =
+  | { type: "text"; text: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
+  | { type: "tool-result"; toolCallId: string; result: unknown; isError?: boolean };
 
 export interface ToolContext {
   readonly editor: Editor;
@@ -843,9 +1050,36 @@ export interface SchemaEngine {
 
 export interface PenEventMap {
   change: (events: CRDTEvent[]) => void;
+  documentChange: (event: { ops: DocumentOp[]; origin: OpOrigin; affectedBlocks: string[] }) => void;
+  decorationsChange: (generation: number) => void;
   selectionChange: (selection: SelectionState) => void;
-  focus: () => void;
-  blur: () => void;
+  focus: (event: { blockId: string | null }) => void;
+  blur: (event: { blockId: string | null }) => void;
+  diagnostic: (event: DiagnosticEvent) => void;
+  "crdt:corruption": (errors: DocumentValidationError[]) => void;
+  "crdt:recovered": (method: "snapshot" | "repair" | "reimport") => void;
+}
+
+export interface DiagnosticEvent {
+  level: "warn" | "error" | "info";
+  source: string;
+  message: string;
+  code?: string;
+  error?: unknown;
+  [key: string]: unknown;
+}
+
+export interface DocumentValidationError {
+  code:
+    | "MISSING_SHARED_TYPE"
+    | "INVALID_BLOCK_STRUCTURE"
+    | "ORPHAN_BLOCK"
+    | "DUPLICATE_BLOCK_ORDER"
+    | "UNKNOWN_CONTENT_TYPE"
+    | "MISSING_BLOCK_MAP_KEY";
+  blockId?: string;
+  message: string;
+  severity: "error" | "warning";
 }
 
 // ── Editor Options ──────────────────────────────────────────
@@ -861,9 +1095,20 @@ export interface CreateEditorOptions {
 // ── Editor Interface ────────────────────────────────────────
 
 export interface Editor {
-  apply(...ops: DocumentOp[]): void;
+  apply(ops: DocumentOp[], options?: ApplyOptions): void;
   applyWithOrigin(origin: OpOrigin, ...ops: DocumentOp[]): void;
   loadDocument(doc: CRDTDocument): void;
+
+  onBeforeApply(
+    hook: (ops: DocumentOp[], options: ApplyOptions) => DocumentOp[],
+    options?: { priority?: number },
+  ): Unsubscribe;
+
+  readonly schema: SchemaRegistry;
+  readonly selection: SelectionState;
+  readonly documentState: DocumentState;
+  readonly internals: EditorInternals;
+  readonly clientId: number;
 
   blocks(type?: string): Iterable<BlockHandle>;
   getBlock(blockId: string): BlockHandle | null;
@@ -883,6 +1128,12 @@ export interface Editor {
   replaceSelection(content: string | Block[]): void;
   deleteSelection(): void;
 
+  requestDecorationUpdate(): void;
+  scrollToBlock?(blockId: string): void;
+
+  onDocumentChange(callback: PenEventMap["documentChange"]): Unsubscribe;
+  onSelectionChange(callback: PenEventMap["selectionChange"]): Unsubscribe;
+
   on<K extends keyof PenEventMap>(event: K, handler: PenEventMap[K]): Unsubscribe;
   on(event: string, handler: (...args: unknown[]) => void): Unsubscribe;
 
@@ -892,6 +1143,16 @@ export interface Editor {
 
   normalizeAll(): void;
   destroy(): void;
+}
+
+export interface EditorInternals {
+  readonly adapter: CRDTAdapter;
+  readonly crdtDoc: CRDTDocument;
+  readonly doc: PenDocument;
+  readonly engine: SchemaEngine;
+  readonly awareness: Awareness | null;
+  getSlot<T>(key: string): T | undefined;
+  setSlot(key: string, value: unknown): void;
 }
 
 // ── Prop Builder ────────────────────────────────────────────
@@ -941,6 +1202,115 @@ export function defineExtension(
 ): Extension {
   throw new Error("Not implemented");
 }
+
+// ── Persistence ─────────────────────────────────────────────
+
+export interface PenPersistence {
+  loadDocument(docId: string): Promise<Uint8Array | null>;
+  saveSnapshot(docId: string, state: Uint8Array): Promise<void>;
+  appendUpdate(docId: string, update: Uint8Array): Promise<void>;
+  getUpdates(docId: string, since?: Uint8Array): Promise<Uint8Array[]>;
+  compact(docId: string): Promise<void>;
+  saveVersionSnapshot(docId: string, snapshot: Uint8Array, metadata: VersionMetadata): Promise<void>;
+  listVersions(docId: string, options?: { limit?: number; before?: string }): Promise<VersionEntry[]>;
+  loadVersion(docId: string, versionId: string): Promise<{ state: Uint8Array; snapshot: Uint8Array }>;
+}
+
+export interface VersionMetadata {
+  label?: string;
+  trigger: "auto" | "manual" | "ai-generation" | "import";
+  clientId: number;
+  timestamp: number;
+}
+
+export interface VersionEntry {
+  id: string;
+  metadata: VersionMetadata;
+  createdAt: number;
+}
+
+// ── Serialization (Exporter / Importer) ─────────────────────
+
+export interface Exporter<Output = string> {
+  name: string;
+  mimeType: string;
+  fileExtension: string;
+  export(editor: Editor, options?: ExportOptions): Output | Promise<Output>;
+  exportFragment?(blocks: BlockHandle[], options?: ExportOptions): Output;
+}
+
+export interface ExportOptions {
+  includeApps?: boolean;
+  includeLayout?: boolean;
+  includeMetadata?: boolean;
+  includeSuggestions?: boolean;
+  prettyPrint?: boolean;
+}
+
+export interface Importer<Input = string> {
+  name: string;
+  mimeType: string;
+  import(input: Input, editor: Editor, options?: ImportOptions): void | Promise<void>;
+}
+
+export interface ImportOptions {
+  position?: Position;
+  replace?: boolean;
+  validate?: boolean;
+  normalize?: boolean;
+}
+
+// ── Block Suggestion ────────────────────────────────────────
+
+export interface BlockSuggestion {
+  id: string;
+  action: "insert-block" | "delete-block" | "move-block" | "convert-block";
+  author: string;
+  authorType: "user" | "ai";
+  createdAt: number;
+  model?: string;
+  previousState?: {
+    type?: string;
+    position?: Position;
+    props?: Record<string, unknown>;
+  };
+}
+
+// ── Block Render Context ────────────────────────────────────
+
+export interface BlockRenderContext {
+  editable: boolean;
+  selected: boolean;
+  decorations: readonly Decoration[];
+  ref: unknown;
+}
+
+export type BlockRenderer<Props = Record<string, unknown>> = (
+  block: BlockHandle,
+  ctx: BlockRenderContext,
+) => unknown;
+
+// ── Input Backend / Streaming Target ────────────────────────
+
+export interface InputBackend {
+  activate(element: HTMLElement, ytext: unknown): void;
+  deactivate(): void;
+  updateSelection(relPos: unknown): void;
+}
+
+export interface StreamingTarget {
+  readonly generationZone: GenerationZone | null;
+  beginStreaming(zoneId: string, blockId: string): void;
+  appendDelta(delta: string): void;
+  endStreaming(status: "complete" | "cancelled" | "error"): void;
+}
+
+// ── Hook Priority Constants ─────────────────────────────────
+
+export const HOOK_PRIORITY_AUTH       = 100;
+export const HOOK_PRIORITY_SUGGEST    = 200;
+export const HOOK_PRIORITY_INPUT_RULE = 300;
+export const HOOK_PRIORITY_DEFAULT    = 500;
 
 // ── mergeSchemas ────────────────────────────────────────────
 
