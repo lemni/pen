@@ -1,5 +1,4 @@
-
-<img width="132" height="132" alt="icon@2x" src="https://github.com/user-attachments/assets/775f8215-c44f-4723-b2fd-f4b58f5de73c" />
+<img width="128" height="128" alt="pen-icon@2x" src="https://github.com/user-attachments/assets/dda0ed44-4cc4-465c-a49d-7aa41e7e5e60" />
 
 <h1 align="center">Pen</h1>
 <h3 align="center">
