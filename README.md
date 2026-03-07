@@ -1,6 +1,6 @@
-<div align="center" style="display: flex;">
+<span align="center">
 <img width="64" height="64" alt="pen-icon@2x" src="https://github.com/user-attachments/assets/dda0ed44-4cc4-465c-a49d-7aa41e7e5e60" />
-</div>
+</span>
 <h1 align="center">Pen</h1>
 <h3 align="center">
   Headless, extension-first editor<br/> engine for human-AI co-authoring
