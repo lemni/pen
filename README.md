@@ -1,4 +1,4 @@
-<div align="center">
+<div align="center" style="margin-bottom: -20px;">
 <img width="64" height="64" alt="Pen Logo" src="https://github.com/user-attachments/assets/d5310dfe-dba2-4937-bbaa-441722b41c82" />
 </div>
 <h1 align="center">Pen</h1>
