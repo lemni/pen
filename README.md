@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img width="90" height="105" alt="pen@2x" src="https://github.com/user-attachments/assets/e6ed1b15-e0f1-4a0a-8488-0634c5c3486a" /><br/>
+  <img width="60" height="70" alt="pen@2x" src="https://github.com/user-attachments/assets/e6ed1b15-e0f1-4a0a-8488-0634c5c3486a" /><br/>
   Pen
 </h1>
 <h3 align="center">
