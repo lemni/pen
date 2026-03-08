@@ -460,6 +460,9 @@ importers:
       '@pen/schema-default':
         specifier: workspace:*
         version: link:../packages/schema/default
+      '@pen/shortcuts':
+        specifier: workspace:*
+        version: link:../packages/extensions/shortcuts
       react:
         specifier: ^19.0.0
         version: 19.2.4

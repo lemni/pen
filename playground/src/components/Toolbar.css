@@ -203,3 +203,81 @@
 [data-pen-toolbar-select]:focus-visible {
   border-color: var(--border-focus);
 }
+
+/* ── Link popover ──────────────────────────────── */
+
+.toolbar-link-wrapper {
+  position: relative;
+  display: flex;
+}
+
+.toolbar-link-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  z-index: 30;
+  white-space: nowrap;
+}
+
+.toolbar-link-input {
+  width: 220px;
+  height: 28px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.toolbar-link-input:focus {
+  border-color: var(--border-focus);
+}
+
+.toolbar-link-input::placeholder {
+  color: var(--text-muted);
+}
+
+.toolbar-link-apply {
+  height: 28px;
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toolbar-link-remove {
+  height: 28px;
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toolbar-link-remove:hover,
+.toolbar-link-apply:hover {
+  opacity: 0.9;
+}

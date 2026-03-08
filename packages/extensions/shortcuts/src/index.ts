@@ -5,5 +5,6 @@ export {
 } from "./richTextShortcutsExtension.js";
 export {
 	toggleInlineMark,
+	setInlineMark,
 	getAttachedFieldEditor,
 } from "./toggleInlineMark.js";

@@ -105,10 +105,33 @@ function hasMarkAcrossSegments(
 	return true;
 }
 
+export function setInlineMark(
+	editor: Editor,
+	markType: string,
+	value: Record<string, unknown> | null,
+): boolean {
+	const selection = editor.selection;
+	if (!selection || selection.type !== "text") return false;
+	if (!editor.schema.resolveInline(markType)) return false;
+
+	const fieldEditor = getAttachedFieldEditor(editor);
+	if (selection.isCollapsed) {
+		return false;
+	}
+
+	const segments = getSelectionSegments(editor, selection);
+	if (segments.length === 0) return false;
+
+	fieldEditor?.clearPendingMarks?.();
+
+	editor.apply(buildFormatTextOps(segments, markType, value));
+	return true;
+}
+
 function buildFormatTextOps(
 	segments: Array<{ blockId: string; start: number; end: number }>,
 	markType: string,
-	nextValue: true | null,
+	nextValue: Record<string, unknown> | true | null,
 ): DocumentOp[] {
 	return segments.map((segment) => ({
 		type: "format-text",

@@ -107,7 +107,11 @@ export function EditorRoot(props: EditorRootProps) {
 		}
 
 		const handleDocumentKeyDown = (event: KeyboardEvent) => {
-			const shouldHandle = shouldHandleEditorKeyboardEvent(root, editor);
+			const shouldHandle = shouldHandleEditorKeyboardEvent(
+				root,
+				editor,
+				event,
+			);
 
 			if (!shouldHandle) {
 				return;
@@ -185,10 +189,18 @@ export function EditorRoot(props: EditorRootProps) {
 function shouldHandleEditorKeyboardEvent(
 	root: HTMLElement,
 	editor: Editor,
+	event: KeyboardEvent,
 ): boolean {
+	if (isTextEntryTarget(event.target)) {
+		return false;
+	}
+
 	const ownerDocument = root.ownerDocument;
 	const activeElement = ownerDocument?.activeElement;
 	if (activeElement instanceof Node && root.contains(activeElement)) {
+		if (isTextEntryTarget(activeElement)) {
+			return false;
+		}
 		return true;
 	}
 
@@ -206,6 +218,18 @@ function shouldHandleEditorKeyboardEvent(
 	}
 
 	return false;
+}
+
+function isTextEntryTarget(target: EventTarget | null): boolean {
+	if (!(target instanceof HTMLElement)) {
+		return false;
+	}
+
+	return (
+		target instanceof HTMLInputElement ||
+		target instanceof HTMLTextAreaElement ||
+		target instanceof HTMLSelectElement
+	);
 }
 
 function handleDeleteSelectionShortcut(

@@ -2,12 +2,22 @@ import "./Toolbar.css";
 import type { Editor } from "@pen/core";
 import { htmlExporter } from "@pen/export-html";
 import { markdownExporter } from "@pen/export-markdown";
+import { setInlineMark } from "@pen/shortcuts";
 import { Pen } from "@pen/react";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+	useEffect,
+	useRef,
+	useState,
+	type FormEvent,
+	type KeyboardEvent as ReactKeyboardEvent,
+	type MouseEvent,
+	type RefObject,
+} from "react";
 import { PLAYGROUND_BLOCK_TYPE_ORDER } from "../constants/playground";
 import {
 	IconArrowUp,
 	IconBold,
+	IconChain,
 	IconCode,
 	IconItalic,
 	IconRedo,
@@ -16,17 +26,20 @@ import {
 	IconUnderline,
 	IconUndo,
 } from "./icons";
+import { canOpenLinkEditor, getActiveLinkMark } from "../utils/linkMarks";
 
 type ToolbarProps = {
 	editor: Editor;
 	isInspectorOpen: boolean;
 	onToggleInspector: () => void;
+	linkToggleRef: RefObject<(() => void) | null>;
 };
 
 export function Toolbar({
 	editor,
 	isInspectorOpen,
 	onToggleInspector,
+	linkToggleRef,
 }: ToolbarProps) {
 	const blockTypeOptions = getBlockTypeOptions(editor);
 
@@ -62,6 +75,7 @@ export function Toolbar({
 						<Pen.Toolbar.Toggle format="code">
 							<IconCode className="toolbar-icon" />
 						</Pen.Toolbar.Toggle>
+						<LinkButton editor={editor} linkToggleRef={linkToggleRef} />
 					</Pen.Toolbar.Group>
 					<Pen.Toolbar.Select
 						format="blockType"
@@ -109,6 +123,162 @@ export function Toolbar({
 		</header>
 	);
 }
+
+// ── Link button with popover ────────────────────────────────
+
+type LinkButtonProps = {
+	editor: Editor;
+	linkToggleRef: RefObject<(() => void) | null>;
+};
+
+function LinkButton({ editor, linkToggleRef }: LinkButtonProps) {
+	const popoverRef = useRef<HTMLDivElement | null>(null);
+	const inputRef = useRef<HTMLInputElement | null>(null);
+	const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+	const [url, setUrl] = useState("");
+
+	const activeLink = getActiveLinkMark(editor);
+	const showRemoveButton = activeLink !== null;
+
+	const openPopover = () => {
+		if (!canOpenLinkEditor(editor)) return;
+		setUrl(getActiveLinkMark(editor)?.href ?? "");
+		setIsPopoverOpen(true);
+	};
+
+	const closePopover = () => {
+		setIsPopoverOpen(false);
+		setUrl("");
+	};
+
+	const handleMouseDown = (event: MouseEvent<HTMLButtonElement>) => {
+		event.preventDefault();
+		openPopover();
+	};
+
+	const applyLink = () => {
+		const trimmed = url.trim();
+		if (!trimmed) return;
+		setInlineMark(editor, "link", { href: trimmed });
+		closePopover();
+	};
+
+	const removeLink = () => {
+		setInlineMark(editor, "link", null);
+		closePopover();
+	};
+
+	const handleInputKeyDown = (event: ReactKeyboardEvent) => {
+		event.stopPropagation();
+
+		if (event.key === "Enter") {
+			event.preventDefault();
+			applyLink();
+		}
+		if (event.key === "Escape") {
+			event.preventDefault();
+			closePopover();
+		}
+	};
+
+	const stopEditorPropagation = (
+		event:
+			| ReactKeyboardEvent<HTMLInputElement>
+			| FormEvent<HTMLInputElement>
+			| MouseEvent<HTMLInputElement>,
+	) => {
+		event.stopPropagation();
+	};
+
+	useEffect(() => {
+		linkToggleRef.current = openPopover;
+
+		return () => {
+			if (linkToggleRef.current === openPopover) {
+				linkToggleRef.current = null;
+			}
+		};
+	}, [linkToggleRef, openPopover]);
+
+	useEffect(() => {
+		if (!isPopoverOpen) return;
+
+		requestAnimationFrame(() => {
+			inputRef.current?.focus();
+			inputRef.current?.select();
+		});
+
+		const handlePointerDown = (event: PointerEvent) => {
+			if (!popoverRef.current?.contains(event.target as Node)) {
+				closePopover();
+			}
+		};
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				closePopover();
+			}
+		};
+
+		window.addEventListener("pointerdown", handlePointerDown);
+		window.addEventListener("keydown", handleKeyDown);
+
+		return () => {
+			window.removeEventListener("pointerdown", handlePointerDown);
+			window.removeEventListener("keydown", handleKeyDown);
+		};
+	}, [isPopoverOpen]);
+
+	return (
+		<div className="toolbar-link-wrapper" ref={popoverRef}>
+			<button
+				data-pen-toolbar-toggle=""
+				data-active={showRemoveButton || undefined}
+				onMouseDown={handleMouseDown}
+				type="button"
+				title="Link (⌘K)"
+				aria-label="Toggle link"
+			>
+				<IconChain className="toolbar-icon" />
+			</button>
+			{isPopoverOpen && (
+				<div className="toolbar-link-popover">
+					<input
+						ref={inputRef}
+						className="toolbar-link-input"
+						type="url"
+						placeholder="Paste or type a URL..."
+						value={url}
+						onMouseDown={stopEditorPropagation}
+						onChange={(e) => setUrl(e.target.value)}
+						onBeforeInput={stopEditorPropagation}
+						onKeyDown={handleInputKeyDown}
+					/>
+					{showRemoveButton && (
+						<button
+							className="toolbar-link-remove"
+							type="button"
+							onMouseDown={preventEditorBlur}
+							onClick={removeLink}
+						>
+							Remove
+						</button>
+					)}
+					<button
+						className="toolbar-link-apply"
+						type="button"
+						onMouseDown={preventEditorBlur}
+						onClick={applyLink}
+					>
+						Apply
+					</button>
+				</div>
+			)}
+		</div>
+	);
+}
+
+// ── Export menu ──────────────────────────────────────────────
 
 type ExportMenuProps = {
 	editor: Editor;
@@ -213,7 +383,5 @@ function getBlockTypeOptions(editor: Editor) {
 }
 
 function preventEditorBlur(event: MouseEvent<HTMLButtonElement>) {
-	// Keep focus in the editor so history actions don't tear down the active
-	// field-editor session before the command runs.
 	event.preventDefault();
 }

@@ -1,5 +1,8 @@
 import type { DocumentOp, Editor } from "@pen/core";
-import { toggleInlineMark as toggleInlineMarkCommand } from "@pen/shortcuts";
+import {
+	toggleInlineMark as toggleInlineMarkCommand,
+	setInlineMark as setInlineMarkCommand,
+} from "@pen/shortcuts";
 
 const ZERO_WIDTH_SPACE = "\u200B";
 
@@ -206,6 +209,14 @@ export function normalizeInlineOffset(
 
 export function toggleInlineMark(editor: Editor, markType: string): boolean {
 	return toggleInlineMarkCommand(editor, markType);
+}
+
+export function setInlineMark(
+	editor: Editor,
+	markType: string,
+	value: Record<string, unknown> | null,
+): boolean {
+	return setInlineMarkCommand(editor, markType, value);
 }
 
 // ── Commands ─────────────────────────────────────────────────

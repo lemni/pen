@@ -1,5 +1,5 @@
 import { defineExtension, type Extension, type KeyBinding } from "@pen/types";
-import { toggleInlineMark } from "./toggleInlineMark.js";
+import { toggleInlineMark, setInlineMark } from "./toggleInlineMark.js";
 
 export const RICH_TEXT_SHORTCUTS_EXTENSION_NAME = "rich-text-shortcuts";
 
@@ -7,6 +7,7 @@ type ShortcutMark = "bold" | "italic" | "underline";
 
 export interface RichTextShortcutsOptions {
 	bindings?: Partial<Record<ShortcutMark, readonly string[] | null>>;
+	onToggleLink?: (editor: Parameters<typeof setInlineMark>[0]) => boolean;
 }
 
 const DEFAULT_BINDINGS: Record<ShortcutMark, readonly string[]> = {
@@ -51,6 +52,16 @@ function buildKeyBindings(
 				handler: (editor) => toggleInlineMark(editor, markType),
 			});
 		}
+	}
+
+	if (options.onToggleLink) {
+		const onToggleLink = options.onToggleLink;
+		keyBindings.push({
+			key: "Mod-k",
+			priority: 100,
+			description: "Toggle link",
+			handler: (editor) => onToggleLink(editor),
+		});
 	}
 
 	return keyBindings;

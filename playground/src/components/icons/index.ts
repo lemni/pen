@@ -1,5 +1,6 @@
 export { IconArrowUp } from "./IconArrowUp";
 export { IconBold } from "./IconBold";
+export { IconChain } from "./IconChain";
 export { IconCode } from "./IconCode";
 export { IconItalic } from "./IconItalic";
 export { IconRedo } from "./IconRedo";
