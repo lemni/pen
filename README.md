@@ -29,7 +29,7 @@ npm install @pen/core @pen/react
 
 ## Why Pen?
 
-- **Headless:** Behavior and state separated from rendering. Same engine powers Notion-style, Docs-style, Markdown-first, or headless CMS.
+- **Headless:** Behavior and state separated from rendering.
 - **AI-native:** Document model, operation format, and extension architecture designed around how LLMs generate and how humans collaborate with them.
 - **Extension-first:** Core is tiny. Everything -- blocks, formatting, AI, multiplayer, execution, apps -- is an extension.
 - **Schema-driven:** Block types, layout rules, and content as declarative schemas. Compile to React, Vue, Svelte, HTML, or SSR without changing the definition.
