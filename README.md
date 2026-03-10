@@ -1,7 +1,7 @@
-![cover@2x](https://github.com/user-attachments/assets/50262cfd-0edf-455c-a6ec-eb1a332c8e37)
+<img width="100%" height="auto" alt="cover@2x" src="https://github.com/user-attachments/assets/20356e3d-4a7c-4e65-b687-e680db017547" />
 
 <h3 align="center">
-  Headless, extension-first editor<br/> engine for human-AI co-authoring
+  Headless, extension-first editor<br/> engine for human-AI collaboration
 </h3>
 
 <p align="center">
@@ -29,7 +29,7 @@ npm install @pen/core @pen/react
 
 ## Why Pen?
 
-- **Headless:** Behavior and state separated from rendering. Same engine powers Notion-style, Docs-style, Markdown-first, or headless CMS.
+- **Headless:** Behavior and state separated from rendering.
 - **AI-native:** Document model, operation format, and extension architecture designed around how LLMs generate and how humans collaborate with them.
 - **Extension-first:** Core is tiny. Everything -- blocks, formatting, AI, multiplayer, execution, apps -- is an extension.
 - **Shared field editor:** One content-editing engine powers blocks, table cells, database surfaces, and other structured text contexts.
