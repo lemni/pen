@@ -15,6 +15,9 @@ import {
 import { fullReconcileDeltasToDOM } from "@pen/react";
 import type { ColumnType, DatabaseColumnDef, SelectOption } from "./types";
 import { isContentEditableColumnType } from "./types";
+import type { CellEditorRegistry } from "./cellEditorRegistry";
+
+export const DATABASE_CELL_EDITOR_REGISTRY_SLOT = "database:cell-editor-registry";
 
 export interface DatabaseCellContentProps {
 	blockId: string;
@@ -26,6 +29,17 @@ export interface DatabaseCellContentProps {
 }
 
 export function DatabaseCellContent(props: DatabaseCellContentProps) {
+	const { column } = props;
+	const { editor } = useEditorContext();
+	const registry = editor.internals.getSlot(DATABASE_CELL_EDITOR_REGISTRY_SLOT) as CellEditorRegistry | undefined;
+	const CustomEditor = registry?.get(column.type);
+	if (CustomEditor) {
+		return <CustomEditor {...props} />;
+	}
+	return <BuiltInCellContent {...props} />;
+}
+
+function BuiltInCellContent(props: DatabaseCellContentProps) {
 	const { column } = props;
 	switch (column.type) {
 		case "checkbox":

@@ -9,6 +9,7 @@ import type {
 	DatabaseViewModelRow,
 	DatabaseViewState,
 } from "./types";
+import type { ColumnStickyStyle } from "./utils/databaseRenderer";
 import {
 	buildCalendarMonthData,
 	CALENDAR_WEEKDAY_LABELS,
@@ -48,7 +49,7 @@ export function DatabaseViewBody(props: {
 		pinnedOffsets: Record<string, { left?: number; right?: number }>,
 		defaultColumnWidth: number,
 		section: "header" | "body",
-	) => React.CSSProperties;
+	) => ColumnStickyStyle;
 	isCellSelected: (row: number, column: number) => boolean;
 	formatRemoteCell: (
 		row: DatabaseViewModelRow,

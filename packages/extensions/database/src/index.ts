@@ -13,8 +13,42 @@ export const databaseRenderers = {
 	database: DatabaseRenderer,
 };
 export { DatabaseEngine } from "./engine";
-export { DatabaseCellContent, type DatabaseCellContentProps } from "./cellEditors";
+export { DatabaseCellContent, DATABASE_CELL_EDITOR_REGISTRY_SLOT, type DatabaseCellContentProps } from "./cellEditors";
 export { isCellInSelection } from "./utils";
+
+export {
+	useDatabaseController,
+	ROW_SELECT_COLUMN_WIDTH,
+	type DatabaseController,
+	type DatabaseControllerConfig,
+	type CellPointerHandler,
+} from "./useDatabaseController";
+
+export {
+	DatabaseTitle,
+	DatabaseViewTabs,
+	DatabaseToolbar,
+	DatabaseTableView,
+	DatabasePagination,
+	DatabaseStatusIndicators,
+} from "./primitives";
+
+export {
+	createCellEditorRegistry,
+	defaultCellEditorRegistry,
+	type CellEditorRegistry,
+	type CellEditorComponent,
+} from "./cellEditorRegistry";
+
+export { DatabaseViewBody } from "./rendererViews";
+
+export {
+	ColumnMenu,
+	ColumnVisibilityPanel,
+	FilterPanel,
+	GroupPanel,
+	SortPanel,
+} from "./rendererPanels";
 
 export type {
 	ColumnType,

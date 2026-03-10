@@ -7,6 +7,8 @@ import { createEditor } from "@pen/core";
 import type { DatabaseViewState, TableColumnSchema } from "@pen/core";
 import { Pen, getAttachedFieldEditor } from "@pen/react";
 import { DatabaseRenderer } from "../renderer";
+import { ColumnMenu } from "../rendererPanels";
+import { useDatabaseController } from "../useDatabaseController";
 
 (
 	globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
@@ -54,7 +56,10 @@ async function flushAnimationFrames(count = 1): Promise<void> {
 	}
 }
 
-async function renderDatabase(editor: ReturnType<typeof createEditor>) {
+async function renderDatabase(
+	editor: ReturnType<typeof createEditor>,
+	children?: React.ReactNode,
+) {
 	const container = document.createElement("div");
 	document.body.appendChild(container);
 	const root = createRoot(container);
@@ -66,6 +71,7 @@ async function renderDatabase(editor: ReturnType<typeof createEditor>) {
 				renderers={{ database: DatabaseRenderer }}
 			>
 				<Pen.Editor.Content />
+				{children}
 			</Pen.Editor.Root>,
 		);
 	});
@@ -1407,6 +1413,80 @@ describe("@pen/database renderer", () => {
 		) as HTMLTableRowElement[];
 		expect(renderedRows.at(-1)?.getAttribute("data-row-section")).toBe("bottom");
 		expect(renderedRows.at(-1)?.textContent).toContain("Gamma");
+
+		await unmountDatabase(root, container, editor);
+	});
+
+	it("refreshes the open column menu after adding a select option", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+
+		function OptionMutationHarness() {
+			const db = useDatabaseController({ blockId: "db-option-menu" });
+			const statusColumn = db.columnSchema.find((entry) => entry.id === "status");
+			return (
+				<>
+					<button onClick={() => db.addOption("status", "Blocked", "gray")}>
+						Add test option
+					</button>
+					<ColumnMenu
+						column={statusColumn}
+						onClose={() => { }}
+						onRename={(nextTitle) => db.renameColumn("status", nextTitle)}
+						onChangeType={(nextType) => db.changeColumnType("status", nextType)}
+						onDelete={() => db.deleteColumn("status")}
+						onToggleVisibility={() => db.toggleColumnVisibility("status")}
+						onChangePin={(nextPinned) => db.changeColumnPin("status", nextPinned)}
+						onAddOption={(value, color) => db.addOption("status", value, color)}
+						onRenameOption={(optionId, value) => db.renameOption("status", optionId, value)}
+						onRecolorOption={(optionId, color) => db.recolorOption("status", optionId, color)}
+						onRemoveOption={(optionId) => db.removeOption("status", optionId)}
+						onMoveOption={(optionId, direction) => db.moveOption("status", optionId, direction)}
+					/>
+				</>
+			);
+		}
+
+		seedDatabase(
+			editor,
+			"db-option-menu",
+			[
+				{ id: "name", title: "Name", type: "text", width: 140 },
+				{ id: "status", title: "Status", type: "select", width: 140, options: [] },
+			],
+			[["Alpha", ""]],
+		);
+		const { container, root } = await renderDatabase(
+			editor,
+			<OptionMutationHarness />,
+		);
+
+		let optionRows = Array.from(
+			container.querySelectorAll(`.pen-db-col-option-row input`),
+		) as HTMLInputElement[];
+		expect(optionRows).toHaveLength(0);
+
+		const addOptionButton = getButtonByText(container, "Add test option");
+		expect(addOptionButton).not.toBeNull();
+
+		await act(async () => {
+			addOptionButton?.dispatchEvent(createMouseEvent("click"));
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.getBlock("db-option-menu")?.tableColumns()[1]?.options).toEqual([
+			expect.objectContaining({
+				value: "Blocked",
+				color: "gray",
+			}),
+		]);
+
+		optionRows = Array.from(
+			container.querySelectorAll(`.pen-db-col-option-row input`),
+		) as HTMLInputElement[];
+		expect(optionRows).toHaveLength(1);
+		expect(optionRows[0]?.value).toBe("Blocked");
 
 		await unmountDatabase(root, container, editor);
 	});

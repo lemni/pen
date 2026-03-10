@@ -1,4 +1,3 @@
-import type React from "react";
 import { DEFAULT_DATABASE_COLUMN_WIDTH } from "../types";
 import type {
 	ColumnType,
@@ -235,14 +234,26 @@ export function getPinnedOffsets(
 	return offsets;
 }
 
+export type ColumnStickyStyle = {
+	width: number;
+	minWidth: number;
+	maxWidth: number;
+	cursor?: string;
+	position: "relative" | "sticky";
+	left?: number;
+	right?: number;
+	zIndex?: number;
+	background?: string;
+};
+
 export function getColumnStickyStyle(
 	column: DatabaseColumnDef,
 	pinnedOffsets: Record<string, { left?: number; right?: number }>,
 	defaultColumnWidth: number,
 	section: "header" | "body",
-): React.CSSProperties {
+): ColumnStickyStyle {
 	const width = column.width ?? defaultColumnWidth;
-	const style: React.CSSProperties = {
+	const style: ColumnStickyStyle = {
 		width,
 		minWidth: width,
 		maxWidth: width,
@@ -269,12 +280,23 @@ export function resolveDefaultColumnWidth(value: unknown): number {
 		: DEFAULT_DATABASE_COLUMN_WIDTH;
 }
 
+export type FixedEdgeStyle = {
+	position: "sticky";
+	left?: number;
+	right?: number;
+	width: number;
+	minWidth: number;
+	maxWidth: number;
+	zIndex: number;
+	background: string;
+};
+
 export function getFixedEdgeStyle(
 	side: "left" | "right",
 	offset: number,
 	width: number,
 	section: "header" | "body",
-): React.CSSProperties {
+): FixedEdgeStyle {
 	return {
 		position: "sticky",
 		[side]: offset,
@@ -283,7 +305,7 @@ export function getFixedEdgeStyle(
 		maxWidth: width,
 		zIndex: section === "header" ? PINNED_HEADER_Z_INDEX : PINNED_CELL_Z_INDEX,
 		background: "var(--surface)",
-	} satisfies React.CSSProperties;
+	} as FixedEdgeStyle;
 }
 
 export function createDefaultFilterCondition(

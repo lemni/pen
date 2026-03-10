@@ -1,6 +1,8 @@
 import type { Editor, Extension } from "@pen/types";
 import { defineExtension } from "@pen/types";
 import type { DatabaseDataProvider } from "./types";
+import type { CellEditorRegistry } from "./cellEditorRegistry";
+import { DATABASE_CELL_EDITOR_REGISTRY_SLOT } from "./cellEditors";
 
 const DATABASE_WIDGET_TRIGGER_ATTR = "data-pen-db-widget-trigger";
 const BLOCK_ID_ATTR = "data-block-id";
@@ -17,6 +19,7 @@ export interface DatabaseExtensionOptions {
 		event: KeyboardEvent,
 		context: { blockId: string; row: number; col: number; root?: HTMLElement },
 	) => boolean;
+	cellEditorRegistry?: CellEditorRegistry;
 }
 
 export function databaseExtension(options?: DatabaseExtensionOptions): Extension {
@@ -28,6 +31,10 @@ export function databaseExtension(options?: DatabaseExtensionOptions): Extension
 
 			if (options?.dataProvider) {
 				editor.internals.setSlot(DATABASE_DATA_PROVIDER_SLOT, options.dataProvider);
+			}
+
+			if (options?.cellEditorRegistry) {
+				editor.internals.setSlot(DATABASE_CELL_EDITOR_REGISTRY_SLOT, options.cellEditorRegistry);
 			}
 
 			editor.internals.setSlot(
