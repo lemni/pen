@@ -168,6 +168,26 @@ Do not introduce a second document root model while implementing this checklist.
   - Outcome:
     - drag handles and structural affordances are hidden or minimized by default in flow mode.
 
+- [ ] Add block drag-and-drop view policy and headless custom-handle support
+  - Package: `@pen/react`
+  - Files:
+    - `packages/rendering/react/src/context/editorContext.ts`
+    - `packages/rendering/react/src/primitives/editor/root.tsx`
+    - `packages/rendering/react/src/primitives/editor/block.tsx`
+    - `packages/rendering/react/src/primitives/editor/blockHandle.tsx`
+    - `packages/rendering/react/src/primitives/editor/dragOverlay.tsx`
+    - `packages/rendering/react/src/hooks/`
+  - Areas to adjust:
+    - add a root-level `blockDragAndDrop` policy surface
+    - resolve structured versus flow defaults from `editorViewMode`
+    - centralize drag session state and block-level drop targeting
+    - support multi-block drag from canonical `BlockSelection`
+    - preserve dragged block order when serializing `move-block` ops
+    - keep visible drag controls consumer-owned through `Pen.Editor.BlockHandle` and `useBlockDragHandle()`
+    - add a headless hook for consumer-owned drag controls
+  - Outcome:
+    - structured views expose single-block and multi-block drag-and-drop by default, flow views suppress it by default, and consumers can opt into headless custom handles without forking reorder logic.
+
 - [ ] Make flow mode prefer expanded text surfaces
   - Package: `@pen/react`
   - Files:
@@ -315,6 +335,21 @@ Do not introduce a second document root model while implementing this checklist.
     - existing field-editor and selection tests
     - `packages/rendering/react/src/__tests__/regionSelection.test.tsx`
     - adjacent key-handling test files
+
+- [ ] Add block drag-and-drop policy tests
+  - Package: `@pen/react`
+  - Files:
+    - editor primitive and interaction test files
+  - Cases:
+    - structured default enables drag-and-drop
+    - flow default disables drag-and-drop
+    - explicit `Pen.Editor.BlockHandle` and custom-hook handles both respect the same DnD policy
+    - dragging from a selected block drags the full selected block set
+    - dragging from an unselected block drags only the initiating block
+    - completed single-block and multi-block drags apply `move-block` with `origin: "user"`
+    - multi-block reorders preserve document order
+    - nested editor roots reject cross-root drag targets
+    - image and external drop behavior remains unchanged
 
 - [ ] Add clipboard tests for flow mode
   - Package: `@pen/react`

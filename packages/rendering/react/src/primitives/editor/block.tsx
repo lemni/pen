@@ -19,14 +19,19 @@ export interface EditorBlockProps extends AsChildProps {
 
 export function EditorBlock(props: EditorBlockProps) {
 	const { blockId, ...rest } = props;
-	const { editor, readonly, renderers } = useEditorContext();
+	const {
+		editor,
+		readonly,
+		renderers,
+		blockControls,
+	} = useEditorContext();
 	const fieldEditor = useFieldEditorContext();
 	const isEditable = useBlockEditingState(fieldEditor, blockId);
 	const blockModel = useBlockModel(editor, blockId);
 	const isSelected = useBlockSelectionState(editor, blockId);
 	const surfaceRole = useBlockSurfaceRole(editor, fieldEditor, blockId);
 	const blockDecorations = useBlockDecorations(editor, blockId);
-	const dropPosition = useBlockDropPreview(blockId);
+	const externalDropPosition = useBlockDropPreview(blockId);
 	const blockRef = useRef<HTMLElement>(null);
 
 	if (!blockModel.exists) return null;
@@ -46,6 +51,15 @@ export function EditorBlock(props: EditorBlockProps) {
 	};
 
 	const Renderer = renderers?.[blockType] ?? resolveRenderer(blockType);
+	const headingLevel =
+		blockType === "heading" && typeof block.props?.level === "number"
+			? block.props.level
+			: undefined;
+	const blockControl = blockControls?.({
+		blockId,
+		blockType,
+		selected: isSelected,
+	});
 
 	const isAiGenerating = blockDecorations.some(
 		(d: any) => d.type === "ai-generating" || d.attrs?.["ai-generating"],
@@ -55,10 +69,12 @@ export function EditorBlock(props: EditorBlockProps) {
 		[DATA_ATTRS.editorBlock]: "",
 		[DATA_ATTRS.blockId]: blockId,
 		[DATA_ATTRS.blockType]: blockType,
+		"data-level": headingLevel,
 		[DATA_ATTRS.selected]: isSelected || undefined,
+		[DATA_ATTRS.focused]: fieldEditor?.focusBlockId === blockId || undefined,
 		[DATA_ATTRS.surfaceRole]: surfaceRole ?? undefined,
-		[DATA_ATTRS.dropTarget]: dropPosition ? true : undefined,
-		[DATA_ATTRS.dropPosition]: dropPosition,
+		[DATA_ATTRS.dropTarget]: externalDropPosition ? true : undefined,
+		[DATA_ATTRS.dropPosition]: externalDropPosition,
 		[DATA_ATTRS.aiGenerating]: isAiGenerating || undefined,
 		tabIndex: -1,
 		contentEditable:
@@ -70,7 +86,12 @@ export function EditorBlock(props: EditorBlockProps) {
 	return renderAsChild(
 		{
 			...rest,
-			children: Renderer(block, renderCtx) as React.ReactNode,
+			children: (
+				<>
+					{blockControl}
+					{Renderer(block, renderCtx) as React.ReactNode}
+				</>
+			),
 			ref: blockRef,
 		},
 		"div",

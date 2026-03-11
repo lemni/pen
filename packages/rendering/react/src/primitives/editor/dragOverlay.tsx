@@ -1,54 +1,28 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { renderAsChild, type AsChildProps } from "../../utils/asChild";
+import { useBlockDragSession } from "./blockDragSession";
 
 export interface DragOverlayProps extends AsChildProps {
   ref?: React.Ref<HTMLElement>;
 }
 
 /**
- * Ghost element during block drag.
- * Client-only — renders null during SSR.
+ * Optional overlay primitive during block drag.
+ * By default renders nothing — the browser's native drag ghost is used.
+ * Consumers can mount this and provide children for custom overlay UI.
  */
 export function EditorDragOverlay(props: DragOverlayProps) {
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const { state } = useBlockDragSession();
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const handleDragOver = (event: DragEvent) => {
-      if (event.dataTransfer?.types.includes("application/x-pen-block-id")) {
-        setIsDragging(true);
-        setPosition({ x: event.clientX, y: event.clientY });
-      }
-    };
-
-    const handleDragEnd = () => {
-      setIsDragging(false);
-      setPosition(null);
-    };
-
-    window.addEventListener("dragover", handleDragOver);
-    window.addEventListener("dragend", handleDragEnd);
-    window.addEventListener("drop", handleDragEnd);
-    return () => {
-      window.removeEventListener("dragover", handleDragOver);
-      window.removeEventListener("dragend", handleDragEnd);
-      window.removeEventListener("drop", handleDragEnd);
-    };
-  }, []);
-
-  if (typeof window === "undefined" || !isDragging || !position) return null;
+  if (typeof window === "undefined" || !state.active) return null;
+  if (!props.children) return null;
 
   return renderAsChild(props, "div", {
     "data-pen-drag-overlay": "",
     "aria-hidden": "true",
     style: {
       position: "fixed",
-      left: `${position.x + 12}px`,
-      top: `${position.y + 12}px`,
       pointerEvents: "none",
-      opacity: 0.5,
       zIndex: 9999,
     },
   });

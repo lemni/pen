@@ -15,7 +15,6 @@ import {
 	EditorRegionSelector,
 	Pen,
 	richTextShortcutsExtension,
-	type EditorSelectAllBehavior,
 } from "../index";
 
 describe("@pen/react field-editor exports", () => {
@@ -52,11 +51,6 @@ describe("@pen/react field-editor exports", () => {
 	it("exports the optional region selector primitive", () => {
 		expect(typeof EditorRegionSelector).toBe("function");
 		expect(Pen.Editor.RegionSelector).toBe(EditorRegionSelector);
-	});
-
-	it("exports the public select-all behavior type", () => {
-		const behavior: EditorSelectAllBehavior = "document-first";
-		expect(behavior).toBe("document-first");
 	});
 
 	it("exposes a stable field-editor snapshot store", () => {

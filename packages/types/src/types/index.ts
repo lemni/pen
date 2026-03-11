@@ -240,6 +240,7 @@ export {
 	type DocumentValidationError,
 	type CommandContext,
 	type EditorViewMode,
+	type InteractionModel,
 	HOOK_PRIORITY_AUTH,
 	HOOK_PRIORITY_SUGGEST,
 	HOOK_PRIORITY_INPUT_RULE,

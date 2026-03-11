@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useLayoutEffect } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor, MoveBlockOp } from "@pen/core";
 import {
-	delegatesToGridEditing,
 	generateId,
 	usesInlineTextSelection,
 } from "@pen/core";
@@ -21,6 +20,10 @@ import {
 	getEditorBlockSelectionLength,
 	getEditorBlockSelectionRole,
 } from "../../utils/blockSelectionSemantics";
+import {
+	isRepeatedCellSelection,
+	resolveBlockPointerIntent,
+} from "../../utils/editorInteractionModel";
 import { normalizeSelectionFormation } from "../../utils/selectionFormation";
 import {
 	useDocumentEmptyState,
@@ -32,6 +35,13 @@ import { EditorBlock } from "./block";
 import {
 	DropPreviewProvider,
 } from "./dropPreviewContext";
+import {
+	BLOCK_DRAG_MIME,
+	buildMoveBlockOps,
+	parseBlockDragPayload,
+	type BlockDropPosition,
+	useBlockDragSession,
+} from "./blockDragSession";
 import {
 	intersectRegionSelectionRect,
 	resolveRegionRect,
@@ -55,13 +65,14 @@ export interface EditorContentProps extends AsChildProps {
 
 export function EditorContent(props: EditorContentProps) {
 	const { virtualize: _virtualize, emptyPlaceholder, ...rest } = props;
-	const { editor, readonly } = useEditorContext();
+	const { editor, readonly, blockDragAndDrop, interactionModel } = useEditorContext();
 	const fieldEditor = useFieldEditorContext();
 	const { store: regionSelectionStore } = useEditorRegionSelectionContext();
 	const fieldEditorState = useFieldEditorState(fieldEditor);
 	const blockIds = useBlockList(editor);
+	const blockDragSession = useBlockDragSession();
 	const contentRef = useRef<HTMLElement>(null);
-	const blocksHostRef = useRef<HTMLDivElement>(null);
+	const blocksHostRef = blockDragSession.blocksHostRef as React.RefObject<HTMLDivElement | null>;
 	const regionGestureRef = useRef<{
 		clientX: number;
 		clientY: number;
@@ -74,6 +85,8 @@ export function EditorContent(props: EditorContentProps) {
 		startSelection: ReturnType<Editor["getSelection"]>;
 	} | null>(null);
 	const skipNextClickRef = useRef(false);
+	const interactionModelRef = useRef(interactionModel);
+	interactionModelRef.current = interactionModel;
 
 	const isEmpty = useDocumentEmptyState(editor);
 	const isDocumentPlaceholderVisible = useDocumentPlaceholderState(editor);
@@ -111,14 +124,22 @@ export function EditorContent(props: EditorContentProps) {
 			return targetRoot != null && targetRoot !== currentEditorRoot;
 		};
 
+		const resolveEventTargetElement = (
+			target: EventTarget | null,
+		): HTMLElement | null => {
+			if (target instanceof HTMLElement) {
+				return target;
+			}
+
+			if (target instanceof Node) {
+				return target.parentElement;
+			}
+
+			return null;
+		};
+
 		const resolveClickedBlockId = (event: MouseEvent): string | null => {
-			const rawTarget = event.target;
-			const target =
-				rawTarget instanceof HTMLElement
-					? rawTarget
-					: rawTarget instanceof Node
-						? rawTarget.parentElement
-						: null;
+			const target = resolveEventTargetElement(event.target);
 			if (!target) return null;
 			if (isWithinNestedEditorRoot(target)) return null;
 
@@ -210,13 +231,7 @@ export function EditorContent(props: EditorContentProps) {
 			event: MouseEvent,
 			blockId: string,
 		): { row: number; col: number } | null => {
-			const rawTarget = event.target;
-			const target =
-				rawTarget instanceof HTMLElement
-					? rawTarget
-					: rawTarget instanceof Node
-						? rawTarget.parentElement
-						: null;
+			const target = resolveEventTargetElement(event.target);
 			if (!target) return null;
 			if (isWithinNestedEditorRoot(target)) return null;
 
@@ -237,13 +252,7 @@ export function EditorContent(props: EditorContentProps) {
 		};
 
 		const shouldIgnorePointerGesture = (event: MouseEvent): boolean => {
-			const rawTarget = event.target;
-			const target =
-				rawTarget instanceof HTMLElement
-					? rawTarget
-					: rawTarget instanceof Node
-						? rawTarget.parentElement
-						: null;
+			const target = resolveEventTargetElement(event.target);
 			if (!target) return false;
 			if (isWithinNestedEditorRoot(target)) return true;
 
@@ -493,7 +502,11 @@ export function EditorContent(props: EditorContentProps) {
 			skipNextClickRef.current = false;
 			fieldEditor.resetSelectAllCycle?.();
 
-			if (fieldEditor.isEditing) {
+			if (interactionModelRef.current.clickToSelect) {
+				if (fieldEditor.isEditing && fieldEditor.focusBlockId !== blockId) {
+					fieldEditor.deactivate();
+				}
+			} else if (fieldEditor.isEditing) {
 				flushSync(() => {
 					if (
 						typeof fieldEditor.suspendForPointerSelection ===
@@ -609,140 +622,261 @@ export function EditorContent(props: EditorContentProps) {
 			const moved =
 				Math.abs(clientX - gesture.clientX) > 3 ||
 				Math.abs(clientY - gesture.clientY) > 3;
+			const root = gestureEl.closest(
+				"[data-pen-editor-root]",
+			) as HTMLElement | null;
 
-			const finalizePointerSelection = () => {
-				const root = gestureEl.closest(
-					"[data-pen-editor-root]",
-				) as HTMLElement | null;
-				const mappedSelection = root ? domSelectionToEditor(root) : null;
+			const commitCanonicalSelection = (
+				anchorPoint: { blockId: string; offset: number },
+				focusPoint: { blockId: string; offset: number },
+			) => {
+				activateCanonicalSelection(anchorPoint, focusPoint);
+				if (root) {
+					ensureEditorFocus(root);
+				}
+				skipNextClickRef.current = true;
+			};
 
-				if (root && mappedSelection) {
-					const collapsed =
-						mappedSelection.anchor.blockId ===
-						mappedSelection.focus.blockId &&
-						mappedSelection.anchor.offset ===
-						mappedSelection.focus.offset;
+			const isSelectionForward = (
+				anchorPoint: { blockId: string; offset: number },
+				focusPoint: { blockId: string; offset: number },
+			): boolean => {
+				const blockOrder = editor.documentState.blockOrder;
+				const anchorIdx = blockOrder.indexOf(anchorPoint.blockId);
+				const focusIdx = blockOrder.indexOf(focusPoint.blockId);
+				if (anchorIdx === focusIdx) {
+					return anchorPoint.offset <= focusPoint.offset;
+				}
+				return anchorIdx <= focusIdx;
+			};
 
-					if (!collapsed) {
-						const focusBlockEl = root.querySelector(
-							`[data-block-id="${mappedSelection.focus.blockId}"]`,
-						) as HTMLElement | null;
-						const focusRole =
-							focusBlockEl?.getAttribute(DATA_ATTRS.surfaceRole) ?? null;
-						const focusType =
-							focusBlockEl?.getAttribute("data-block-type");
-						const needsBoundarySnap =
-							focusRole === "structural" ||
-							focusRole === "delegated" ||
-							focusType === "divider" ||
-							focusType === "image" ||
-							focusType === "codeBlock" ||
-							focusType === "table" ||
-							focusType === "database";
-
-						if (needsBoundarySnap) {
-							const selectingForward = (() => {
-								const blockOrder = editor.documentState.blockOrder;
-								const anchorIdx = blockOrder.indexOf(
-									mappedSelection.anchor.blockId,
-								);
-								const focusIdx = blockOrder.indexOf(
-									mappedSelection.focus.blockId,
-								);
-								if (anchorIdx === focusIdx) {
-									return (
-										mappedSelection.anchor.offset <=
-										mappedSelection.focus.offset
-									);
-								}
-								return anchorIdx <= focusIdx;
-							})();
-							const snappedPoint = pointToEditorSelectionPoint(
-								root,
-								clientX,
-								clientY,
-								{
-									preferredBoundary: selectingForward
-										? "end"
-										: "start",
-								},
-							);
-							activateCanonicalSelection(
-								mappedSelection.anchor,
-								snappedPoint ?? mappedSelection.focus,
-							);
-							ensureEditorFocus(root);
-							skipNextClickRef.current = true;
-							return;
-						}
-
-						activateCanonicalSelection(
-							mappedSelection.anchor,
-							mappedSelection.focus,
-						);
-						ensureEditorFocus(root);
-						skipNextClickRef.current = true;
-						return;
-					}
-
-					if (moved) {
-						activateCanonicalSelection(
-							mappedSelection.anchor,
-							mappedSelection.focus,
-						);
-						ensureEditorFocus(root);
-						skipNextClickRef.current = true;
-						return;
-					}
+			const tryHandleMappedDomSelection = (): boolean => {
+				if (!root) {
+					return false;
 				}
 
-				if (root && moved) {
-					const focusPoint = pointToEditorSelectionPoint(root, clientX, clientY);
-					if (focusPoint) {
-						const anchorRole = getEditorBlockSelectionRole(
-							editor,
-							gesture.blockId,
+				const mappedSelection = domSelectionToEditor(root);
+				if (!mappedSelection) {
+					return false;
+				}
+
+				const collapsed =
+					mappedSelection.anchor.blockId === mappedSelection.focus.blockId &&
+					mappedSelection.anchor.offset === mappedSelection.focus.offset;
+
+				if (!collapsed) {
+					const focusBlockEl = root.querySelector(
+						`[data-block-id="${mappedSelection.focus.blockId}"]`,
+					) as HTMLElement | null;
+					const focusRole =
+						focusBlockEl?.getAttribute(DATA_ATTRS.surfaceRole) ?? null;
+					const focusType = focusBlockEl?.getAttribute("data-block-type");
+					const needsBoundarySnap =
+						focusRole === "structural" ||
+						focusRole === "delegated" ||
+						focusType === "divider" ||
+						focusType === "image" ||
+						focusType === "codeBlock" ||
+						focusType === "table" ||
+						focusType === "database";
+
+					if (needsBoundarySnap) {
+						const selectingForward = isSelectionForward(
+							mappedSelection.anchor,
+							mappedSelection.focus,
 						);
-						const focusRole = getEditorBlockSelectionRole(
-							editor,
-							focusPoint.blockId,
+						const snappedPoint = pointToEditorSelectionPoint(
+							root,
+							clientX,
+							clientY,
+							{
+								preferredBoundary: selectingForward ? "end" : "start",
+							},
 						);
-						if (
-							anchorRole === "editable-inline" &&
-							focusRole === "editable-inline"
-						) {
-							// Let native cross-block selection remain the source of truth
-							// when both ends are inline-editable and the browser gave us no range.
-						} else {
-						const blockOrder = editor.documentState.blockOrder;
-						const anchorIdx = blockOrder.indexOf(gesture.blockId);
-						const focusIdx = blockOrder.indexOf(focusPoint.blockId);
-						if (anchorIdx >= 0 && focusIdx >= 0) {
-							const selectingForward = anchorIdx <= focusIdx;
-							const anchorPoint =
-								anchorRole === "editable-inline"
-									? getBoundaryPoint(
-										gesture.blockId,
-										selectingForward ? "end" : "start",
-									)
-									: getBoundaryPoint(
-										gesture.blockId,
-										selectingForward ? "start" : "end",
-									);
-							const normalizedFocusPoint =
-								focusRole === "editable-inline"
-									? focusPoint
-									: getBoundaryPoint(
-										focusPoint.blockId,
-										selectingForward ? "end" : "start",
-									);
-							activateCanonicalSelection(anchorPoint, normalizedFocusPoint);
-							ensureEditorFocus(root);
-							skipNextClickRef.current = true;
-							return;
-						}
-						}
+						commitCanonicalSelection(
+							mappedSelection.anchor,
+							snappedPoint ?? mappedSelection.focus,
+						);
+						return true;
 					}
+
+					commitCanonicalSelection(
+						mappedSelection.anchor,
+						mappedSelection.focus,
+					);
+					return true;
+				}
+
+				if (moved) {
+					commitCanonicalSelection(
+						mappedSelection.anchor,
+						mappedSelection.focus,
+					);
+					return true;
+				}
+
+				return false;
+			};
+
+			const tryHandleDraggedPointerSelection = (): boolean => {
+				if (!root || !moved) {
+					return false;
+				}
+
+				const focusPoint = pointToEditorSelectionPoint(root, clientX, clientY);
+				if (!focusPoint) {
+					return false;
+				}
+
+				const anchorRole = getEditorBlockSelectionRole(editor, gesture.blockId);
+				const focusRole = getEditorBlockSelectionRole(editor, focusPoint.blockId);
+				if (
+					anchorRole === "editable-inline" &&
+					focusRole === "editable-inline"
+				) {
+					// Let native cross-block selection remain the source of truth
+					// when both ends are inline-editable and the browser gave us no range.
+					return false;
+				}
+
+				const blockOrder = editor.documentState.blockOrder;
+				const anchorIdx = blockOrder.indexOf(gesture.blockId);
+				const focusIdx = blockOrder.indexOf(focusPoint.blockId);
+				if (anchorIdx < 0 || focusIdx < 0) {
+					return false;
+				}
+
+				const selectingForward = anchorIdx <= focusIdx;
+				const anchorPoint =
+					anchorRole === "editable-inline"
+						? getBoundaryPoint(
+							gesture.blockId,
+							selectingForward ? "end" : "start",
+						)
+						: getBoundaryPoint(
+							gesture.blockId,
+							selectingForward ? "start" : "end",
+						);
+				const normalizedFocusPoint =
+					focusRole === "editable-inline"
+						? focusPoint
+						: getBoundaryPoint(
+							focusPoint.blockId,
+							selectingForward ? "end" : "start",
+						);
+				commitCanonicalSelection(anchorPoint, normalizedFocusPoint);
+				return true;
+			};
+
+			const tryHandleCellSelection = (blockId: string): boolean => {
+				const cellCoord = resolveClickedCellCoord(event, blockId);
+				if (!cellCoord) {
+					return false;
+				}
+
+				if (clickCount >= 2) {
+					fieldEditor.activateCell?.(blockId, cellCoord.row, cellCoord.col);
+					skipNextClickRef.current = true;
+					return true;
+				}
+
+				if (
+					isRepeatedCellSelection({
+						startSelection: gesture.startSelection,
+						selection: editor.selection,
+						blockId,
+						cellCoord,
+					})
+				) {
+					editor.selectBlock(blockId);
+					if (root) {
+						ensureEditorFocus(root);
+					}
+					skipNextClickRef.current = true;
+					return true;
+				}
+
+				editor.selectCell(blockId, cellCoord.row, cellCoord.col);
+				skipNextClickRef.current = true;
+				return true;
+			};
+
+			const tryHandleBlockSelection = (
+				blockId: string,
+				blockType: string,
+			): boolean => {
+				const schema = editor.schema.resolve(blockType);
+				const blockPointerIntent = resolveBlockPointerIntent({
+					blockId,
+					clickCount,
+					moved,
+					schema,
+					startSelection: gesture.startSelection,
+					selection: editor.selection,
+					interactionModel: interactionModelRef.current,
+				});
+
+				if (blockPointerIntent === "select-block-text") {
+					const blockStart = getBoundaryPoint(blockId, "start");
+					const blockEnd = getBoundaryPoint(blockId, "end");
+					commitCanonicalSelection(blockStart, blockEnd);
+					return true;
+				}
+
+				if (blockPointerIntent === "enter-edit") {
+					if (usesInlineTextSelection(schema)) {
+						const pointerPoint = root
+							? pointToEditorSelectionPoint(root, clientX, clientY)
+							: null;
+						if (pointerPoint) {
+							activateCanonicalSelection(pointerPoint, pointerPoint);
+						} else {
+							fieldEditor.activate(blockId);
+						}
+						skipNextClickRef.current = true;
+						return true;
+					}
+
+					editor.selectBlock(blockId);
+					skipNextClickRef.current = true;
+					return true;
+				}
+
+				if (blockPointerIntent === "select-block") {
+					editor.selectBlock(blockId);
+					fieldEditor.deactivate();
+					if (root) {
+						ensureEditorFocus(root);
+					}
+					skipNextClickRef.current = true;
+					return true;
+				}
+
+				if (!root) {
+					fieldEditor.activate(blockId);
+					skipNextClickRef.current = true;
+					return true;
+				}
+
+				const pointerPoint = pointToEditorSelectionPoint(root, clientX, clientY);
+				if (!pointerPoint) {
+					fieldEditor.activate(blockId);
+					skipNextClickRef.current = true;
+					return true;
+				}
+
+				activateCanonicalSelection(pointerPoint, pointerPoint);
+				skipNextClickRef.current = true;
+				return true;
+			};
+
+			const finalizePointerSelection = () => {
+				if (tryHandleMappedDomSelection()) {
+					return;
+				}
+
+				if (tryHandleDraggedPointerSelection()) {
+					return;
 				}
 
 				const blockId = resolveClickedBlockId(event) ?? gesture.blockId;
@@ -756,83 +890,11 @@ export function EditorContent(props: EditorContentProps) {
 				const block = editor.getBlock(blockId);
 				if (!block) return;
 
-				const cellCoord = resolveClickedCellCoord(event, blockId);
-				if (cellCoord) {
-					if (clickCount >= 2) {
-						fieldEditor.activateCell?.(blockId, cellCoord.row, cellCoord.col);
-						skipNextClickRef.current = true;
-						return;
-					}
-
-					const selection = editor.selection;
-					const startedOnSameSingleCell =
-						gesture.startSelection?.type === "cell" &&
-						gesture.startSelection.blockId === blockId &&
-						gesture.startSelection.anchor.row === cellCoord.row &&
-						gesture.startSelection.anchor.col === cellCoord.col &&
-						gesture.startSelection.head.row === cellCoord.row &&
-						gesture.startSelection.head.col === cellCoord.col;
-					const isSameSingleCell =
-						selection?.type === "cell" &&
-						selection.blockId === blockId &&
-						selection.anchor.row === cellCoord.row &&
-						selection.anchor.col === cellCoord.col &&
-						selection.head.row === cellCoord.row &&
-						selection.head.col === cellCoord.col;
-					if (startedOnSameSingleCell && isSameSingleCell) {
-						editor.selectBlock(blockId);
-						if (root) {
-							ensureEditorFocus(root);
-						}
-						skipNextClickRef.current = true;
-						return;
-					}
-
-					editor.selectCell(blockId, cellCoord.row, cellCoord.col);
-					skipNextClickRef.current = true;
+				if (tryHandleCellSelection(blockId)) {
 					return;
 				}
 
-				const schema = editor.schema.resolve(block.type);
-
-				if (delegatesToGridEditing(schema) && !cellCoord) {
-					editor.selectBlock(blockId);
-					skipNextClickRef.current = true;
-					return;
-				}
-
-				if (schema?.fieldEditor === "none") {
-					editor.selectBlock(blockId);
-					skipNextClickRef.current = true;
-					return;
-				}
-
-				if (clickCount >= 3) {
-					const blockStart = getBoundaryPoint(blockId, "start");
-					const blockEnd = getBoundaryPoint(blockId, "end");
-					activateCanonicalSelection(blockStart, blockEnd);
-					if (root) {
-						ensureEditorFocus(root);
-					}
-					skipNextClickRef.current = true;
-					return;
-				}
-
-				if (!root) {
-					fieldEditor.activate(blockId);
-					skipNextClickRef.current = true;
-					return;
-				}
-
-				const pointerPoint = pointToEditorSelectionPoint(root, clientX, clientY);
-				if (!pointerPoint) {
-					fieldEditor.activate(blockId);
-					skipNextClickRef.current = true;
-					return;
-				}
-
-				activateCanonicalSelection(pointerPoint, pointerPoint);
-				skipNextClickRef.current = true;
+				tryHandleBlockSelection(blockId, block.type);
 			};
 
 			if (clickCount > 1) {
@@ -881,6 +943,94 @@ export function EditorContent(props: EditorContentProps) {
 			/>
 		) : null;
 
+	const handleBlockDragOver = (event: React.DragEvent<HTMLElement>) => {
+		if (readonly || !blockDragAndDrop.enabled || !blocksHostRef.current) {
+			return;
+		}
+
+		const draggedBlockIds = resolveDraggedBlockIdsFromEvent(
+			event.dataTransfer,
+			blockDragSession.viewId,
+			blockDragSession.draggedRef.current?.blockIds ?? null,
+		);
+		if (!draggedBlockIds) {
+			return;
+		}
+
+		const target = resolveBlockDropTarget({
+			blockIds,
+			blocksHost: blocksHostRef.current,
+			draggedBlockIds,
+			clientY: event.clientY,
+		});
+		event.preventDefault();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = "move";
+		}
+		if (!target) {
+			blockDragSession.clearDropTarget();
+			return;
+		}
+		blockDragSession.setDropTarget(target.blockId, target.position);
+	};
+
+	const handleBlockDrop = (event: React.DragEvent<HTMLElement>) => {
+		if (readonly || !blockDragAndDrop.enabled || !blocksHostRef.current) {
+			return;
+		}
+
+		const draggedBlockIds = resolveDraggedBlockIdsFromEvent(
+			event.dataTransfer,
+			blockDragSession.viewId,
+			blockDragSession.draggedRef.current?.blockIds ?? null,
+		);
+		if (!draggedBlockIds) {
+			return;
+		}
+
+		const target = resolveBlockDropTarget({
+			blockIds,
+			blocksHost: blocksHostRef.current,
+			draggedBlockIds,
+			clientY: event.clientY,
+		});
+		if (!target) {
+			blockDragSession.clearDropTarget();
+			blockDragSession.endDrag();
+			return;
+		}
+
+		const moveOps = buildMoveBlockOps({
+			blockIds: draggedBlockIds,
+			targetBlockId: target.blockId,
+			dropPosition: target.position,
+		});
+		if (
+			moveOps.length === 0 ||
+			isNoOpBlockMove(editor.documentState.blockOrder, moveOps)
+		) {
+			blockDragSession.clearDropTarget();
+			blockDragSession.endDrag();
+			return;
+		}
+
+		event.preventDefault();
+		editor.apply(moveOps, { origin: "user" });
+		blockDragSession.clearDropTarget();
+		blockDragSession.endDrag();
+	};
+
+	const handleBlockDragLeave = (event: React.DragEvent<HTMLElement>) => {
+		const relatedTarget = event.relatedTarget;
+		if (
+			relatedTarget instanceof Node &&
+			event.currentTarget.contains(relatedTarget)
+		) {
+			return;
+		}
+		blockDragSession.clearDropTarget();
+	};
+
 	const contentChildren = (
 		<>
 			<div
@@ -904,6 +1054,9 @@ export function EditorContent(props: EditorContentProps) {
 		[DATA_ATTRS.editorContent]: "",
 		[DATA_ATTRS.dropTarget]: isDropActive || undefined,
 		[DATA_ATTRS.empty]: isEmpty || undefined,
+		onDragOver: handleBlockDragOver,
+		onDrop: handleBlockDrop,
+		onDragLeave: handleBlockDragLeave,
 	};
 
 	return (
@@ -963,4 +1116,129 @@ function pointWithinRect(x: number, y: number, rect: DOMRect): boolean {
 		y >= rect.top &&
 		y <= rect.bottom
 	);
+}
+
+function resolveDraggedBlockIdsFromEvent(
+	dataTransfer: DataTransfer | null,
+	viewId: string,
+	sessionBlockIds: readonly string[] | null,
+): readonly string[] | null {
+	const dragTypes = dataTransfer ? Array.from(dataTransfer.types ?? []) : [];
+	if (dragTypes.includes(BLOCK_DRAG_MIME)) {
+		const payload = parseBlockDragPayload(
+			dataTransfer?.getData(BLOCK_DRAG_MIME) ?? "",
+		);
+		if (payload?.viewId === viewId) {
+			return payload.blockIds;
+		}
+	}
+
+	return sessionBlockIds;
+}
+
+function resolveBlockDropTarget(args: {
+	blockIds: readonly string[];
+	blocksHost: HTMLElement;
+	draggedBlockIds: readonly string[];
+	clientY: number;
+}): { blockId: string; position: BlockDropPosition } | null {
+	const draggedBlockIdSet = new Set(args.draggedBlockIds);
+	const candidateRects = args.blockIds
+		.filter((blockId) => !draggedBlockIdSet.has(blockId))
+		.map((blockId) => {
+			const element = args.blocksHost.querySelector(
+				`[${DATA_ATTRS.editorBlock}][${DATA_ATTRS.blockId}="${blockId}"]`,
+			) as HTMLElement | null;
+			if (!element) {
+				return null;
+			}
+			return {
+				blockId,
+				rect: element.getBoundingClientRect(),
+			};
+		})
+		.filter(
+			(
+				candidate,
+			): candidate is { blockId: string; rect: DOMRect } => candidate !== null,
+		);
+
+	if (candidateRects.length === 0) {
+		return null;
+	}
+
+	let bestTarget: {
+		blockId: string;
+		position: BlockDropPosition;
+		distance: number;
+	} | null = null;
+
+	for (const candidate of candidateRects) {
+		const { rect } = candidate;
+		const isWithinBlock = args.clientY >= rect.top && args.clientY <= rect.bottom;
+		const beforeDistance = Math.abs(args.clientY - rect.top);
+		const afterDistance = Math.abs(args.clientY - rect.bottom);
+		const position =
+			isWithinBlock && args.clientY <= rect.top + rect.height / 2
+				? "before"
+				: isWithinBlock && args.clientY > rect.top + rect.height / 2
+					? "after"
+					: beforeDistance <= afterDistance
+						? "before"
+						: "after";
+		const distance =
+			position === "before" ? beforeDistance : afterDistance;
+
+		if (!bestTarget || distance < bestTarget.distance) {
+			bestTarget = {
+				blockId: candidate.blockId,
+				position,
+				distance,
+			};
+		}
+	}
+
+	return bestTarget
+		? { blockId: bestTarget.blockId, position: bestTarget.position }
+		: null;
+}
+
+function isNoOpBlockMove(
+	blockOrder: readonly string[],
+	moveOps: readonly MoveBlockOp[],
+): boolean {
+	const initialOrder = [...blockOrder];
+	const nextOrder = [...blockOrder];
+
+	for (const op of moveOps) {
+		const currentIndex = nextOrder.indexOf(op.blockId);
+		if (currentIndex < 0) {
+			continue;
+		}
+		nextOrder.splice(currentIndex, 1);
+
+		const { position } = op;
+		if (typeof position === "object" && "before" in position) {
+			const targetIndex = nextOrder.indexOf(position.before);
+			if (targetIndex < 0) {
+				nextOrder.push(op.blockId);
+			} else {
+				nextOrder.splice(targetIndex, 0, op.blockId);
+			}
+			continue;
+		}
+
+		if (typeof position !== "object" || !("after" in position)) {
+			continue;
+		}
+
+		const targetIndex = nextOrder.indexOf(position.after);
+		if (targetIndex < 0) {
+			nextOrder.push(op.blockId);
+		} else {
+			nextOrder.splice(targetIndex + 1, 0, op.blockId);
+		}
+	}
+
+	return initialOrder.join("\u0000") === nextOrder.join("\u0000");
 }

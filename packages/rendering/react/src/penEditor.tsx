@@ -16,8 +16,8 @@ export function PenEditor(props: PenEditorProps) {
 		importers,
 		assets,
 		renderers,
-		selectAllBehavior,
 		editorViewMode,
+		interactionModel,
 		virtualize,
 		emptyPlaceholder,
 		children,
@@ -31,8 +31,8 @@ export function PenEditor(props: PenEditorProps) {
 			importers={importers}
 			assets={assets}
 			renderers={renderers}
-			selectAllBehavior={selectAllBehavior}
 			editorViewMode={editorViewMode}
+			interactionModel={interactionModel}
 		>
 			<EditorContent
 				virtualize={virtualize}

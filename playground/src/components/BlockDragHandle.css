@@ -1,0 +1,72 @@
+.playground-block-drag-gutter,
+[data-pen-editor-block] {
+	--playground-block-handle-top: 0.15rem;
+}
+
+.playground-block-drag-gutter {
+	position: absolute;
+	left: -32px;
+	top: 0;
+	bottom: 0;
+	width: 32px;
+}
+
+.playground-block-drag-handle {
+	position: absolute;
+	top: var(--playground-block-handle-top);
+	left: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: rgba(115, 115, 115, 0.85);
+	cursor: grab;
+	opacity: 0;
+}
+
+[data-pen-editor-block]:hover .playground-block-drag-handle,
+[data-pen-editor-block][data-focused="true"] .playground-block-drag-handle,
+.playground-block-drag-handle:focus-visible {
+	opacity: 1;
+}
+
+.playground-block-drag-handle:hover {
+	background: rgba(255, 255, 255, 0.06);
+	color: rgba(255, 255, 255, 0.82);
+}
+
+.playground-block-drag-handle:active {
+	cursor: grabbing;
+}
+
+.playground-block-drag-handle:focus-visible {
+	outline: 2px solid rgba(59, 130, 246, 0.45);
+	outline-offset: 1px;
+}
+
+.playground-block-drag-handle:disabled {
+	cursor: not-allowed;
+	opacity: 0.35;
+}
+
+.playground-block-drag-handle-icon {
+	width: 8px;
+	height: 12px;
+}
+
+[data-pen-editor-block][data-block-type="heading"][data-level="1"] .playground-block-drag-handle {
+	--playground-block-handle-top: 9px;
+}
+
+[data-pen-editor-block][data-block-type="heading"][data-level="2"] .playground-block-drag-handle {
+	--playground-block-handle-top: 6px;
+}
+
+[data-pen-editor-block][data-block-type="heading"][data-level="3"] .playground-block-drag-handle {
+	--playground-block-handle-top: 4px;
+}

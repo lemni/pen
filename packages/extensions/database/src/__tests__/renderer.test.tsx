@@ -73,7 +73,10 @@ async function flushAnimationFrames(count = 1): Promise<void> {
 
 async function renderDatabase(
 	editor: ReturnType<typeof createEditor>,
-	children?: React.ReactNode,
+	options?: {
+		children?: React.ReactNode;
+		interactionModel?: "content-first" | "block-first";
+	},
 ) {
 	const container = document.createElement("div");
 	document.body.appendChild(container);
@@ -83,10 +86,11 @@ async function renderDatabase(
 		root.render(
 			<Pen.Editor.Root
 				editor={editor}
+				interactionModel={options?.interactionModel}
 				renderers={{ database: DatabaseRenderer }}
 			>
 				<Pen.Editor.Content />
-				{children}
+				{options?.children}
 			</Pen.Editor.Root>,
 		);
 	});
@@ -1122,7 +1126,7 @@ describe("@pen/database renderer", () => {
 		await unmountDatabase(root, container, editor);
 	});
 
-	it("keeps block-first cmd+a copy scoped to the selected database in structured documents", async () => {
+	it("keeps block-first cmd+a copy scoped to the selected database when block-first interaction is enabled", async () => {
 		const editor = createEditor({
 			without: ["document-ops", "delta-stream", "undo"],
 		});
@@ -1152,7 +1156,9 @@ describe("@pen/database renderer", () => {
 			},
 		]);
 
-		const { container, root } = await renderDatabase(editor);
+		const { container, root } = await renderDatabase(editor, {
+			interactionModel: "block-first",
+		});
 		const databaseBlock = container.querySelector(
 			`[data-block-id="db-copy-structured"]`,
 		) as HTMLElement | null;
@@ -1930,7 +1936,7 @@ describe("@pen/database renderer", () => {
 		);
 		const { container, root } = await renderDatabase(
 			editor,
-			<OptionMutationHarness />,
+			{ children: <OptionMutationHarness /> },
 		);
 
 		let optionRows = Array.from(

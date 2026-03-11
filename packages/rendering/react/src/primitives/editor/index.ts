@@ -1,7 +1,6 @@
 export {
 	EditorRoot,
 	type EditorRootProps,
-	type EditorSelectAllBehavior,
 } from "./root";
 export { EditorContent, type EditorContentProps } from "./content";
 export { EditorBlock, type EditorBlockProps } from "./block";

@@ -11,6 +11,7 @@ import {
 	domSelectionToEditor,
 	editorSelectionToDOM,
 } from "../field-editor/selectionBridge";
+import { FakeEditContext } from "./utils/fakeEditContext";
 
 (
 	globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
@@ -690,7 +691,107 @@ describe("@pen/react escape key handling", () => {
 		editor.destroy();
 	});
 
-	it("uses block-first cmd+a by default for structured documents", async () => {
+	it("maps cmd+a from a collapsed EditContext selection via the root handler", async () => {
+		const originalEditContext = (
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext;
+		(
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext = FakeEditContext;
+
+		try {
+			const editor = createEditor({
+				documentProfile: "flow",
+				without: ["document-ops", "delta-stream", "undo"],
+			});
+			const firstBlockId = editor.firstBlock()!.id;
+			const secondBlockId = crypto.randomUUID();
+			const thirdBlockId = crypto.randomUUID();
+
+			editor.apply([
+				{
+					type: "insert-text",
+					blockId: firstBlockId,
+					offset: 0,
+					text: "First",
+				},
+				{
+					type: "insert-block",
+					blockId: secondBlockId,
+					blockType: "paragraph",
+					props: {},
+					position: { after: firstBlockId },
+				},
+				{
+					type: "insert-text",
+					blockId: secondBlockId,
+					offset: 0,
+					text: "Second",
+				},
+				{
+					type: "insert-block",
+					blockId: thirdBlockId,
+					blockType: "paragraph",
+					props: {},
+					position: { after: secondBlockId },
+				},
+				{
+					type: "insert-text",
+					blockId: thirdBlockId,
+					offset: 0,
+					text: "Third",
+				},
+			]);
+
+			const container = document.createElement("div");
+			document.body.appendChild(container);
+			const root = createRoot(container);
+
+			await act(async () => {
+				root.render(
+					<Pen.Editor.Root editor={editor}>
+						<Pen.Editor.Content />
+					</Pen.Editor.Root>,
+				);
+			});
+
+			const fieldEditor = getFieldEditor(editor);
+			await act(async () => {
+				fieldEditor.activateTextSelection(firstBlockId, 1, 1);
+				await flushAnimationFrames(2);
+			});
+
+			await act(async () => {
+				document.dispatchEvent(createSelectAllEvent());
+				await flushAnimationFrames(2);
+			});
+
+			expect(editor.selection).toMatchObject({
+				type: "text",
+				anchor: { blockId: firstBlockId, offset: 0 },
+				focus: { blockId: thirdBlockId, offset: 5 },
+				isMultiBlock: true,
+			});
+
+			await act(async () => {
+				root.unmount();
+			});
+			container.remove();
+			editor.destroy();
+		} finally {
+			(
+				globalThis as typeof globalThis & {
+					EditContext?: typeof FakeEditContext;
+				}
+			).EditContext = originalEditContext;
+		}
+	});
+
+	it("uses document-first cmd+a by default for content-first structured documents", async () => {
 		const editor = createEditor({
 			without: ["document-ops", "delta-stream", "undo"],
 		});
@@ -745,6 +846,86 @@ describe("@pen/react escape key handling", () => {
 		expect(editor.selection).toMatchObject({
 			type: "text",
 			anchor: { blockId: firstBlockId, offset: 0 },
+			focus: { blockId: secondBlockId, offset: 6 },
+			isMultiBlock: true,
+		});
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("uses block-first cmd+a when block-first interaction is enabled", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const firstBlockId = editor.firstBlock()!.id;
+		const secondBlockId = crypto.randomUUID();
+		const thirdBlockId = crypto.randomUUID();
+
+		editor.apply([
+			{
+				type: "insert-text",
+				blockId: firstBlockId,
+				offset: 0,
+				text: "First",
+			},
+			{
+				type: "insert-block",
+				blockId: secondBlockId,
+				blockType: "paragraph",
+				props: {},
+				position: { after: firstBlockId },
+			},
+			{
+				type: "insert-text",
+				blockId: secondBlockId,
+				offset: 0,
+				text: "Second",
+			},
+			{
+				type: "insert-block",
+				blockId: thirdBlockId,
+				blockType: "paragraph",
+				props: {},
+				position: { after: secondBlockId },
+			},
+			{
+				type: "insert-text",
+				blockId: thirdBlockId,
+				offset: 0,
+				text: "Third",
+			},
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor} interactionModel="block-first">
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const fieldEditor = getFieldEditor(editor);
+		await act(async () => {
+			fieldEditor.activateTextSelection(firstBlockId, 1, 1);
+			await flushAnimationFrames(2);
+		});
+
+		await act(async () => {
+			document.dispatchEvent(createSelectAllEvent());
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toMatchObject({
+			type: "text",
+			anchor: { blockId: firstBlockId, offset: 0 },
 			focus: { blockId: firstBlockId, offset: 5 },
 			isMultiBlock: false,
 		});
@@ -757,7 +938,7 @@ describe("@pen/react escape key handling", () => {
 		expect(editor.selection).toMatchObject({
 			type: "text",
 			anchor: { blockId: firstBlockId, offset: 0 },
-			focus: { blockId: secondBlockId, offset: 6 },
+			focus: { blockId: thirdBlockId, offset: 5 },
 			isMultiBlock: true,
 		});
 
@@ -768,9 +949,8 @@ describe("@pen/react escape key handling", () => {
 		editor.destroy();
 	});
 
-	it("preserves block-first cmd+a when explicitly configured for flow documents", async () => {
+	it("keeps cmd+a block-scoped before selecting the document when a block is selected in block-first mode", async () => {
 		const editor = createEditor({
-			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
@@ -804,15 +984,20 @@ describe("@pen/react escape key handling", () => {
 
 		await act(async () => {
 			root.render(
-				<Pen.Editor.Root editor={editor} selectAllBehavior="block-first">
+				<Pen.Editor.Root editor={editor} interactionModel="block-first">
 					<Pen.Editor.Content />
 				</Pen.Editor.Root>,
 			);
 		});
 
-		const fieldEditor = getFieldEditor(editor);
+		const editorRoot = container.querySelector(
+			"[data-pen-editor-root]",
+		) as HTMLElement | null;
+		expect(editorRoot).not.toBeNull();
+
 		await act(async () => {
-			fieldEditor.activateTextSelection(firstBlockId, 0, 5);
+			editor.selectBlock(firstBlockId);
+			editorRoot?.focus();
 			await flushAnimationFrames(2);
 		});
 

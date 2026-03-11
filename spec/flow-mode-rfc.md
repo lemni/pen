@@ -284,6 +284,8 @@ Flow mode should render the same blocks with a lighter presentation policy:
 
 `Pen.Editor.Content` remains block-based. The change is in presentation and interaction policy.
 
+The detailed drag-and-drop policy split for structured versus flow presentations is defined in `spec/block-drag-and-drop-rfc.md`.
+
 ## C. Selection Policy
 
 Flow mode should make cross-block text selection the normal path, not an exceptional path.
@@ -447,6 +449,8 @@ What changes is:
 - interaction policy
 - which affordances are visible in flow mode
 - how aggressively the field editor expands across adjacent blocks
+
+The detailed drag-handle and headless custom-handle architecture is further specified in `spec/block-drag-and-drop-rfc.md`.
 
 ## D. `spec/wave-03-editor-core.md`
 

@@ -91,9 +91,10 @@ function App() {
 
 Selection behavior defaults:
 
-- `Cmd/Ctrl+A` is document-first in ordinary editor selection.
+- `Cmd/Ctrl+A` follows the interaction model.
+- In the default content-first editor surface, `Cmd/Ctrl+A` selects the whole document.
+- In block-first mode, the first `Cmd/Ctrl+A` selects the current block and the second selects the whole document.
 - When table or database cell selection is active, `Cmd/Ctrl+A` stays scoped to the current grid block.
-- If you need the legacy two-step behavior, pass `selectAllBehavior="block-first"` to `Pen.Editor.Root` or `PenEditor`.
 
 ```tsx
 import { createEditor } from '@pen/core'
@@ -105,7 +106,7 @@ function App() {
   return (
     <PenEditor
       editor={editor}
-      selectAllBehavior="block-first"
+      interactionModel="block-first"
     />
   )
 }

@@ -1,7 +1,13 @@
 export {
   EditorContext,
   useEditorContext,
+  resolveInteractionModel,
   type EditorContextValue,
+  type BlockControlsProps,
+  type BlockControlsRenderer,
+  type BlockDragAndDropOptions,
+  type ResolvedBlockDragAndDropOptions,
+  type ResolvedInteractionModel,
   type PasteImporters,
   type RendererOverrides,
 } from "./editorContext";

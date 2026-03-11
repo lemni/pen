@@ -212,6 +212,10 @@ select {
   margin-top: 0;
 }
 
+[data-pen-editor-block][data-block-type="heading"] > [data-block-type="heading"] {
+  margin: 0;
+}
+
 [data-pen-editor-block][data-block-type="heading"][data-level="1"] [data-pen-inline-content] {
   font-size: 2em;
   font-weight: 700;

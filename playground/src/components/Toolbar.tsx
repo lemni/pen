@@ -34,10 +34,19 @@ import {
 type ToolbarProps = {
 	editor: Editor;
 	linkToggleRef: RefObject<(() => void) | null>;
+	interactionModel?: "content-first" | "block-first";
+	onToggleInteractionModel?: () => void;
 };
 
-export function Toolbar({ editor, linkToggleRef }: ToolbarProps) {
+export function Toolbar({
+	editor,
+	linkToggleRef,
+	interactionModel = "content-first",
+	onToggleInteractionModel,
+}: ToolbarProps) {
 	const blockTypeOptions = getBlockTypeOptions(editor);
+	const interactionModeLabel =
+		interactionModel === "block-first" ? "Block-first" : "Content-first";
 
 	const handleUndo = () => {
 		editor.undoManager.undo();
@@ -51,6 +60,19 @@ export function Toolbar({ editor, linkToggleRef }: ToolbarProps) {
 		<header className="toolbar" data-pen-ignore-pointer-gesture="">
 			<div className="toolbar-left">
 				<h4 className="toolbar-title">Pen</h4>
+				{onToggleInteractionModel ? (
+					<button
+						className="toolbar-mode-toggle"
+						data-active={interactionModel === "block-first" || undefined}
+						onMouseDown={preventEditorBlur}
+						onClick={onToggleInteractionModel}
+						type="button"
+						title={`Selection model: ${interactionModeLabel}`}
+						aria-label={`Toggle selection model. Current mode: ${interactionModeLabel}`}
+					>
+						{interactionModeLabel}
+					</button>
+				) : null}
 			</div>
 
 			<div className="toolbar-right">

@@ -119,6 +119,8 @@ Wave 5 does not implement a second rich-text renderer architecture. Instead, it 
 
 This keeps `Pen.Editor.Content` block-based while still allowing Pen to present a simpler writing-first experience.
 
+The drag-handle and block-reorder policy split for these presentations is specified in `spec/block-drag-and-drop-rfc.md`.
+
 ---
 
 ## Sub-wave 5a: Editor Primitives & Context
@@ -388,6 +390,8 @@ export function PenEditor({ editor, readonly, importers, ...props }: PenEditorPr
 **`Pen.Editor.BlockHandle`** — drag handle. Renders a grabbable element per block. Sets `data-dragging` during drag. Implements HTML5 drag-and-drop for block reordering.
 
 **`Pen.Editor.DragOverlay`** — ghost element during drag. Client-only (SSR renders null). Follows the pointer with a translucent clone of the dragged block.
+
+The higher-level policy for enabling, hiding, and customizing these primitives is defined in `spec/block-drag-and-drop-rfc.md`.
 
 **`Pen.Editor.RegionSelector`** — optional headless gesture primitive. When mounted, dragging a marquee on the editor surface while no block is focused resolves intersected blocks into canonical `BlockSelection`.
 

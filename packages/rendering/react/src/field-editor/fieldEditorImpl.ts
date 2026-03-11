@@ -72,7 +72,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 	private _selectAllBehavior: EditorSelectAllBehavior;
 	private _selectAllCycle: {
 		blockId: string;
-		scope: "block" | "document";
+		scope: "cell" | "block" | "document";
 	} | null = null;
 	private _preserveSelectAllCycle = false;
 	private _activeCellCoord: ActiveCellCoord | null = null;
@@ -80,7 +80,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 	constructor(editor: Editor, options?: FieldEditorOptions) {
 		this._editor = editor;
 		this._selectAllBehavior =
-			resolveSelectAllBehavior(editor.documentProfile, options?.selectAllBehavior);
+			options?.selectAllBehavior ?? resolveSelectAllBehavior("content-first");
 		this._historySelectionCoordinator = new HistorySelectionCoordinator(
 			this._editor,
 		);
@@ -245,18 +245,27 @@ export class FieldEditorImpl implements FieldEditorSession {
 
 	selectAll(rootElement?: HTMLElement | null): boolean {
 		const activeCellElement = this._resolveActiveCellElement(rootElement);
-		if (
-			activeCellElement &&
-			!isDomSelectionCoveringElementContents(activeCellElement)
-		) {
-			if (
-				this._attachedElement !== activeCellElement ||
-				!this._attachedElement?.isConnected
-			) {
-				this.attachElement(activeCellElement);
+		if (activeCellElement) {
+			const activeCellBlockId =
+				this._activeCellCoord?.blockId ??
+				this._resolveSelectAllBlockId(rootElement);
+			const shouldSelectCellContents =
+				!isDomSelectionCoveringElementContents(activeCellElement) ||
+				this._selectAllCycle?.scope !== "cell" ||
+				this._selectAllCycle.blockId !== activeCellBlockId;
+			if (shouldSelectCellContents) {
+				if (
+					this._attachedElement !== activeCellElement ||
+					!this._attachedElement?.isConnected
+				) {
+					this.attachElement(activeCellElement);
+				}
+				selectElementContents(activeCellElement);
+				if (activeCellBlockId) {
+					this._recordSelectAllScope(activeCellBlockId, "cell");
+				}
+				return true;
 			}
-			selectElementContents(activeCellElement);
-			return true;
 		}
 
 		if (this._selectAllBehavior === "document-first") {
@@ -512,7 +521,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 
 	private _recordSelectAllScope(
 		blockId: string,
-		scope: "block" | "document",
+		scope: "cell" | "block" | "document",
 	): void {
 		this._preserveSelectAllCycle = true;
 		this._selectAllCycle = { blockId, scope };
@@ -534,6 +543,16 @@ export class FieldEditorImpl implements FieldEditorSession {
 		const selection = this._editor.selection;
 		if (selection?.type === "text" && !selection.isMultiBlock) {
 			return selection.focus.blockId;
+		}
+		if (
+			this._selectAllBehavior === "block-first" &&
+			selection?.type === "block" &&
+			selection.blockIds.length === 1
+		) {
+			return selection.blockIds[0] ?? null;
+		}
+		if (selection?.type === "cell") {
+			return selection.blockId;
 		}
 
 		if (this._focusBlockId) {
@@ -571,6 +590,13 @@ export class FieldEditorImpl implements FieldEditorSession {
 		const cycle = this._selectAllCycle;
 		if (!cycle) {
 			return false;
+		}
+
+		if (cycle.scope === "cell") {
+			return (
+				selection?.type === "cell" &&
+				selection.blockId === cycle.blockId
+			);
 		}
 
 		if (cycle.scope === "block") {

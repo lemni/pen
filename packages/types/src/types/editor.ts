@@ -20,6 +20,8 @@ import type { AssetProvider } from "./persistence";
 
 export type EditorViewMode = DocumentProfile;
 
+export type InteractionModel = "content-first" | "block-first";
+
 // ── Document State ──────────────────────────────────────────
 
 export interface DocumentState {

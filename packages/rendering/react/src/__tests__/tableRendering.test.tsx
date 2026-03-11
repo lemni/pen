@@ -792,7 +792,7 @@ describe("@pen/react table rendering", () => {
 		editor.destroy();
 	});
 
-	it("keeps block-first cmd+a copy scoped to the selected table in structured documents", async () => {
+	it("keeps block-first cmd+a copy scoped to the selected table when block-first interaction is enabled", async () => {
 		const editor = createEditor({
 			without: ["document-ops", "delta-stream", "undo"],
 		});
@@ -828,7 +828,7 @@ describe("@pen/react table rendering", () => {
 
 		await act(async () => {
 			root.render(
-				<Pen.Editor.Root editor={editor}>
+				<Pen.Editor.Root editor={editor} interactionModel="block-first">
 					<Pen.Editor.Content />
 				</Pen.Editor.Root>,
 			);

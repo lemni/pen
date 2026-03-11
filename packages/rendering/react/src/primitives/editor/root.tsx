@@ -5,12 +5,18 @@ import {
 	type AssetProvider,
 	type Editor,
 	type EditorViewMode,
+	type InteractionModel,
 	usesInlineTextSelection,
 } from "@pen/core";
 import {
 	EditorContext,
+	type BlockControlsRenderer,
+	type BlockDragAndDropOptions,
+	type ResolvedBlockDragAndDropOptions,
+	type ResolvedInteractionModel,
 	type PasteImporters,
 	type RendererOverrides,
+	resolveInteractionModel,
 } from "../../context/editorContext";
 import { FieldEditorContext } from "../../context/fieldEditorContext";
 import { FIELD_EDITOR_SLOT_KEY } from "../../constants/fieldEditor";
@@ -24,15 +30,12 @@ import {
 } from "./regionSelectionState";
 import { renderAsChild, type AsChildProps } from "../../utils/asChild";
 import { composeRefs } from "../../utils/composeRefs";
-import {
-	resolveSelectAllBehavior,
-	type EditorSelectAllBehavior,
-} from "../../constants/selectAll";
 import { DATA_ATTRS } from "../../utils/dataAttributes";
 import { handleEscapeSelectionTransition } from "../../utils/escapeSelection";
 import { handleSelectAllShortcut, handleHistoryShortcut } from "../../field-editor/keyHandling";
 import { getAdjacentVisibleBlockId } from "../../utils/parentIdTree";
 import { handleTableCellSelectionKeyDown } from "../../utils/tableCellNavigation";
+import { BlockDragSessionProvider } from "./blockDragSession";
 
 const DATABASE_ROW_SELECTION_SLOT = "database:row-selection";
 
@@ -40,16 +43,16 @@ type DatabaseRowSelectionController = {
 	deleteSelectedRows: (blockId: string) => boolean;
 };
 
-export type { EditorSelectAllBehavior } from "../../constants/selectAll";
-
 export interface EditorRootProps extends AsChildProps {
 	editor: Editor;
 	readonly?: boolean;
 	importers?: PasteImporters;
 	assets?: AssetProvider;
 	renderers?: RendererOverrides;
-	selectAllBehavior?: EditorSelectAllBehavior;
+	blockControls?: BlockControlsRenderer;
 	editorViewMode?: EditorViewMode;
+	interactionModel?: InteractionModel;
+	blockDragAndDrop?: BlockDragAndDropOptions;
 	ref?: React.Ref<HTMLElement>;
 }
 
@@ -60,14 +63,20 @@ export function EditorRoot(props: EditorRootProps) {
 		importers,
 		assets,
 		renderers,
-		selectAllBehavior,
+		blockControls,
 		editorViewMode = editor.editorViewMode,
+		interactionModel,
+		blockDragAndDrop,
 		ref,
 		...rest
 	} = props;
-	const resolvedSelectAllBehavior = resolveSelectAllBehavior(
-		editor.documentProfile,
-		selectAllBehavior,
+	const resolvedBlockDragAndDrop = resolveBlockDragAndDrop(
+		editorViewMode,
+		blockDragAndDrop,
+	);
+	const resolvedInteractionModel = resolveInteractionModel(
+		editorViewMode,
+		interactionModel,
 	);
 	const [focused, setFocused] = useState(false);
 	const [rootElement, setRootElement] = useState<HTMLElement | null>(null);
@@ -75,11 +84,13 @@ export function EditorRoot(props: EditorRootProps) {
 	const fieldEditorRef = useRef<FieldEditorSession | null>(null);
 	const regionSelectionStoreRef = useRef<RegionSelectionStore | null>(null);
 	const rootRef = useRef<HTMLElement | null>(null);
+	const interactionModelRef = useRef(resolvedInteractionModel);
+	interactionModelRef.current = resolvedInteractionModel;
 	const resolvedAssets = assets ?? importers?.assets;
 
 	if (!fieldEditorRef.current) {
 		fieldEditorRef.current = new FieldEditorImpl(editor, {
-			selectAllBehavior: resolvedSelectAllBehavior,
+			selectAllBehavior: resolvedInteractionModel.selectAllBehavior,
 		});
 	}
 	if (!regionSelectionStoreRef.current) {
@@ -87,8 +98,10 @@ export function EditorRoot(props: EditorRootProps) {
 	}
 
 	useEffect(() => {
-		fieldEditorRef.current?.setSelectAllBehavior(resolvedSelectAllBehavior);
-	}, [resolvedSelectAllBehavior]);
+		fieldEditorRef.current?.setSelectAllBehavior(
+			resolvedInteractionModel.selectAllBehavior,
+		);
+	}, [resolvedInteractionModel.selectAllBehavior]);
 
 	useEffect(() => {
 		const root = rootRef.current;
@@ -170,18 +183,18 @@ export function EditorRoot(props: EditorRootProps) {
 				return;
 			}
 
-		if (
-			handleEscapeSelectionTransition({
-				event,
-				editor,
-				fieldEditor,
-				root,
-			})
-		) {
-			event.preventDefault();
-			event.stopImmediatePropagation();
-			return;
-		}
+			if (
+				handleEscapeSelectionTransition({
+					event,
+					editor,
+					fieldEditor,
+					root,
+				})
+			) {
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				return;
+			}
 
 			if (handleDeleteSelectionShortcut(event, editor, fieldEditor, root)) {
 				event.preventDefault();
@@ -197,17 +210,17 @@ export function EditorRoot(props: EditorRootProps) {
 				return;
 			}
 
-		if (
-			handleSelectAllShortcut(editor, event, fieldEditor, {
-				rootElement: root,
-			})
-		) {
+			if (
+				handleSelectAllShortcut(editor, event, fieldEditor, {
+					rootElement: root,
+				})
+			) {
 				event.preventDefault();
 				event.stopImmediatePropagation();
 				return;
 			}
 
-			if (handleBlockSelectionEnter(event, editor, fieldEditor)) {
+			if (handleBlockSelectionEnter(event, editor, fieldEditor, interactionModelRef.current)) {
 				event.preventDefault();
 				event.stopImmediatePropagation();
 				return;
@@ -258,31 +271,49 @@ export function EditorRoot(props: EditorRootProps) {
 				readonly,
 				documentProfile: editor.documentProfile,
 				editorViewMode,
+				interactionModel: resolvedInteractionModel,
+				blockDragAndDrop: resolvedBlockDragAndDrop,
+				blockControls,
 				importers,
 				assets: resolvedAssets,
 				renderers,
 			}}
 		>
-			<EditorRegionSelectionContext.Provider
-				value={{
-					rootElement,
-					setRootElement,
-					store: regionSelectionStoreRef.current,
-				}}
-			>
-				<FieldEditorContext.Provider value={fieldEditorRef.current}>
-					{renderAsChild(
-						{
-							...rest,
-							ref: composeRefs(ref, rootRef),
-						},
-						"div",
-						primitiveProps,
-					)}
-				</FieldEditorContext.Provider>
-			</EditorRegionSelectionContext.Provider>
+			<BlockDragSessionProvider viewId={editor.internals.viewId}>
+				<EditorRegionSelectionContext.Provider
+					value={{
+						rootElement,
+						setRootElement,
+						store: regionSelectionStoreRef.current,
+					}}
+				>
+					<FieldEditorContext.Provider value={fieldEditorRef.current}>
+						{renderAsChild(
+							{
+								...rest,
+								ref: composeRefs(ref, rootRef),
+							},
+							"div",
+							primitiveProps,
+						)}
+					</FieldEditorContext.Provider>
+				</EditorRegionSelectionContext.Provider>
+			</BlockDragSessionProvider>
 		</EditorContext.Provider>
 	);
+}
+
+function resolveBlockDragAndDrop(
+	editorViewMode: EditorViewMode,
+	blockDragAndDrop?: BlockDragAndDropOptions,
+): ResolvedBlockDragAndDropOptions {
+	if (blockDragAndDrop?.enabled != null) {
+		return { enabled: blockDragAndDrop.enabled };
+	}
+
+	return {
+		enabled: editorViewMode !== "flow",
+	};
 }
 
 function shouldHandleEditorKeyboardEvent(
@@ -319,7 +350,7 @@ function shouldHandleEditorKeyboardEvent(
 			) {
 				return true;
 			}
-			return false;
+			return shouldHandleCollapsedFieldEditorSelectAll(event, activeElement);
 		}
 		return true;
 	}
@@ -382,6 +413,29 @@ function isTextEntryInput(input: HTMLInputElement): boolean {
 	);
 }
 
+function shouldHandleCollapsedFieldEditorSelectAll(
+	event: KeyboardEvent,
+	target: EventTarget | null,
+): boolean {
+	if (!(target instanceof HTMLElement)) {
+		return false;
+	}
+
+	return (
+		isSelectAllShortcut(event) &&
+		target.closest(`[${DATA_ATTRS.fieldEditorSurface}]`) !== null
+	);
+}
+
+function isSelectAllShortcut(event: KeyboardEvent): boolean {
+	return (
+		event.key.toLowerCase() === "a" &&
+		!event.shiftKey &&
+		!event.altKey &&
+		(event.metaKey || event.ctrlKey)
+	);
+}
+
 function handleBlockSelectionArrow(
 	event: KeyboardEvent,
 	editor: Editor,
@@ -432,6 +486,7 @@ function handleBlockSelectionEnter(
 	event: KeyboardEvent,
 	editor: Editor,
 	fieldEditor: FieldEditorSession,
+	interactionModelResolved: ResolvedInteractionModel,
 ): boolean {
 	if (
 		event.key !== "Enter" ||
@@ -453,6 +508,15 @@ function handleBlockSelectionEnter(
 	const anchorBlock = editor.getBlock(anchorBlockId);
 	if (!anchorBlock) {
 		return false;
+	}
+
+	if (interactionModelResolved.model === "block-first" && selection.blockIds.length === 1) {
+		const schema = editor.schema.resolve(anchorBlock.type);
+		if (usesInlineTextSelection(schema)) {
+			const offset = anchorBlock.length();
+			fieldEditor.activateTextSelection(anchorBlockId, offset, offset);
+			return true;
+		}
 	}
 
 	const anchorSchema = editor.schema.resolve(anchorBlock.type);

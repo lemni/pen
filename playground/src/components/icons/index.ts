@@ -3,6 +3,7 @@ export { IconBold } from "./IconBold";
 export { IconChain } from "./IconChain";
 export { IconCode } from "./IconCode";
 export { IconConsole } from "./IconConsole";
+export { IconDragHandle } from "./IconDragHandle";
 export { IconItalic } from "./IconItalic";
 export { IconRedo } from "./IconRedo";
 export { IconSidebarRight } from "./IconSidebarRight";

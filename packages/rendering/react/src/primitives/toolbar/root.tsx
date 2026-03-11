@@ -1,6 +1,6 @@
 import React, { useContext } from "react";
 import type { Editor } from "@pen/core";
-import { EditorContext } from "../../context/editorContext";
+import { EditorContext, resolveInteractionModel } from "../../context/editorContext";
 import {
 	ToolbarContext,
 	type ToolbarContextValue,
@@ -33,6 +33,13 @@ export function ToolbarRoot(props: ToolbarRootProps) {
 		readonly: editorContext?.readonly ?? false,
 		documentProfile: editor.documentProfile,
 		editorViewMode: editorContext?.editorViewMode ?? editor.editorViewMode,
+		interactionModel: editorContext?.interactionModel ?? resolveInteractionModel(
+			editorContext?.editorViewMode ?? editor.editorViewMode,
+		),
+		blockDragAndDrop: editorContext?.blockDragAndDrop ?? {
+			enabled: false,
+		},
+		blockControls: editorContext?.blockControls,
 		importers: editorContext?.importers,
 		assets: editorContext?.assets,
 		renderers: editorContext?.renderers,
