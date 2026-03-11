@@ -37,6 +37,14 @@ export interface Exporter<Output = string> {
   name: string;
   mimeType: string;
   fileExtension: string;
+  /**
+   * Serialize the current document as it exists.
+   *
+   * Exporters are document-preservation surfaces, not authoring policy
+   * surfaces: they should generally serialize existing blocks even when those
+   * block types are hidden from menus or disallowed as new insertions in the
+   * active documentProfile.
+   */
   export(editor: Editor, options?: ExportOptions): Output | Promise<Output>;
   exportFragment?(blocks: BlockHandle[], options?: ExportOptions): Output;
 }
@@ -44,6 +52,11 @@ export interface Exporter<Output = string> {
 export interface ExportOptions<
   Extra extends Record<string, unknown> = Record<string, never>,
 > {
+  /**
+   * Export flags shape serialization output, but they do not redefine document
+   * authoring policy. Use schema/profile-aware helpers on authoring surfaces
+   * (menus, tools, paste/import) when deciding what users may insert.
+   */
   includeApps?: boolean;
   includeLayout?: boolean;
   includeMetadata?: boolean;
@@ -56,11 +69,16 @@ export interface Importer<Input = string, Parsed = unknown> {
   name: string;
   mimeType: string;
   parse?(input: Input, editor: Editor): Parsed | Promise<Parsed>;
+  /**
+   * Import is an authoring boundary. Implementations should normalize parsed
+   * content against the active schema/documentProfile before applying writes so
+   * callers can observe dropped or transformed content deterministically.
+   */
   import(
     input: Input,
     editor: Editor,
     options?: ImportOptions,
-  ): void | Promise<void>;
+  ): ImportResult | void | Promise<ImportResult | void>;
 }
 
 export interface ImportOptions {
@@ -68,4 +86,18 @@ export interface ImportOptions {
   replace?: boolean;
   validate?: boolean;
   normalize?: boolean;
+  undoGroup?: boolean;
+}
+
+export interface ImportResult {
+  /**
+   * Summary of import-side normalization. This reports what parsed content was
+   * accepted into the current authoring surface; it may therefore differ from
+   * what an exporter would serialize from an already-existing document.
+   */
+  parsedTopLevelBlockCount: number;
+  importedTopLevelBlockCount: number;
+  droppedBlockCount: number;
+  droppedBlockTypes: string[];
+  normalized: boolean;
 }

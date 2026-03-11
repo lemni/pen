@@ -3,6 +3,10 @@ import { defineBlock } from "@pen/types";
 export const divider = defineBlock("divider", {
   content: "none",
   fieldEditor: "none",
+  authoring: {
+    flowCapability: "flow-structural",
+    selectionRole: "structural",
+  },
   display: {
     title: "Divider",
     description: "Visual separator",

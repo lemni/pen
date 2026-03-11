@@ -1054,8 +1054,9 @@ describe("@pen/react selected text deletion", () => {
 		editor.destroy();
 	});
 
-	it("deletes the full-document selection after first cmd+a by default", async () => {
+	it("deletes the full-document selection after first cmd+a in flow documents", async () => {
 		const editor = createEditor({
+			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;

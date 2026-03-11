@@ -34,9 +34,13 @@ import {
 	getEditorBlockSelectionLength,
 	getEditorBlockSelectionRole,
 } from "../utils/blockSelectionSemantics";
+import {
+	getEditorFlowCapability,
+	shouldForceBlockScopedSelectAll,
+} from "../utils/flowCapabilities";
 import type { FieldEditorStoreSnapshot } from "./store";
 import {
-	DEFAULT_SELECT_ALL_BEHAVIOR,
+	resolveSelectAllBehavior,
 	type EditorSelectAllBehavior,
 } from "../constants/selectAll";
 
@@ -76,7 +80,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 	constructor(editor: Editor, options?: FieldEditorOptions) {
 		this._editor = editor;
 		this._selectAllBehavior =
-			options?.selectAllBehavior ?? DEFAULT_SELECT_ALL_BEHAVIOR;
+			resolveSelectAllBehavior(editor.documentProfile, options?.selectAllBehavior);
 		this._historySelectionCoordinator = new HistorySelectionCoordinator(
 			this._editor,
 		);
@@ -256,7 +260,18 @@ export class FieldEditorImpl implements FieldEditorSession {
 		}
 
 		if (this._selectAllBehavior === "document-first") {
-			return this._selectEntireDocument();
+			const activeBlockId = this._resolveSelectAllBlockId(rootElement);
+			const activeCapability = activeBlockId
+				? getEditorFlowCapability(this._editor, activeBlockId)
+				: null;
+			if (
+				!shouldForceBlockScopedSelectAll(
+					this._editor.documentProfile,
+					activeCapability,
+				)
+			) {
+				return this._selectEntireDocument();
+			}
 		}
 
 		const blockId = this._resolveSelectAllBlockId(rootElement);

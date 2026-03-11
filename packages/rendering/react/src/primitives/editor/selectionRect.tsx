@@ -4,8 +4,11 @@ import { useSelection } from "../../hooks/useSelection";
 import { useSyncExternalStoreWithSelector } from "../../utils/useSyncExternalStoreWithSelector";
 import { renderAsChild, type AsChildProps } from "../../utils/asChild";
 import {
+	intersectRegionSelectionRect,
+	resolveRegionRect,
 	useEditorRegionSelectionContext,
 	type RegionSelectionRect,
+	type RegionSelectorConfig,
 } from "./regionSelectionState";
 
 export interface SelectionRectProps extends AsChildProps {
@@ -24,6 +27,13 @@ export function EditorSelectionRect(props: SelectionRectProps) {
     store.getSnapshot,
     (snapshot) => snapshot.liveRect,
     rectsEqual,
+  );
+  const regionConfig = useSyncExternalStoreWithSelector(
+    store.subscribe,
+    store.getSnapshot,
+    store.getSnapshot,
+    (snapshot) => snapshot.config,
+    configsEqual,
   );
 
   const isBlockSelection = selection?.type === "block" && selection.blockIds.length > 0;
@@ -47,6 +57,7 @@ export function EditorSelectionRect(props: SelectionRectProps) {
 
     const computeRect = () => {
       if (!selection || selection.type !== "block") return;
+      const regionRect = resolveRegionRect(regionConfig);
 
       let minTop = Infinity;
       let maxBottom = -Infinity;
@@ -64,9 +75,29 @@ export function EditorSelectionRect(props: SelectionRectProps) {
       }
 
       if (minTop < Infinity) {
-        setRect(
-          new DOMRect(minLeft, minTop, maxRight - minLeft, maxBottom - minTop),
+        const boundedRect = intersectRegionSelectionRect(
+          {
+            left: minLeft,
+            top: minTop,
+            width: maxRight - minLeft,
+            height: maxBottom - minTop,
+          },
+          regionRect,
         );
+        if (!boundedRect) {
+          setRect(null);
+          return;
+        }
+        setRect(
+          new DOMRect(
+            boundedRect.left,
+            boundedRect.top,
+            boundedRect.width,
+            boundedRect.height,
+          ),
+        );
+      } else {
+        setRect(null);
       }
     };
 
@@ -74,7 +105,7 @@ export function EditorSelectionRect(props: SelectionRectProps) {
 
     rafRef.current = requestAnimationFrame(computeRect);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [selection, isBlockSelection, liveRect, rootElement]);
+  }, [selection, isBlockSelection, liveRect, regionConfig, rootElement]);
 
   if (!rect) {
     return announcement ? (
@@ -131,5 +162,20 @@ function rectsEqual(
     a.top === b.top &&
     a.width === b.width &&
     a.height === b.height
+  );
+}
+
+function configsEqual(
+  a: RegionSelectorConfig | null,
+  b: RegionSelectorConfig | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.enabled === b.enabled &&
+    a.threshold === b.threshold &&
+    a.selectionMode === b.selectionMode &&
+    a.activation === b.activation &&
+    a.getRegionRect === b.getRegionRect
   );
 }

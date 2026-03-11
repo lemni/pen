@@ -21,6 +21,7 @@ import {
 	getEditorBlockSelectionLength,
 	getEditorBlockSelectionRole,
 } from "../../utils/blockSelectionSemantics";
+import { normalizeSelectionFormation } from "../../utils/selectionFormation";
 import {
 	useDocumentEmptyState,
 	useDocumentPlaceholderState,
@@ -32,6 +33,8 @@ import {
 	DropPreviewProvider,
 } from "./dropPreviewContext";
 import {
+	intersectRegionSelectionRect,
+	resolveRegionRect,
 	useEditorRegionSelectionContext,
 	type RegionSelectionRect,
 	type RegionSelectorConfig,
@@ -290,6 +293,13 @@ export function EditorContent(props: EditorContentProps) {
 			if (fieldEditor.isComposing) return null;
 			if (fieldEditor.focusBlockId) return null;
 			if (fieldEditor.isEditing) return null;
+			const regionRect = resolveRegionRect(config);
+			if (
+				regionRect &&
+				!pointWithinRect(event.clientX, event.clientY, regionRect)
+			) {
+				return null;
+			}
 			if (shouldIgnorePointerGesture(event)) return null;
 			if (resolveClickedBlockId(event)) return null;
 			return config;
@@ -356,9 +366,20 @@ export function EditorContent(props: EditorContentProps) {
 				return;
 			}
 
+			const normalizedSelection = normalizeSelectionFormation(editor, {
+				anchor: anchorPoint,
+				focus: focusPoint,
+			});
+			if (normalizedSelection.type === "block") {
+				gestureEl.ownerDocument?.getSelection()?.removeAllRanges();
+				editor.selectBlocks(normalizedSelection.blockIds);
+				fieldEditor.deactivate();
+				return;
+			}
+
 			const selectedIds = getBlockIdRange(
-				anchorPoint.blockId,
-				focusPoint.blockId,
+				normalizedSelection.anchor.blockId,
+				normalizedSelection.focus.blockId,
 			);
 			if (!selectedIds) return;
 
@@ -368,8 +389,11 @@ export function EditorContent(props: EditorContentProps) {
 				return;
 			}
 
-			editor.selectTextRange(anchorPoint, focusPoint);
-			fieldEditor.activate(focusPoint.blockId);
+			editor.selectTextRange(
+				normalizedSelection.anchor,
+				normalizedSelection.focus,
+			);
+			fieldEditor.activate(normalizedSelection.focus.blockId);
 		};
 
 		const handleClick = (event: MouseEvent) => {
@@ -483,6 +507,14 @@ export function EditorContent(props: EditorContentProps) {
 			}
 		};
 
+		const handleRootMouseDown = (event: MouseEvent) => {
+			const target = event.target;
+			if (target instanceof Node && gestureEl.contains(target)) {
+				return;
+			}
+			handleMouseDown(event);
+		};
+
 		const handleMouseMove = (event: MouseEvent) => {
 			const gesture = regionGestureRef.current;
 			if (!gesture) return;
@@ -514,9 +546,13 @@ export function EditorContent(props: EditorContentProps) {
 				event.clientX,
 				event.clientY,
 			);
-			regionSelectionStore.setLiveRect(liveRect);
+			const boundedRect = intersectRegionSelectionRect(
+				liveRect,
+				resolveRegionRect(config),
+			);
+			regionSelectionStore.setLiveRect(boundedRect);
 
-			const selectedIds = getIntersectedBlockIds(liveRect);
+			const selectedIds = boundedRect ? getIntersectedBlockIds(boundedRect) : [];
 			if (selectedIds.length > 0) {
 				editor.selectBlocks(selectedIds);
 			} else {
@@ -539,7 +575,14 @@ export function EditorContent(props: EditorContentProps) {
 						event.clientX,
 						event.clientY,
 					);
-					const selectedIds = getIntersectedBlockIds(liveRect);
+					const config = regionSelectionStore.getSnapshot().config;
+					const boundedRect = intersectRegionSelectionRect(
+						liveRect,
+						resolveRegionRect(config),
+					);
+					const selectedIds = boundedRect
+						? getIntersectedBlockIds(boundedRect)
+						: [];
 					if (selectedIds.length > 0) {
 						editor.selectBlocks(selectedIds);
 						if (root) {
@@ -801,11 +844,13 @@ export function EditorContent(props: EditorContentProps) {
 		};
 
 		gestureEl.addEventListener("mousedown", handleMouseDown);
+		currentEditorRoot?.addEventListener("mousedown", handleRootMouseDown);
 		gestureEl.addEventListener("click", handleClick);
 		gestureEl.ownerDocument?.addEventListener("mousemove", handleMouseMove);
 		gestureEl.ownerDocument?.addEventListener("mouseup", handleMouseUp);
 		return () => {
 			gestureEl.removeEventListener("mousedown", handleMouseDown);
+			currentEditorRoot?.removeEventListener("mousedown", handleRootMouseDown);
 			gestureEl.removeEventListener("click", handleClick);
 			gestureEl.ownerDocument?.removeEventListener(
 				"mousemove",
@@ -908,5 +953,14 @@ function rectsIntersect(
 		selectionRect.left > blockRect.right ||
 		selectionBottom < blockRect.top ||
 		selectionRect.top > blockRect.bottom
+	);
+}
+
+function pointWithinRect(x: number, y: number, rect: DOMRect): boolean {
+	return (
+		x >= rect.left &&
+		x <= rect.right &&
+		y >= rect.top &&
+		y <= rect.bottom
 	);
 }

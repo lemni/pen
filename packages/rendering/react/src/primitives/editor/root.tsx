@@ -4,6 +4,7 @@ import {
 	generateId,
 	type AssetProvider,
 	type Editor,
+	type EditorViewMode,
 	usesInlineTextSelection,
 } from "@pen/core";
 import {
@@ -24,7 +25,7 @@ import {
 import { renderAsChild, type AsChildProps } from "../../utils/asChild";
 import { composeRefs } from "../../utils/composeRefs";
 import {
-	DEFAULT_SELECT_ALL_BEHAVIOR,
+	resolveSelectAllBehavior,
 	type EditorSelectAllBehavior,
 } from "../../constants/selectAll";
 import { DATA_ATTRS } from "../../utils/dataAttributes";
@@ -48,6 +49,7 @@ export interface EditorRootProps extends AsChildProps {
 	assets?: AssetProvider;
 	renderers?: RendererOverrides;
 	selectAllBehavior?: EditorSelectAllBehavior;
+	editorViewMode?: EditorViewMode;
 	ref?: React.Ref<HTMLElement>;
 }
 
@@ -58,10 +60,15 @@ export function EditorRoot(props: EditorRootProps) {
 		importers,
 		assets,
 		renderers,
-		selectAllBehavior = DEFAULT_SELECT_ALL_BEHAVIOR,
+		selectAllBehavior,
+		editorViewMode = editor.editorViewMode,
 		ref,
 		...rest
 	} = props;
+	const resolvedSelectAllBehavior = resolveSelectAllBehavior(
+		editor.documentProfile,
+		selectAllBehavior,
+	);
 	const [focused, setFocused] = useState(false);
 	const [rootElement, setRootElement] = useState<HTMLElement | null>(null);
 	const isEmpty = useDocumentEmptyState(editor);
@@ -72,7 +79,7 @@ export function EditorRoot(props: EditorRootProps) {
 
 	if (!fieldEditorRef.current) {
 		fieldEditorRef.current = new FieldEditorImpl(editor, {
-			selectAllBehavior,
+			selectAllBehavior: resolvedSelectAllBehavior,
 		});
 	}
 	if (!regionSelectionStoreRef.current) {
@@ -80,8 +87,8 @@ export function EditorRoot(props: EditorRootProps) {
 	}
 
 	useEffect(() => {
-		fieldEditorRef.current?.setSelectAllBehavior(selectAllBehavior);
-	}, [selectAllBehavior]);
+		fieldEditorRef.current?.setSelectAllBehavior(resolvedSelectAllBehavior);
+	}, [resolvedSelectAllBehavior]);
 
 	useEffect(() => {
 		const root = rootRef.current;
@@ -249,6 +256,8 @@ export function EditorRoot(props: EditorRootProps) {
 			value={{
 				editor,
 				readonly,
+				documentProfile: editor.documentProfile,
+				editorViewMode,
 				importers,
 				assets: resolvedAssets,
 				renderers,

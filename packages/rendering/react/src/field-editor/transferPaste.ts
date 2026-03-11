@@ -1,4 +1,13 @@
-import { blocksToOps, type DocumentOp, type Editor, type PendingBlock, type Position } from "@pen/core";
+import {
+	blocksToOps,
+	normalizePendingBlocksForImport,
+	reportPendingBlockImportViolations,
+	type DocumentOp,
+	type Editor,
+	type PendingBlock,
+	type Position,
+	resolveBlockFlowCapability,
+} from "@pen/core";
 import type { FieldEditorTransferController } from "./controller";
 import { decodePenBlocksFromHtml, type PenBlock } from "../utils/clipboardPayload";
 import { pasteBlocks, pasteInlineText } from "./transferBlocks";
@@ -16,6 +25,9 @@ import {
 	uploadImageFiles,
 } from "./transferImages";
 import { IMAGE_BLOCK_TYPE, type ExecuteTransferOptions, type UploadedImage } from "./transferTypes";
+import {
+	shouldAllowDirectBlockPaste,
+} from "../utils/flowCapabilities";
 
 export async function executePasteTransfer(
 	options: ExecuteTransferOptions,
@@ -24,6 +36,8 @@ export async function executePasteTransfer(
 	if (!fieldEditor) {
 		return false;
 	}
+
+	editor.undoManager.stopCapturing();
 
 	const cursorBefore =
 		options.cursorBefore ?? getTransferCursorContext(editor);
@@ -34,9 +48,23 @@ export async function executePasteTransfer(
 	if (penPayload) {
 		try {
 			const blocks = JSON.parse(penPayload) as PenBlock[];
-			if (Array.isArray(blocks) && blocks.length > 0) {
-				const { cursorAfter } = deleteSelectionForTransfer(editor, cursorBefore);
-				pasteBlocks(blocks, editor, fieldEditor, cursorAfter);
+			if (
+				Array.isArray(blocks) &&
+				blocks.length > 0 &&
+				blocks.every((block) =>
+					shouldAllowDirectBlockPaste(
+						editor.documentProfile,
+						resolveBlockFlowCapability(editor.schema, block.type),
+					),
+				)
+			) {
+				const { cursorAfter } = deleteSelectionForTransfer(
+					editor,
+					cursorBefore,
+				);
+				pasteBlocks(blocks, editor, fieldEditor, cursorAfter, {
+					undoGroup: false,
+				});
 				return true;
 			}
 		} catch {
@@ -50,9 +78,23 @@ export async function executePasteTransfer(
 		if (penMatch) {
 			try {
 				const blocks = decodePenBlocksFromHtml(penMatch[1]);
-				if (Array.isArray(blocks) && blocks.length > 0) {
-					const { cursorAfter } = deleteSelectionForTransfer(editor, cursorBefore);
-					pasteBlocks(blocks, editor, fieldEditor, cursorAfter);
+				if (
+					Array.isArray(blocks) &&
+					blocks.length > 0 &&
+					blocks.every((block) =>
+						shouldAllowDirectBlockPaste(
+							editor.documentProfile,
+							resolveBlockFlowCapability(editor.schema, block.type),
+						),
+					)
+				) {
+					const { cursorAfter } = deleteSelectionForTransfer(
+						editor,
+						cursorBefore,
+					);
+					pasteBlocks(blocks, editor, fieldEditor, cursorAfter, {
+						undoGroup: false,
+					});
 					return true;
 				}
 			} catch {
@@ -61,21 +103,28 @@ export async function executePasteTransfer(
 		}
 
 		if (importers?.html) {
-			const { position, emptyBlockToRemove } = deleteSelectionForTransfer(editor, cursorBefore);
 			const handled = await applyParsedImporterPaste({
 				editor,
 				fieldEditor,
 				importer: importers.html,
 				input: html,
-				position,
-				emptyBlockToRemove,
+				cursorBefore,
+				surface: "paste-html:parse",
+				undoGroup: false,
 			});
 			if (handled) {
 				return true;
 			}
 
+			const {
+				position,
+				emptyBlockToRemove,
+			} = deleteSelectionForTransfer(editor, cursorBefore);
 			const blockCountBefore = editor.documentState.blockOrder.length;
-			importers.html.import(html, editor, { position });
+			importers.html.import(html, editor, {
+				position,
+				undoGroup: false,
+			});
 			const removed = removeLegacyEmptyPlaceholderIfNeeded({
 				editor,
 				fieldEditor,
@@ -113,25 +162,29 @@ export async function executePasteTransfer(
 
 	const text = dataTransfer.getData("text/plain");
 	if (text) {
-		const { cursorAfter, position, emptyBlockToRemove } = deleteSelectionForTransfer(
-			editor,
-			cursorBefore,
-		);
 		if (importers?.markdown) {
 			const handled = await applyParsedImporterPaste({
 				editor,
 				fieldEditor,
 				importer: importers.markdown,
 				input: text,
-				position,
-				emptyBlockToRemove,
+				cursorBefore,
+				surface: "paste-markdown:parse",
+				undoGroup: false,
 			});
 			if (handled) {
 				return true;
 			}
 
+			const {
+				position,
+				emptyBlockToRemove,
+			} = deleteSelectionForTransfer(editor, cursorBefore);
 			const blockCountBefore = editor.documentState.blockOrder.length;
-			importers.markdown.import(text, editor, { position });
+			importers.markdown.import(text, editor, {
+				position,
+				undoGroup: false,
+			});
 			const removed = removeLegacyEmptyPlaceholderIfNeeded({
 				editor,
 				fieldEditor,
@@ -143,7 +196,10 @@ export async function executePasteTransfer(
 			}
 			return true;
 		}
-		pasteInlineText(editor, fieldEditor, text, cursorAfter);
+		const { cursorAfter } = deleteSelectionForTransfer(editor, cursorBefore);
+		pasteInlineText(editor, fieldEditor, text, cursorAfter, {
+			undoGroup: false,
+		});
 		return true;
 	}
 
@@ -161,8 +217,13 @@ function executePasteImageTransfer(options: {
 		return true;
 	}
 
-	const { position } = deleteSelectionForTransfer(editor, cursorBefore);
-	insertUploadedImages(editor, uploaded, position ?? "last");
+	const { position } = deleteSelectionForTransfer(
+		editor,
+		cursorBefore,
+	);
+	insertUploadedImages(editor, uploaded, position ?? "last", {
+		undoGroup: false,
+	});
 	return true;
 }
 
@@ -187,10 +248,19 @@ async function applyParsedImporterPaste(options: {
 		parse?: (input: string, editor: Editor) => PendingBlock[] | Promise<PendingBlock[]>;
 	};
 	input: string;
-	position: Position | undefined;
-	emptyBlockToRemove?: string;
+	cursorBefore: ReturnType<typeof getTransferCursorContext>;
+	surface: string;
+	undoGroup: boolean;
 }): Promise<boolean> {
-	const { editor, fieldEditor, importer, input, position, emptyBlockToRemove } = options;
+	const {
+		editor,
+		fieldEditor,
+		importer,
+		input,
+		cursorBefore,
+		surface,
+		undoGroup,
+	} = options;
 	if (!importer.parse) {
 		return false;
 	}
@@ -200,15 +270,32 @@ async function applyParsedImporterPaste(options: {
 		return false;
 	}
 
-	const ops = blocksToOps(blocks, { position });
+	const normalized = normalizePendingBlocksForImport(
+		blocks,
+		editor.documentProfile,
+		editor.schema,
+	);
+	reportPendingBlockImportViolations(editor, normalized.violations, surface);
+	if (normalized.blocks.length === 0) {
+		return true;
+	}
+
+	const {
+		position,
+		emptyBlockToRemove,
+	} = deleteSelectionForTransfer(editor, cursorBefore);
+	const ops = blocksToOps(normalized.blocks, { position });
 	if (emptyBlockToRemove) {
 		ops.push({ type: "delete-block", blockId: emptyBlockToRemove });
 	}
 
 	const lastInsertedBlockId = getLastTopLevelInsertedBlockId(ops);
-	const lastBlock = blocks[blocks.length - 1];
+	const lastBlock = normalized.blocks[normalized.blocks.length - 1];
 
-	editor.apply(ops, { origin: "user", undoGroup: true });
+	editor.apply(ops, {
+		origin: "user",
+		...(undoGroup ? { undoGroup: true } : {}),
+	});
 	restoreCursorAfterParsedPaste(editor, fieldEditor, lastInsertedBlockId, lastBlock);
 	return true;
 }

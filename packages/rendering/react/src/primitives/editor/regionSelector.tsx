@@ -12,6 +12,7 @@ export interface RegionSelectorProps {
 	threshold?: number;
 	selectionMode?: RegionSelectorSelectionMode;
 	activation?: RegionSelectorActivation;
+	getRegionRect?: () => DOMRect | null;
 }
 
 export function EditorRegionSelector(props: RegionSelectorProps) {
@@ -20,6 +21,7 @@ export function EditorRegionSelector(props: RegionSelectorProps) {
 		threshold = DEFAULT_THRESHOLD,
 		selectionMode = "block",
 		activation = "whenInactive",
+		getRegionRect,
 	} = props;
 	const { store } = useEditorRegionSelectionContext();
 
@@ -36,13 +38,14 @@ export function EditorRegionSelector(props: RegionSelectorProps) {
 			threshold,
 			selectionMode,
 			activation,
+			getRegionRect,
 		});
 
 		return () => {
 			store.setConfig(null);
 			store.clearLiveRect();
 		};
-	}, [activation, enabled, selectionMode, store, threshold]);
+	}, [activation, enabled, getRegionRect, selectionMode, store, threshold]);
 
 	return null;
 }

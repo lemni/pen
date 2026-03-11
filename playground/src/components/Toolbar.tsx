@@ -48,7 +48,7 @@ export function Toolbar({ editor, linkToggleRef }: ToolbarProps) {
 	};
 
 	return (
-		<header className="toolbar">
+		<header className="toolbar" data-pen-ignore-pointer-gesture="">
 			<div className="toolbar-left">
 				<h4 className="toolbar-title">Pen</h4>
 			</div>

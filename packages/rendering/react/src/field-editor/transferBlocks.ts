@@ -14,6 +14,7 @@ export function pasteBlocks(
 	editor: Editor,
 	fieldEditor: FieldEditorTransferController,
 	cursor: TransferCursorContext | null,
+	options?: { undoGroup?: boolean },
 ): void {
 	const valid = blocks.filter(
 		(block) =>
@@ -37,11 +38,11 @@ export function pasteBlocks(
 	if (singleIsPartialInline && cursor?.isInline) {
 		const deltas = getPenBlockInlineDeltas(single);
 		if (deltas.length > 0) {
-			pasteInlineFragment(editor, fieldEditor, deltas, cursor);
+			pasteInlineFragment(editor, fieldEditor, deltas, cursor, options);
 			return;
 		}
 		if (typeof single.content === "string") {
-			pasteInlineText(editor, fieldEditor, single.content, cursor);
+			pasteInlineText(editor, fieldEditor, single.content, cursor, options);
 		}
 		return;
 	}
@@ -111,7 +112,10 @@ export function pasteBlocks(
 	}
 
 	if (ops.length > 0) {
-		editor.apply(ops, { origin: "user", undoGroup: true });
+		editor.apply(ops, {
+			origin: "user",
+			...(options?.undoGroup === false ? {} : { undoGroup: true }),
+		});
 	}
 
 	if (lastBlockId && lastIsInline) {
@@ -128,6 +132,7 @@ export function pasteInlineText(
 	fieldEditor: FieldEditorTransferController,
 	text: string,
 	cursor: TransferCursorContext | null,
+	options?: { undoGroup?: boolean },
 ): void {
 	if (!cursor?.isInline) return;
 
@@ -138,7 +143,10 @@ export function pasteInlineText(
 		const insertedText = lines[0];
 		editor.apply(
 			[{ type: "insert-text", blockId, offset, text: insertedText }],
-			{ origin: "user", undoGroup: true },
+			{
+				origin: "user",
+				...(options?.undoGroup === false ? {} : { undoGroup: true }),
+			},
 		);
 		fieldEditor.activateTextSelection(
 			blockId,
@@ -205,7 +213,10 @@ export function pasteInlineText(
 	}
 
 	if (ops.length > 0) {
-		editor.apply(ops, { origin: "user", undoGroup: true });
+		editor.apply(ops, {
+			origin: "user",
+			...(options?.undoGroup === false ? {} : { undoGroup: true }),
+		});
 		fieldEditor.activateTextSelection(
 			lastInsertedId,
 			lastInsertedTextLength,
@@ -219,13 +230,14 @@ function pasteInlineFragment(
 	fieldEditor: FieldEditorTransferController,
 	deltas: Delta[],
 	cursor: TransferCursorContext | null,
+	options?: { undoGroup?: boolean },
 ): void {
 	if (!cursor?.isInline) return;
 
 	const plainText = deltasToPlainText(deltas);
 	if (!plainText) return;
 	if (plainText.includes("\n") || !hasAttributedDeltas(deltas)) {
-		pasteInlineText(editor, fieldEditor, plainText, cursor);
+		pasteInlineText(editor, fieldEditor, plainText, cursor, options);
 		return;
 	}
 
@@ -244,7 +256,10 @@ function pasteInlineFragment(
 	}
 
 	if (ops.length === 0) return;
-	editor.apply(ops, { origin: "user", undoGroup: true });
+	editor.apply(ops, {
+		origin: "user",
+		...(options?.undoGroup === false ? {} : { undoGroup: true }),
+	});
 	fieldEditor.activateTextSelection(cursor.blockId, offset, offset);
 }
 

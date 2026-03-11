@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createEditor } from "../index";
+import {
+	createEditor,
+	normalizePendingBlocksForImport,
+	reportPendingBlockImportViolations,
+} from "../index";
 import { blocksToOps } from "../importerUtils";
 import type { PendingBlock } from "../importerUtils";
 
@@ -309,6 +313,67 @@ describe("blocksToOps table materialization", () => {
 		expect(imported.tableRowCount()).toBe(2);
 		expect(imported.tableColumnCount()).toBe(3);
 		expect(imported.tableCell(1, 2)?.textContent()).toBe("B3");
+
+		editor.destroy();
+	});
+
+	it("drops schema-unknown imported blocks before converting them to ops", () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const normalized = normalizePendingBlocksForImport(
+			[
+				{ type: "customWidget", props: {}, content: "Ignored" },
+				{ type: "heading", props: { level: 2 }, content: "Allowed" },
+			],
+			editor.documentProfile,
+			editor.schema,
+		);
+
+		expect(normalized.blocks.map((block) => block.type)).toEqual(["heading"]);
+		expect(normalized.violations).toContainEqual(
+			expect.objectContaining({
+				blockType: "customWidget",
+				reason: "unknown-block-type",
+			}),
+		);
+
+		editor.destroy();
+	});
+
+	it("emits a diagnostic when import normalization drops unknown block types", () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const diagnostics: unknown[] = [];
+
+		editor.on("diagnostic", (event) => {
+			diagnostics.push(event);
+		});
+
+		reportPendingBlockImportViolations(
+			editor,
+			[
+				{
+					blockType: "customWidget",
+					documentProfile: editor.documentProfile,
+					capability: null,
+					reason: "unknown-block-type",
+				},
+			],
+			"import-test:parse",
+		);
+
+		expect(diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "PEN_IMPORT_001",
+				level: "warn",
+				source: "import-normalization",
+				surface: "import-test:parse",
+				documentProfile: "structured",
+				droppedBlockTypes: ["customWidget"],
+			}),
+		);
 
 		editor.destroy();
 	});

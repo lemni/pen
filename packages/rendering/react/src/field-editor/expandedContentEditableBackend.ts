@@ -7,6 +7,7 @@ import { handlePaste, handleCopy, handleCut } from "./clipboard";
 import type { PasteImporters } from "../context/editorContext";
 import type { FieldEditorInputController } from "./controller";
 import { applyEnterBehavior, toggleInlineMark } from "./commands";
+import { normalizeSelectionFormation } from "../utils/selectionFormation";
 import {
 	handleEditorKeyBindings,
 	handleSelectAllShortcut,
@@ -106,26 +107,47 @@ export class ExpandedContentEditableBackend {
 
 		const selection = domSelectionToEditor(this.element);
 		if (!selection) return;
+		const normalizedSelection = normalizeSelectionFormation(
+			this.editor,
+			selection,
+		);
 
-		if (selection.anchor.blockId === selection.focus.blockId) {
-			if (selection.anchor.blockId === this.fieldEditor.focusBlockId) {
+		if (normalizedSelection.type === "block") {
+			this.fieldEditor.deactivate();
+			this.editor.setSelection({
+				type: "block",
+				blockIds: normalizedSelection.blockIds,
+			});
+			return;
+		}
+
+		if (
+			normalizedSelection.anchor.blockId ===
+			normalizedSelection.focus.blockId
+		) {
+			if (
+				normalizedSelection.anchor.blockId === this.fieldEditor.focusBlockId
+			) {
 				this.fieldEditor.syncTextSelection(
-					selection.anchor.blockId,
-					selection.anchor.offset,
-					selection.focus.offset,
+					normalizedSelection.anchor.blockId,
+					normalizedSelection.anchor.offset,
+					normalizedSelection.focus.offset,
 				);
 				return;
 			}
 
 			this.fieldEditor.activateTextSelection(
-				selection.anchor.blockId,
-				selection.anchor.offset,
-				selection.focus.offset,
+				normalizedSelection.anchor.blockId,
+				normalizedSelection.anchor.offset,
+				normalizedSelection.focus.offset,
 			);
 			return;
 		}
 
-		this.editor.selectTextRange(selection.anchor, selection.focus);
+		this.editor.selectTextRange(
+			normalizedSelection.anchor,
+			normalizedSelection.focus,
+		);
 	};
 
 	private handleBeforeInput = (event: InputEvent): void => {

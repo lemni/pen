@@ -13,7 +13,7 @@ import {
 	getAdjacentVisibleBlockId,
 	isInsideParentIdContainer,
 } from "../utils/parentIdTree";
-import { isInlineEditableBlock } from "../utils/blockSelectionSemantics";
+import { getEditorFlowCapability, isContinuousTextFlowCapability } from "../utils/flowCapabilities";
 
 const ZERO_WIDTH_SPACE = "\u200B";
 
@@ -83,7 +83,12 @@ function getAdjacentEditableBlock(
 	let adjacentBlockId = getAdjacentVisibleBlockId(editor, blockId, direction);
 	while (adjacentBlockId) {
 		const adjacentBlock = editor.getBlock(adjacentBlockId);
-		if (adjacentBlock && isInlineEditableBlock(editor, adjacentBlock.id)) {
+		if (
+			adjacentBlock &&
+			isContinuousTextFlowCapability(
+				getEditorFlowCapability(editor, adjacentBlock.id),
+			)
+		) {
 			return adjacentBlock;
 		}
 		adjacentBlockId = getAdjacentVisibleBlockId(
@@ -170,7 +175,11 @@ export function moveCaretAcrossBlocks(
 	const immediateId = getAdjacentVisibleBlockId(editor, blockId, direction);
 	if (!immediateId) return null;
 
-	if (!isInlineEditableBlock(editor, immediateId)) {
+	if (
+		!isContinuousTextFlowCapability(
+			getEditorFlowCapability(editor, immediateId),
+		)
+	) {
 		return {
 			blockId: immediateId,
 			anchorOffset: 0,
@@ -259,7 +268,11 @@ export function resolveBackspaceAction(
 	const range = normalizeInlineRange(ytext, options.range);
 	if (!isCollapsedRange(range)) return null;
 	if ((range?.start ?? 0) !== 0) return null;
-	if (!isInlineEditableBlock(editor, blockId)) return null;
+	if (
+		!isContinuousTextFlowCapability(getEditorFlowCapability(editor, blockId))
+	) {
+		return null;
+	}
 
 	const block = editor.getBlock(blockId);
 	if (!block) return null;
@@ -280,7 +293,12 @@ export function resolveBackspaceAction(
 	}
 
 	const immediateBlockId = getAdjacentVisibleBlockId(editor, blockId, "previous");
-	if (immediateBlockId && !isInlineEditableBlock(editor, immediateBlockId)) {
+	if (
+		immediateBlockId &&
+		!isContinuousTextFlowCapability(
+			getEditorFlowCapability(editor, immediateBlockId),
+		)
+	) {
 		return {
 			action: "select-block",
 			targetBlockId: immediateBlockId,

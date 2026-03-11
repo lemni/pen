@@ -8,6 +8,8 @@ export const markdownExporter: Exporter<string> = {
   fileExtension: ".md",
 
   export(editor: Editor, _options?: ExportOptions): string {
+    // Export is a document-preservation surface: serialize the actual document
+    // graph, including nested and non-default-authoring blocks that already exist.
     const lines: string[] = [];
     for (const handle of editor.documentState.allBlocks()) {
 

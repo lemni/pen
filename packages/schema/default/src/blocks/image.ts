@@ -9,6 +9,10 @@ export const image = defineBlock("image", {
   },
   content: "none",
   fieldEditor: "none",
+  authoring: {
+    flowCapability: "flow-structural",
+    selectionRole: "structural",
+  },
   display: {
     title: "Image",
     description: "Embedded image",

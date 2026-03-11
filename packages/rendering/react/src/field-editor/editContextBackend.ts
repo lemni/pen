@@ -12,6 +12,7 @@ import {
 	editorSelectionToDOM,
 	getDirectionalSelectionOffsets,
 } from "./selectionBridge";
+import { normalizeSelectionFormation } from "../utils/selectionFormation";
 import { handleFieldEditorKeyDown } from "./keyHandling";
 import { isHistoryTransactionOrigin } from "./historyOrigin";
 import { handleCopy, handleCut, handleClipboardPaste } from "./clipboard";
@@ -454,20 +455,37 @@ export class EditContextBackend implements InputBackend {
 
 		const mappedSelection = domSelectionToEditor(root);
 		if (!mappedSelection) return;
+		const normalizedSelection = normalizeSelectionFormation(
+			this.editor,
+			mappedSelection,
+		);
 
-		if (mappedSelection.anchor.blockId !== mappedSelection.focus.blockId) {
+		if (normalizedSelection.type === "block") {
+			this.fieldEditor.deactivate();
+			this.editor.setSelection({
+				type: "block",
+				blockIds: normalizedSelection.blockIds,
+			});
+			return;
+		}
+
+		if (
+			normalizedSelection.anchor.blockId !== normalizedSelection.focus.blockId
+		) {
 			this.editor.selectTextRange(
-				mappedSelection.anchor,
-				mappedSelection.focus,
+				normalizedSelection.anchor,
+				normalizedSelection.focus,
 			);
 			return;
 		}
 
-		if (mappedSelection.anchor.blockId !== this.fieldEditor.focusBlockId) {
+		if (
+			normalizedSelection.anchor.blockId !== this.fieldEditor.focusBlockId
+		) {
 			this.fieldEditor.activateTextSelection(
-				mappedSelection.anchor.blockId,
-				mappedSelection.anchor.offset,
-				mappedSelection.focus.offset,
+				normalizedSelection.anchor.blockId,
+				normalizedSelection.anchor.offset,
+				normalizedSelection.focus.offset,
 			);
 			return;
 		}
@@ -482,7 +500,7 @@ export class EditContextBackend implements InputBackend {
 
 		this.editContext.updateSelection(offsets.start, offsets.end);
 		this.fieldEditor.syncTextSelection(
-			mappedSelection.anchor.blockId,
+			normalizedSelection.anchor.blockId,
 			offsets.anchor,
 			offsets.focus,
 		);

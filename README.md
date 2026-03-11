@@ -111,6 +111,36 @@ function App() {
 }
 ```
 
+Constrain marquee block selection to a custom surface:
+
+```tsx
+import { createEditor } from '@pen/core'
+import * as Pen from '@pen/react'
+import { useRef } from 'react'
+
+const editor = createEditor()
+
+function App() {
+  const surfaceRef = useRef<HTMLDivElement | null>(null)
+
+  const getSelectionRegion = () => {
+    return surfaceRef.current?.getBoundingClientRect() ?? null
+  }
+
+  return (
+    <div ref={surfaceRef}>
+      <Pen.Editor.Root editor={editor}>
+        <Pen.Editor.Content />
+        <Pen.Editor.RegionSelector getRegionRect={getSelectionRegion} />
+        <Pen.Editor.SelectionRect />
+      </Pen.Editor.Root>
+    </div>
+  )
+}
+```
+
+Use `getRegionRect` when the selection marquee should stay inside a larger app surface, such as a page body beneath a topbar, instead of defaulting to the editor content column.
+
 Enable markdown-style autoformat as an extension:
 
 ```tsx
@@ -258,6 +288,19 @@ Three layers: **Schema** (data), **Headless** (behavior), **Rendering** (UI). Ea
 │  └──────────────────────────────────────────────────────┘ │
 └───────────────────────────────────────────────────────────┘
 ```
+
+### Authoring vs Serialization
+
+Pen intentionally separates authoring policy from document serialization.
+
+- Authoring surfaces are profile-aware. Slash menus, default toolbar block pickers, tool/AI writes, and paste/import normalization respect the active `documentProfile` and may hide or reject certain block types in flow documents.
+- Serialization surfaces are preservation-oriented. Exporters serialize the document graph that already exists, including seeded structured blocks, nested content, and hidden/system blocks, instead of silently dropping them because they are not default insertion targets.
+
+In practice:
+
+- Use `shouldShowBlockInDefaultMenus()` and `shouldExposeBlockInTooling()` when deciding what users or tools may insert.
+- Use import normalization and `ImportResult` when shaping incoming content to the active authoring surface.
+- Do not use authoring visibility helpers to decide what an exporter should preserve.
 
 ## Packages
 

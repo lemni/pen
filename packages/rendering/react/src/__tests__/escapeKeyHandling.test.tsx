@@ -518,8 +518,9 @@ describe("@pen/react escape key handling", () => {
 		editor.destroy();
 	});
 
-	it("maps cmd+a from block selection directly to full-document selection by default", async () => {
+	it("maps cmd+a from block selection directly to full-document selection in flow documents", async () => {
 		const editor = createEditor({
+			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
@@ -608,8 +609,9 @@ describe("@pen/react escape key handling", () => {
 		editor.destroy();
 	});
 
-	it("maps cmd+a from an empty block directly to full-document selection", async () => {
+	it("maps cmd+a from an empty block directly to full-document selection in flow documents", async () => {
 		const editor = createEditor({
+			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
@@ -688,8 +690,87 @@ describe("@pen/react escape key handling", () => {
 		editor.destroy();
 	});
 
-	it("preserves block-first cmd+a when explicitly configured", async () => {
+	it("uses block-first cmd+a by default for structured documents", async () => {
 		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const firstBlockId = editor.firstBlock()!.id;
+		const secondBlockId = crypto.randomUUID();
+
+		editor.apply([
+			{
+				type: "insert-text",
+				blockId: firstBlockId,
+				offset: 0,
+				text: "First",
+			},
+			{
+				type: "insert-block",
+				blockId: secondBlockId,
+				blockType: "paragraph",
+				props: {},
+				position: { after: firstBlockId },
+			},
+			{
+				type: "insert-text",
+				blockId: secondBlockId,
+				offset: 0,
+				text: "Second",
+			},
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const fieldEditor = getFieldEditor(editor);
+		await act(async () => {
+			fieldEditor.activateTextSelection(firstBlockId, 0, 5);
+			await flushAnimationFrames(2);
+		});
+
+		await act(async () => {
+			document.dispatchEvent(createSelectAllEvent());
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toMatchObject({
+			type: "text",
+			anchor: { blockId: firstBlockId, offset: 0 },
+			focus: { blockId: firstBlockId, offset: 5 },
+			isMultiBlock: false,
+		});
+
+		await act(async () => {
+			document.dispatchEvent(createSelectAllEvent());
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toMatchObject({
+			type: "text",
+			anchor: { blockId: firstBlockId, offset: 0 },
+			focus: { blockId: secondBlockId, offset: 6 },
+			isMultiBlock: true,
+		});
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("preserves block-first cmd+a when explicitly configured for flow documents", async () => {
+		const editor = createEditor({
+			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
@@ -863,6 +944,7 @@ describe("@pen/react escape key handling", () => {
 
 	it("handles Escape from the active expanded host after cmd+a", async () => {
 		const editor = createEditor({
+			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
@@ -1035,7 +1117,7 @@ describe("@pen/react escape key handling", () => {
 		});
 
 		await act(async () => {
-			document.dispatchEvent(createEscapeEvent());
+			rootElement?.dispatchEvent(createEscapeEvent());
 			await flushAnimationFrames(2);
 		});
 

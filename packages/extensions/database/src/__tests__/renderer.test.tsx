@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { createEditor } from "@pen/core";
 import type { DatabaseViewState, TableColumnSchema } from "@pen/core";
-import { Pen, getAttachedFieldEditor } from "@pen/react";
+import { Pen, getAttachedFieldEditor, handleCopy } from "@pen/react";
 import { DatabaseRenderer } from "../renderer";
 import { ColumnMenu } from "../rendererPanels";
 import { useDatabaseController } from "../useDatabaseController";
@@ -46,6 +46,21 @@ function createKeyEvent(
 		cancelable: true,
 		...options,
 	});
+}
+
+function createClipboardData(): DataTransfer {
+	const data = new Map<string, string>();
+
+	return {
+		files: [] as unknown as FileList,
+		types: [],
+		getData(type: string) {
+			return data.get(type) ?? "";
+		},
+		setData(type: string, value: string) {
+			data.set(type, value);
+		},
+	} as unknown as DataTransfer;
 }
 
 async function flushAnimationFrames(count = 1): Promise<void> {
@@ -89,6 +104,29 @@ async function unmountDatabase(
 	});
 	container.remove();
 	editor.destroy();
+}
+
+function createFlowEditorFromSeededDocument(
+	seed: (editor: ReturnType<typeof createEditor>) => void,
+): ReturnType<typeof createEditor> {
+	const bootstrapEditor = createEditor({
+		without: ["document-ops", "delta-stream", "undo"],
+	});
+	const document = bootstrapEditor.internals.adapter.createDocument();
+	bootstrapEditor.destroy();
+
+	const seedEditor = createEditor({
+		document,
+		without: ["document-ops", "delta-stream", "undo"],
+	});
+	seed(seedEditor);
+	seedEditor.internals.adapter.setDocumentProfile?.(document, "flow");
+	seedEditor.destroy();
+
+	return createEditor({
+		document,
+		without: ["document-ops", "delta-stream", "undo"],
+	});
 }
 
 function seedDatabase(
@@ -149,15 +187,12 @@ describe("@pen/database renderer", () => {
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 
-		editor.apply([
-			{
-				type: "insert-block",
-				blockId: "db1",
-				blockType: "database",
-				props: {},
-				position: "last",
-			},
-		]);
+		seedDatabase(
+			editor,
+			"db1",
+			[{ id: "name", title: "Name", type: "text", width: 140 }],
+			[["Alpha"]],
+		);
 
 		const container = document.createElement("div");
 		document.body.appendChild(container);
@@ -175,7 +210,7 @@ describe("@pen/database renderer", () => {
 		});
 
 		const firstCell = container.querySelector(
-			`[data-block-id="db1"] [data-pen-table-cell][data-cell-row="0"][data-cell-col="0"]`,
+			`[data-block-id="db1"] tbody [data-pen-table-cell][data-cell-row="0"][data-cell-col="0"]`,
 		) as HTMLElement | null;
 		expect(firstCell).not.toBeNull();
 
@@ -746,34 +781,32 @@ describe("@pen/database renderer", () => {
 		await unmountDatabase(root, container, editor);
 	});
 
-	it("maps cmd+a from a selected database directly to full-document selection by default", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+	it("keeps cmd+a block-scoped for selected databases in flow documents", async () => {
 		const paragraphId = crypto.randomUUID();
-
-		editor.apply([
-			{
-				type: "insert-block",
-				blockId: "db2",
-				blockType: "database",
-				props: {},
-				position: "last",
-			},
-			{
-				type: "insert-block",
-				blockId: paragraphId,
-				blockType: "paragraph",
-				props: {},
-				position: "last",
-			},
-			{
-				type: "insert-text",
-				blockId: paragraphId,
-				offset: 0,
-				text: "After",
-			},
-		]);
+		const editor = createFlowEditorFromSeededDocument((seedEditor) => {
+			seedEditor.apply([
+				{
+					type: "insert-block",
+					blockId: "db2",
+					blockType: "database",
+					props: {},
+					position: "last",
+				},
+				{
+					type: "insert-block",
+					blockId: paragraphId,
+					blockType: "paragraph",
+					props: {},
+					position: "last",
+				},
+				{
+					type: "insert-text",
+					blockId: paragraphId,
+					offset: 0,
+					text: "After",
+				},
+			]);
+		});
 
 		const container = document.createElement("div");
 		document.body.appendChild(container);
@@ -805,25 +838,412 @@ describe("@pen/database renderer", () => {
 			await flushAnimationFrames(2);
 		});
 
-		expect(editor.selection).toMatchObject({
-			type: "text",
-			isMultiBlock: true,
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["db2"],
 		});
-		expect(
-			editor.selection?.type === "text" ? editor.selection.blockRange : [],
-		).toEqual(expect.arrayContaining(["db2", paragraphId]));
-		expect(
-			[
-				JSON.stringify(editor.selection?.type === "text" ? editor.selection.anchor : null),
-				JSON.stringify(editor.selection?.type === "text" ? editor.selection.focus : null),
-			],
-		).toContain(JSON.stringify({ blockId: paragraphId, offset: 5 }));
 
 		await act(async () => {
 			root.unmount();
 		});
 		container.remove();
 		editor.destroy();
+	});
+
+	it("falls back to block selection when dragging from a database into text in flow documents", async () => {
+		const paragraphId = crypto.randomUUID();
+		const editor = createFlowEditorFromSeededDocument((seedEditor) => {
+			seedEditor.apply([
+				{
+					type: "insert-block",
+					blockId: "db-drag-flow",
+					blockType: "database",
+					props: {},
+					position: "last",
+				},
+				{
+					type: "insert-block",
+					blockId: paragraphId,
+					blockType: "paragraph",
+					props: {},
+					position: "last",
+				},
+				{
+					type: "insert-text",
+					blockId: paragraphId,
+					offset: 0,
+					text: "After",
+				},
+			]);
+		});
+
+		const { container, root } = await renderDatabase(editor);
+		const databaseBlock = container.querySelector(
+			`[data-block-id="db-drag-flow"]`,
+		) as HTMLElement | null;
+		const paragraphInline = container.querySelector(
+			`[data-block-id="${paragraphId}"] [data-pen-inline-content]`,
+		) as HTMLElement | null;
+
+		expect(databaseBlock).not.toBeNull();
+		expect(paragraphInline).not.toBeNull();
+
+		const docWithCaretRange = document as Document & {
+			caretRangeFromPoint?: (x: number, y: number) => Range | null;
+		};
+		const originalCaretRangeFromPoint = docWithCaretRange.caretRangeFromPoint;
+		docWithCaretRange.caretRangeFromPoint = () => {
+			const range = document.createRange();
+			range.setStart(paragraphInline!.firstChild ?? paragraphInline!, 2);
+			range.setEnd(paragraphInline!.firstChild ?? paragraphInline!, 2);
+			return range;
+		};
+
+		await act(async () => {
+			databaseBlock?.dispatchEvent(
+				createMouseEvent("mousedown", {
+					detail: 1,
+					clientX: 10,
+					clientY: 10,
+				}),
+			);
+			paragraphInline?.dispatchEvent(
+				createMouseEvent("mouseup", {
+					detail: 1,
+					clientX: 60,
+					clientY: 40,
+				}),
+			);
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["db-drag-flow", paragraphId],
+		});
+
+		docWithCaretRange.caretRangeFromPoint = originalCaretRangeFromPoint;
+
+		await unmountDatabase(root, container, editor);
+	});
+
+	it("falls back to block selection when dragging from a database into text in structured documents", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const paragraphId = crypto.randomUUID();
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "db-drag-structured",
+				blockType: "database",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const { container, root } = await renderDatabase(editor);
+		const databaseBlock = container.querySelector(
+			`[data-block-id="db-drag-structured"]`,
+		) as HTMLElement | null;
+		const paragraphInline = container.querySelector(
+			`[data-block-id="${paragraphId}"] [data-pen-inline-content]`,
+		) as HTMLElement | null;
+
+		expect(databaseBlock).not.toBeNull();
+		expect(paragraphInline).not.toBeNull();
+
+		const docWithCaretRange = document as Document & {
+			caretRangeFromPoint?: (x: number, y: number) => Range | null;
+		};
+		const originalCaretRangeFromPoint = docWithCaretRange.caretRangeFromPoint;
+		docWithCaretRange.caretRangeFromPoint = () => {
+			const range = document.createRange();
+			range.setStart(paragraphInline!.firstChild ?? paragraphInline!, 2);
+			range.setEnd(paragraphInline!.firstChild ?? paragraphInline!, 2);
+			return range;
+		};
+
+		await act(async () => {
+			databaseBlock?.dispatchEvent(
+				createMouseEvent("mousedown", {
+					detail: 1,
+					clientX: 10,
+					clientY: 10,
+				}),
+			);
+			paragraphInline?.dispatchEvent(
+				createMouseEvent("mouseup", {
+					detail: 1,
+					clientX: 60,
+					clientY: 40,
+				}),
+			);
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["db-drag-structured", paragraphId],
+		});
+
+		docWithCaretRange.caretRangeFromPoint = originalCaretRangeFromPoint;
+
+		await unmountDatabase(root, container, editor);
+	});
+
+	it("falls back to block selection when shift-clicking from a database into text in flow documents", async () => {
+		const paragraphId = crypto.randomUUID();
+		const editor = createFlowEditorFromSeededDocument((seedEditor) => {
+			seedEditor.apply([
+				{
+					type: "insert-block",
+					blockId: "db-shift-flow",
+					blockType: "database",
+					props: {},
+					position: "last",
+				},
+				{
+					type: "insert-block",
+					blockId: paragraphId,
+					blockType: "paragraph",
+					props: {},
+					position: "last",
+				},
+				{
+					type: "insert-text",
+					blockId: paragraphId,
+					offset: 0,
+					text: "After",
+				},
+			]);
+		});
+
+		const { container, root } = await renderDatabase(editor);
+		const databaseBlock = container.querySelector(
+			`[data-block-id="db-shift-flow"]`,
+		) as HTMLElement | null;
+		const paragraphInline = container.querySelector(
+			`[data-block-id="${paragraphId}"] [data-pen-inline-content]`,
+		) as HTMLElement | null;
+		expect(databaseBlock).not.toBeNull();
+		expect(paragraphInline).not.toBeNull();
+
+		await act(async () => {
+			editor.selectBlock("db-shift-flow");
+			databaseBlock?.focus();
+			paragraphInline?.dispatchEvent(
+				createMouseEvent("click", {
+					detail: 1,
+					shiftKey: true,
+				}),
+			);
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["db-shift-flow", paragraphId],
+		});
+
+		await unmountDatabase(root, container, editor);
+	});
+
+	it("falls back to block selection when shift-clicking from a database into text in structured documents", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const paragraphId = crypto.randomUUID();
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "db-shift-structured",
+				blockType: "database",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const { container, root } = await renderDatabase(editor);
+		const databaseBlock = container.querySelector(
+			`[data-block-id="db-shift-structured"]`,
+		) as HTMLElement | null;
+		const paragraphInline = container.querySelector(
+			`[data-block-id="${paragraphId}"] [data-pen-inline-content]`,
+		) as HTMLElement | null;
+		expect(databaseBlock).not.toBeNull();
+		expect(paragraphInline).not.toBeNull();
+
+		await act(async () => {
+			editor.selectBlock("db-shift-structured");
+			databaseBlock?.focus();
+			paragraphInline?.dispatchEvent(
+				createMouseEvent("click", {
+					detail: 1,
+					shiftKey: true,
+				}),
+			);
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["db-shift-structured", paragraphId],
+		});
+
+		await unmountDatabase(root, container, editor);
+	});
+
+	it("keeps block-first cmd+a copy scoped to the selected database in structured documents", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const paragraphId = crypto.randomUUID();
+		const clipboardData = createClipboardData();
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "db-copy-structured",
+				blockType: "database",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const { container, root } = await renderDatabase(editor);
+		const databaseBlock = container.querySelector(
+			`[data-block-id="db-copy-structured"]`,
+		) as HTMLElement | null;
+		expect(databaseBlock).not.toBeNull();
+
+		await act(async () => {
+			editor.selectBlock("db-copy-structured");
+			databaseBlock?.focus();
+		});
+
+		await act(async () => {
+			document.dispatchEvent(createSelectAllEvent());
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["db-copy-structured"],
+		});
+
+		handleCopy(editor, { clipboardData } as ClipboardEvent);
+
+		const penBlocks = JSON.parse(
+			clipboardData.getData("application/x-pen-blocks"),
+		) as Array<{ type: string }>;
+
+		expect(penBlocks.map((block) => block.type)).toEqual(["database"]);
+		expect(clipboardData.getData("text/plain")).not.toContain("After");
+
+		await unmountDatabase(root, container, editor);
+	});
+
+	it("keeps cmd+a copy scoped to the selected database in flow documents", async () => {
+		const paragraphId = crypto.randomUUID();
+		const clipboardData = createClipboardData();
+		const editor = createFlowEditorFromSeededDocument((seedEditor) => {
+			seedEditor.apply([
+				{
+					type: "insert-block",
+					blockId: "db-copy-flow",
+					blockType: "database",
+					props: {},
+					position: "last",
+				},
+				{
+					type: "insert-block",
+					blockId: paragraphId,
+					blockType: "paragraph",
+					props: {},
+					position: "last",
+				},
+				{
+					type: "insert-text",
+					blockId: paragraphId,
+					offset: 0,
+					text: "After",
+				},
+			]);
+		});
+
+		const { container, root } = await renderDatabase(editor);
+		const databaseBlock = container.querySelector(
+			`[data-block-id="db-copy-flow"]`,
+		) as HTMLElement | null;
+		expect(databaseBlock).not.toBeNull();
+
+		await act(async () => {
+			editor.selectBlock("db-copy-flow");
+			databaseBlock?.focus();
+		});
+
+		await act(async () => {
+			document.dispatchEvent(createSelectAllEvent());
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["db-copy-flow"],
+		});
+
+		handleCopy(editor, { clipboardData } as ClipboardEvent);
+
+		const penBlocks = JSON.parse(
+			clipboardData.getData("application/x-pen-blocks"),
+		) as Array<{ type: string }>;
+
+		expect(penBlocks.map((block) => block.type)).toEqual(["database"]);
+		expect(clipboardData.getData("text/plain")).not.toContain("After");
+
+		await unmountDatabase(root, container, editor);
 	});
 
 	it("promotes beforeinput backspace into a selected database that can be deleted", async () => {
@@ -963,6 +1383,67 @@ describe("@pen/database renderer", () => {
 		expect(editor.getBlock("db-sort")?.databaseActiveView()?.sort).toEqual([
 			{ columnId: "tags", direction: "asc" },
 		]);
+
+		await unmountDatabase(root, container, editor);
+	});
+
+	it("keeps column header controls out of editor selection gestures", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		seedDatabase(
+			editor,
+			"db-header-controls",
+			[
+				{ id: "name", title: "Name", type: "text", width: 140 },
+				{ id: "tags", title: "Priority", type: "number", width: 120 },
+			],
+			[["A", "2"], ["B", "1"]],
+		);
+		const { container, root } = await renderDatabase(editor);
+
+		const nameHeader = container.querySelector(
+			`[data-block-id="db-header-controls"] [data-cell-row="0"][data-cell-col="0"]`,
+		) as HTMLElement | null;
+		const menuButton = container.querySelector(
+			`[data-block-id="db-header-controls"] .pen-db-col-menu-btn`,
+		) as HTMLButtonElement | null;
+		expect(nameHeader).not.toBeNull();
+		expect(menuButton).not.toBeNull();
+		expect(editor.selection).toBeNull();
+
+		await act(async () => {
+			nameHeader?.dispatchEvent(createMouseEvent("mousedown"));
+			nameHeader?.dispatchEvent(createMouseEvent("mouseup"));
+			nameHeader?.dispatchEvent(createMouseEvent("click"));
+			await flushAnimationFrames(1);
+		});
+
+		expect(editor.getBlock("db-header-controls")?.databaseActiveView()?.sort).toEqual([
+			{ columnId: "name", direction: "asc" },
+		]);
+		expect(editor.selection).toBeNull();
+
+		await act(async () => {
+			menuButton?.dispatchEvent(createMouseEvent("mousedown"));
+			menuButton?.dispatchEvent(createMouseEvent("mouseup"));
+			menuButton?.dispatchEvent(createMouseEvent("click"));
+			await flushAnimationFrames(1);
+		});
+
+		const renameInput = container.querySelector(
+			`[data-block-id="db-header-controls"] .pen-db-col-rename-input`,
+		) as HTMLInputElement | null;
+		expect(renameInput).not.toBeNull();
+
+		await act(async () => {
+			renameInput?.dispatchEvent(createMouseEvent("mousedown"));
+			renameInput?.dispatchEvent(createMouseEvent("mouseup"));
+			renameInput?.dispatchEvent(createMouseEvent("click"));
+			await flushAnimationFrames(1);
+		});
+
+		expect(editor.selection).toBeNull();
 
 		await unmountDatabase(root, container, editor);
 	});

@@ -1,16 +1,62 @@
-import type { Importer, ImportOptions, Editor, PendingBlock } from "@pen/core";
-import { blocksToOps } from "@pen/core";
+import type {
+  ImportResult,
+  Importer,
+  ImportOptions,
+  Editor,
+  PendingBlock,
+} from "@pen/core";
+import {
+  blocksToOps,
+  createImportResult,
+  normalizePendingBlocksForImport,
+  reportPendingBlockImportViolations,
+} from "@pen/core";
 import { sanitizeHTML } from "./sanitize";
 import { parseHTML } from "./domAdapter";
 import { domToBlocks } from "./domToBlocks";
 
-export function parseHtmlToBlocks(
+function parseRawHtmlToBlocks(
   input: string,
   editor: Editor,
 ): PendingBlock[] {
   const sanitized = sanitizeHTML(input);
   const dom = parseHTML(sanitized);
   return domToBlocks(dom, editor.schema);
+}
+
+function normalizeHtmlToBlocks(
+  input: string,
+  editor: Editor,
+): {
+  blocks: PendingBlock[];
+  result: ImportResult;
+} {
+  const parsedBlocks = parseRawHtmlToBlocks(input, editor);
+  const normalized = normalizePendingBlocksForImport(
+    parsedBlocks,
+    editor.documentProfile,
+    editor.schema,
+  );
+  reportPendingBlockImportViolations(
+    editor,
+    normalized.violations,
+    "import-html:parse",
+  );
+  return {
+    blocks: normalized.blocks,
+    result: createImportResult(
+      parsedBlocks.length,
+      normalized.blocks.length,
+      normalized.violations,
+    ),
+  };
+}
+
+export function parseHtmlToBlocks(
+  input: string,
+  editor: Editor,
+): PendingBlock[] {
+  return parseRawHtmlToBlocks(input, editor);
 }
 
 export const htmlImporter: Importer<string, PendingBlock[]> = {
@@ -24,11 +70,15 @@ export const htmlImporter: Importer<string, PendingBlock[]> = {
     input: string,
     editor: Editor,
     options?: ImportOptions,
-  ): Promise<void> {
-    const blocks = parseHtmlToBlocks(input, editor);
-    if (blocks.length === 0) return;
+  ): Promise<ImportResult> {
+    const { blocks, result } = normalizeHtmlToBlocks(input, editor);
+    if (blocks.length === 0) return result;
 
     const ops = blocksToOps(blocks, options);
-    editor.apply(ops, { origin: "import", undoGroup: true });
+    editor.apply(ops, {
+      origin: "import",
+      ...(options?.undoGroup === false ? {} : { undoGroup: true }),
+    });
+    return result;
   },
 };

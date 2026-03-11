@@ -12,6 +12,14 @@ import { getAttachedFieldEditor } from "../utils/fieldEditor";
 	globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+async function flushAnimationFrames(count = 1): Promise<void> {
+	for (let i = 0; i < count; i++) {
+		await new Promise<void>((resolve) => {
+			window.requestAnimationFrame(() => resolve());
+		});
+	}
+}
+
 describe("@pen/react slash menu", () => {
 	it("opens after selection sync when slash text commits before a text selection exists", async () => {
 		const editor = createEditor({
@@ -72,10 +80,12 @@ describe("@pen/react slash menu", () => {
 		const blockId = editor.firstBlock()!.id;
 		editor.selectText(blockId, 0, 0);
 
-		let slashMenu: ReturnType<typeof useSlashMenu> | null = null;
+		const slashMenuRef: {
+			current: ReturnType<typeof useSlashMenu> | null;
+		} = { current: null };
 
 		function Harness() {
-			slashMenu = useSlashMenu(editor);
+			slashMenuRef.current = useSlashMenu(editor);
 
 			return (
 				<Pen.Editor.Root editor={editor}>
@@ -93,14 +103,12 @@ describe("@pen/react slash menu", () => {
 		});
 
 		await act(async () => {
-			slashMenu?.setQuery("table");
+			slashMenuRef.current?.setQuery("table");
 		});
 
 		await act(async () => {
-			slashMenu?.confirm(0);
-			await new Promise<void>((resolve) => {
-				window.requestAnimationFrame(() => resolve());
-			});
+			slashMenuRef.current?.confirm(0);
+			await flushAnimationFrames();
 		});
 
 		expect(editor.getBlock(blockId)?.type).toBe("table");
@@ -127,10 +135,12 @@ describe("@pen/react slash menu", () => {
 		const blockId = editor.firstBlock()!.id;
 		editor.selectText(blockId, 0, 0);
 
-		let slashMenu: ReturnType<typeof useSlashMenu> | null = null;
+		const slashMenuRef: {
+			current: ReturnType<typeof useSlashMenu> | null;
+		} = { current: null };
 
 		function Harness() {
-			slashMenu = useSlashMenu(editor);
+			slashMenuRef.current = useSlashMenu(editor);
 
 			return (
 				<Pen.Editor.Root editor={editor}>
@@ -148,22 +158,23 @@ describe("@pen/react slash menu", () => {
 		});
 
 		await act(async () => {
-			slashMenu?.setQuery("table");
+			slashMenuRef.current?.setQuery("table");
 		});
 
 		await act(async () => {
-			slashMenu?.confirm(0);
-			await new Promise<void>((resolve) => {
-				window.requestAnimationFrame(() => resolve());
-			});
+			slashMenuRef.current?.confirm(0);
+			await flushAnimationFrames();
 		});
 
 		const fieldEditor = getAttachedFieldEditor(editor) as
 			| {
-					activateCell(blockId: string, row: number, col: number): void;
-				}
+				activateCell(blockId: string, row: number, col: number): void;
+			}
 			| null;
-		fieldEditor?.activateCell(blockId, 0, 0);
+		await act(async () => {
+			fieldEditor?.activateCell(blockId, 0, 0);
+			await flushAnimationFrames();
+		});
 
 		const cellSurface = container.querySelector(
 			"[data-pen-table-cell][data-cell-row='0'][data-cell-col='0'] [data-pen-inline-content]",
@@ -179,6 +190,7 @@ describe("@pen/react slash menu", () => {
 					data: "A",
 				}),
 			);
+			await flushAnimationFrames();
 		});
 
 		await act(async () => {
@@ -190,9 +202,59 @@ describe("@pen/react slash menu", () => {
 					data: "B",
 				}),
 			);
+			await flushAnimationFrames();
 		});
 
 		expect(editor.getBlock(blockId)?.tableCell(0, 0)?.textContent()).toBe("AB");
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("hides subdocument from the slash menu", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.selectText(blockId, 0, 0);
+
+		const slashMenuRef: {
+			current: ReturnType<typeof useSlashMenu> | null;
+		} = { current: null };
+
+		function Harness() {
+			slashMenuRef.current = useSlashMenu(editor);
+
+			return (
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>
+			);
+		}
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(<Harness />);
+		});
+
+		await act(async () => {
+			slashMenuRef.current?.setQuery("subdocument");
+		});
+
+		const activeSlashMenu = slashMenuRef.current;
+		expect(activeSlashMenu).not.toBeNull();
+		if (!activeSlashMenu) {
+			throw new Error("Slash menu did not initialize");
+		}
+
+		const itemTypes = activeSlashMenu.items.map((item) => item.type);
+		expect(itemTypes).not.toContain("subdocument");
 
 		await act(async () => {
 			root.unmount();
@@ -296,6 +358,51 @@ describe("@pen/react slash menu", () => {
 			nestedChildId,
 			insertedBlockId,
 		]);
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("hides flow-disallowed blocks from the slash menu in flow documents", async () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.selectText(blockId, 0, 0);
+
+		let slashMenu: ReturnType<typeof useSlashMenu> | null = null;
+
+		function Harness() {
+			slashMenu = useSlashMenu(editor);
+
+			return (
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>
+			);
+		}
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(<Harness />);
+		});
+
+		await act(async () => {
+			slashMenu?.setQuery("");
+		});
+
+		expect(slashMenu).not.toBeNull();
+		const itemTypes = slashMenu!.items.map((item) => item.type);
+		expect(itemTypes).not.toContain("database");
+		expect(itemTypes).not.toContain("subdocument");
+		expect(itemTypes).toContain("table");
 
 		await act(async () => {
 			root.unmount();

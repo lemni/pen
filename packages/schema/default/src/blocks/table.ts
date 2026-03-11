@@ -45,6 +45,10 @@ export const table = defineBlock("table", {
   },
   content: "table",
   fieldEditor: "table",
+  authoring: {
+    flowCapability: "flow-delegated",
+    selectionRole: "delegated",
+  },
   display: {
     title: "Table",
     description: "Data table with rows and columns",

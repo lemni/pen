@@ -198,6 +198,15 @@ So flow constraints must be enforced through explicit boundaries:
 
 Flow is not just a UI skin.
 
+Exporter policy where relevant means preserving the actual document graph, not
+reinterpreting export as another authoring gate. In other words:
+
+- import, paste, menus, tools, and AI writes are authoring surfaces and should
+  be profile-aware
+- exporters are serialization surfaces and should generally preserve existing
+  seeded or migrated content, even when those block types are not default flow
+  insertion targets
+
 ### 4. Specialized Blocks Remain First-Class, But Optional
 
 Flow mode should bias toward prose-oriented blocks, but Pen should not need to delete support for:

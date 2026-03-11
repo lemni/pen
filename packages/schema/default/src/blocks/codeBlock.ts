@@ -9,6 +9,9 @@ export const codeBlock = defineBlock("codeBlock", {
   },
   content: "inline",
   fieldEditor: "code",
+  authoring: {
+    selectionRole: "delegated",
+  },
   display: {
     title: "Code Block",
     description: "Code with syntax highlighting",

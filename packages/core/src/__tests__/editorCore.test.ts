@@ -96,6 +96,195 @@ describe("@pen/core createEditor", () => {
 		editorB.destroy();
 	});
 
+	it("persists document profile metadata for new editors", () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+
+		expect(editor.documentProfile).toBe("flow");
+		expect(editor.documentState.documentProfile).toBe("flow");
+		expect(editor.editorViewMode).toBe("flow");
+		expect(
+			editor.internals.adapter.getDocumentProfile?.(editor.internals.crdtDoc),
+		).toBe("flow");
+
+		editor.destroy();
+	});
+
+	it("loads persisted document profile independently from local editor view mode", () => {
+		const adapter = yjsAdapter();
+		const document = adapter.createDocument();
+		adapter.setDocumentProfile?.(document, "flow");
+
+		const editor = createEditor({
+			document,
+			editorViewMode: "structured",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+
+		expect(editor.documentProfile).toBe("flow");
+		expect(editor.documentState.documentProfile).toBe("flow");
+		expect(editor.editorViewMode).toBe("structured");
+
+		editor.destroy();
+	});
+
+	it("keeps document profile in sync with persisted metadata changes", () => {
+		const adapter = yjsAdapter();
+		const document = adapter.createDocument();
+		const editor = createEditor({
+			document,
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+
+		expect(editor.documentProfile).toBe("structured");
+		expect(editor.documentState.documentProfile).toBe("structured");
+
+		adapter.setDocumentProfile?.(document, "flow");
+
+		expect(editor.documentProfile).toBe("flow");
+		expect(editor.documentState.documentProfile).toBe("flow");
+		expect(editor.editorViewMode).toBe("flow");
+
+		editor.destroy();
+	});
+
+	it("drops flow-disallowed block insertions at the mutation boundary", () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const diagnostics: unknown[] = [];
+
+		editor.on("diagnostic", (event) => {
+			diagnostics.push(event);
+		});
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "db1",
+				blockType: "database",
+				props: {},
+				position: "last",
+			},
+		]);
+
+		expect(editor.getBlock("db1")).toBeNull();
+		expect(diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "PEN_PROFILE_001",
+				level: "warn",
+				source: "profile-policy",
+				blockType: "database",
+				documentProfile: "flow",
+			}),
+		);
+
+		editor.destroy();
+	});
+
+	it("re-applies the flow mutation boundary after extension hooks run", () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const diagnostics: unknown[] = [];
+
+		editor.on("diagnostic", (event) => {
+			diagnostics.push(event);
+		});
+
+		editor.onBeforeApply(
+			(ops) => [
+				...ops,
+				{
+					type: "insert-block",
+					blockId: "db-after-hook",
+					blockType: "database",
+					props: {},
+					position: "last",
+				},
+			],
+			{ priority: 20000 },
+		);
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "p-after-hook",
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+		]);
+
+		expect(editor.getBlock("p-after-hook")?.type).toBe("paragraph");
+		expect(editor.getBlock("db-after-hook")).toBeNull();
+		expect(diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "PEN_PROFILE_001",
+				blockType: "database",
+				documentProfile: "flow",
+			}),
+		);
+
+		editor.destroy();
+	});
+
+	it("drops flow-disallowed block conversions at the mutation boundary", () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const firstBlockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{
+				type: "insert-text",
+				blockId: firstBlockId,
+				offset: 0,
+				text: "Hello",
+			},
+		]);
+
+		editor.apply([
+			{
+				type: "convert-block",
+				blockId: firstBlockId,
+				newType: "database",
+				newProps: {},
+			},
+		]);
+
+		expect(editor.getBlock(firstBlockId)?.type).toBe("paragraph");
+		expect(editor.getBlock(firstBlockId)?.textContent()).toBe("Hello");
+
+		editor.destroy();
+	});
+
+	it("still allows optional structural blocks in flow documents", () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "table1",
+				blockType: "table",
+				props: {},
+				position: "last",
+			},
+		]);
+
+		expect(editor.getBlock("table1")?.type).toBe("table");
+
+		editor.destroy();
+	});
+
 	it("discovers subdocument scopes and lets nested editors edit them", () => {
 		const session = createDocumentSession({
 			adapter: yjsAdapter(),

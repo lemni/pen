@@ -132,6 +132,7 @@ export function defineBlock<Type extends string>(
     keyBindings: config.keyBindings,
     placeholder: config.placeholder,
     display: config.display ?? { title: typeNameToTitle(type) },
+    authoring: config.authoring,
     isContainer: config.isContainer,
     aiDescription: config.aiDescription ?? generateAIDescription(type, props),
   } as BlockSchema<Type, Record<string, PropSchema>, ContentType>;

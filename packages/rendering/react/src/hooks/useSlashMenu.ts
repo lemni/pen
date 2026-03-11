@@ -4,6 +4,9 @@ import { getAttachedFieldEditor } from "../utils/fieldEditor";
 import { getConvertBlockOps } from "../field-editor/commands";
 import { getInsertSiblingBlockOp } from "../utils/parentIdTree";
 import {
+	shouldShowBlockInDefaultMenus,
+} from "../utils/flowCapabilities";
+import {
 	getStarterTableProps,
 	getTableActivationTarget,
 	createDefaultTableColumns,
@@ -51,7 +54,11 @@ export function useSlashMenu(
 				return;
 			}
 
-			const items = filterItems(allDisplaysRef.current, query);
+			const items = filterItems(
+				allDisplaysRef.current,
+				query,
+				editorRef.current,
+			);
 			setState((prev) => ({
 				open: true,
 				query,
@@ -73,7 +80,7 @@ export function useSlashMenu(
 	}, [editor]);
 
 	const setQuery = (query: string) => {
-		const filtered = filterItems(allDisplays, query);
+		const filtered = filterItems(allDisplays, query, editor);
 		setState((prev) => ({
 			...prev,
 			query,
@@ -171,6 +178,7 @@ export function useSlashMenu(
 						activateStarterTable();
 					}
 				}
+
 			}
 		}
 
@@ -213,13 +221,18 @@ function filterItems(
 		display: BlockDisplay;
 	})[],
 	query: string,
+	editor: Editor,
 ): Array<{ type: string; display: BlockDisplay }> {
+	const visibleDisplays = displays.filter((display) =>
+		shouldShowBlockInDefaultMenus(editor.documentProfile, display),
+	);
+
 	if (!query) {
-		return displays.map((d) => ({ type: d.type, display: d.display }));
+		return visibleDisplays.map((d) => ({ type: d.type, display: d.display }));
 	}
 
 	const lower = query.toLowerCase();
-	return displays
+	return visibleDisplays
 		.filter((d) => {
 			const title = d.display.title.toLowerCase();
 			const desc = d.display.description?.toLowerCase() ?? "";

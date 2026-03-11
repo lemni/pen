@@ -173,7 +173,12 @@ export function ColumnMenu(props: {
 	) : null;
 
 	return (
-		<div className="pen-db-col-menu" onClick={(event) => event.stopPropagation()}>
+		<div
+			className="pen-db-col-menu"
+			{...{ [DATA_ATTRS.ignorePointerGesture]: "" }}
+			onMouseDownCapture={(event) => event.stopPropagation()}
+			onClick={(event) => event.stopPropagation()}
+		>
 			<div className="pen-db-col-menu-section">
 				<input
 					className="pen-db-col-rename-input"

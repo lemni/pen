@@ -8,6 +8,7 @@ import type {
 	Awareness,
 	DocumentSession,
 	DocumentScope,
+	DocumentProfile,
 } from "./crdt";
 import type { DocumentOp, OpOrigin, ApplyOptions } from "./ops";
 import type { DecorationSet } from "./decorations";
@@ -17,9 +18,12 @@ import type { Unsubscribe } from "./utility";
 import type { SchemaRegistry } from "./schema";
 import type { AssetProvider } from "./persistence";
 
+export type EditorViewMode = DocumentProfile;
+
 // ── Document State ──────────────────────────────────────────
 
 export interface DocumentState {
+	readonly documentProfile: DocumentProfile;
 	readonly blockOrder: readonly string[];
 	readonly blockCount: number;
 	readonly blocks: Iterable<BlockHandle>;
@@ -135,6 +139,8 @@ export interface CreateEditorOptions {
 	document?: CRDTDocument;
 	documentSession?: DocumentSession;
 	documentScopeId?: string;
+	documentProfile?: DocumentProfile;
+	editorViewMode?: EditorViewMode;
 }
 
 // ── Command Context ─────────────────────────────────────────
@@ -162,6 +168,8 @@ export interface Editor {
 	readonly internals: EditorInternals;
 	readonly clientId: number;
 	readonly documentScope: DocumentScope;
+	readonly documentProfile: DocumentProfile;
+	readonly editorViewMode: EditorViewMode;
 
 	blocks(type?: string): Iterable<BlockHandle>;
 	getBlock(blockId: string): BlockHandle | null;
@@ -190,7 +198,7 @@ export interface Editor {
 	getSelectedText(): string;
 	getSelectedBlocks(): BlockHandle[];
 	replaceSelection(content: string | Block[]): void;
-	deleteSelection(): void;
+	deleteSelection(options?: ApplyOptions): void;
 
 	requestDecorationUpdate(): void;
 	scrollToBlock?(blockId: string): void;

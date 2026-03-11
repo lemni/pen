@@ -5,7 +5,7 @@ import type {
   PropSchema,
   BlockSchema,
 } from "@pen/types";
-import { SchemaRegistryImpl } from "@pen/core";
+import { SchemaRegistryImpl } from "@pen/types";
 import { defaultBlocks, defaultInlines } from "./defs";
 
 export function createDefaultSchema(): ComposableSchema {

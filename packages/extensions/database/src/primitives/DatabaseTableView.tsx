@@ -42,6 +42,8 @@ export function DatabaseTableView(props: {
 		const menuButton = !db.isUiReadonly ? (
 			<button
 				className="pen-db-col-menu-btn"
+				{...{ [DATA_ATTRS.ignorePointerGesture]: "" }}
+				onMouseDown={handleControlMouseDown}
 				onClick={(event) => {
 					event.stopPropagation();
 					db.setActiveColumnMenu(db.activeColumnMenu === column.id ? null : column.id);
@@ -54,6 +56,7 @@ export function DatabaseTableView(props: {
 			<th
 				key={column.id}
 				{...{
+					[DATA_ATTRS.ignorePointerGesture]: "",
 					[DATA_ATTRS.tableCell]: "",
 					[DATA_ATTRS.tableCellRow]: 0,
 					[DATA_ATTRS.tableCellCol]: column.columnIndex,

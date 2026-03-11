@@ -40,6 +40,60 @@ function createFieldEditorStub(): FieldEditorImpl {
 	} as unknown as FieldEditorImpl;
 }
 
+function getClipboardPenBlocks(
+	clipboardData: DataTransfer,
+): Array<{ type?: string; content?: string }> {
+	return JSON.parse(
+		clipboardData.getData("application/x-pen-blocks"),
+	) as Array<{ type?: string; content?: string }>;
+}
+
+function seedTable(
+	editor: ReturnType<typeof createEditor>,
+	tableId: string,
+): void {
+	editor.apply([
+		{
+			type: "insert-block",
+			blockId: tableId,
+			blockType: "table",
+			props: {},
+			position: "last",
+		},
+		{
+			type: "insert-table-cell-text",
+			blockId: tableId,
+			row: 0,
+			col: 0,
+			offset: 0,
+			text: "Alpha",
+		},
+		{
+			type: "insert-table-cell-text",
+			blockId: tableId,
+			row: 0,
+			col: 1,
+			offset: 0,
+			text: "Bravo",
+		},
+	]);
+}
+
+function seedDatabase(
+	editor: ReturnType<typeof createEditor>,
+	blockId: string,
+): void {
+	editor.apply([
+		{
+			type: "insert-block",
+			blockId,
+			blockType: "database",
+			props: {},
+			position: "last",
+		},
+	]);
+}
+
 describe("@pen/react clipboard", () => {
 	it("preserves inline formatting for internal copy/paste round-trips", () => {
 		const editor = createEditor({
@@ -102,6 +156,32 @@ describe("@pen/react clipboard", () => {
 		);
 
 		expect(editor.getBlock(blockId)?.textContent()).toBe("a 文🦄 z文🦄");
+
+		editor.destroy();
+	});
+
+	it("undoes paste-over-selection as a single history entry", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream"],
+		});
+		const blockId = editor.firstBlock()!.id;
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+
+		editor.apply([{ type: "insert-text", blockId, offset: 0, text: "Hello" }]);
+		clipboardData.setData("text/plain", "X");
+
+		editor.selectText(blockId, 1, 4);
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			editor,
+			fieldEditor,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(editor.getBlock(blockId)?.textContent()).toBe("HXo");
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(editor.getBlock(blockId)?.textContent()).toBe("Hello");
 
 		editor.destroy();
 	});
@@ -329,5 +409,461 @@ describe("@pen/react clipboard", () => {
 		expect(importers.html?.import).toHaveBeenCalledTimes(1);
 
 		editor.destroy();
+	});
+
+	it("filters flow-disallowed importer parse blocks before applying parsed paste", async () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const emptyBlockId = editor.firstBlock()!.id;
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+		const importers: PasteImporters = {
+			html: {
+				parse: vi.fn().mockReturnValue([
+					{
+						type: "database",
+						props: {},
+						database: {
+							columns: [],
+							rows: [],
+						},
+					},
+					{ type: "heading", props: { level: 2 }, content: "Allowed title" },
+				]),
+				import: vi.fn(),
+				name: "html",
+				mimeType: "text/html",
+			},
+		};
+
+		clipboardData.setData("text/html", "<div>mixed</div>");
+		editor.selectText(emptyBlockId, 0, 0);
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			editor,
+			fieldEditor,
+			importers,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const blockOrder = editor.documentState.blockOrder;
+		expect(blockOrder).toHaveLength(1);
+		expect(blockOrder[0]).not.toBe(emptyBlockId);
+		expect(editor.getBlock(blockOrder[0])?.type).toBe("heading");
+		expect(
+			blockOrder.some((blockId) => editor.getBlock(blockId)?.type === "database"),
+		).toBe(false);
+		expect(importers.html?.import).not.toHaveBeenCalled();
+		expect(fieldEditor.activateTextSelection).toHaveBeenCalledWith(
+			blockOrder[0],
+			13,
+			13,
+		);
+
+		editor.destroy();
+	});
+
+	it("preserves the current selection when parsed paste normalizes to zero blocks", async () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const blockId = editor.firstBlock()!.id;
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+		const importers: PasteImporters = {
+			html: {
+				parse: vi.fn().mockReturnValue([
+					{
+						type: "database",
+						props: {},
+						database: {
+							columns: [],
+							rows: [],
+						},
+					},
+				]),
+				import: vi.fn(),
+				name: "html",
+				mimeType: "text/html",
+			},
+		};
+
+		editor.apply([
+			{
+				type: "insert-text",
+				blockId,
+				offset: 0,
+				text: "Keep me",
+			},
+		]);
+		editor.selectText(blockId, 0, 7);
+		clipboardData.setData("text/html", "<div>db only</div>");
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			editor,
+			fieldEditor,
+			importers,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(editor.documentState.blockOrder).toEqual([blockId]);
+		expect(editor.getBlock(blockId)?.textContent()).toBe("Keep me");
+		expect(importers.html?.import).not.toHaveBeenCalled();
+
+		editor.destroy();
+	});
+
+	it("filters unknown importer parse blocks before applying parsed paste", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const emptyBlockId = editor.firstBlock()!.id;
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+		const importers: PasteImporters = {
+			html: {
+				parse: vi.fn().mockReturnValue([
+					{ type: "customWidget", props: {}, content: "Ignored" },
+					{ type: "heading", props: { level: 2 }, content: "Allowed title" },
+				]),
+				import: vi.fn(),
+				name: "html",
+				mimeType: "text/html",
+			},
+		};
+
+		clipboardData.setData("text/html", "<div>mixed</div>");
+		editor.selectText(emptyBlockId, 0, 0);
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			editor,
+			fieldEditor,
+			importers,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const blockOrder = editor.documentState.blockOrder;
+		expect(blockOrder).toHaveLength(1);
+		expect(blockOrder[0]).not.toBe(emptyBlockId);
+		expect(editor.getBlock(blockOrder[0])?.type).toBe("heading");
+		expect(importers.html?.import).not.toHaveBeenCalled();
+		expect(fieldEditor.activateTextSelection).toHaveBeenCalledWith(
+			blockOrder[0],
+			13,
+			13,
+		);
+
+		editor.destroy();
+	});
+
+	it("round-trips a structured table block selection as a table block payload", () => {
+		const sourceEditor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+
+		seedTable(sourceEditor, "table-structured");
+		sourceEditor.selectBlock("table-structured");
+		handleCopy(sourceEditor, { clipboardData } as ClipboardEvent);
+
+		expect(getClipboardPenBlocks(clipboardData).map((block) => block.type)).toEqual([
+			"table",
+		]);
+
+		const targetEditor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const emptyBlockId = targetEditor.firstBlock()!.id;
+		targetEditor.selectText(emptyBlockId, 0, 0);
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			targetEditor,
+			fieldEditor,
+		);
+
+		const blockOrder = targetEditor.documentState.blockOrder;
+		expect(blockOrder).toHaveLength(1);
+		expect(targetEditor.getBlock(blockOrder[0])?.type).toBe("table");
+		expect(targetEditor.getBlock(blockOrder[0])?.tableCell(0, 0)?.textContent()).toBe(
+			"Alpha",
+		);
+		expect(targetEditor.getBlock(blockOrder[0])?.tableCell(0, 1)?.textContent()).toBe(
+			"Bravo",
+		);
+
+		sourceEditor.destroy();
+		targetEditor.destroy();
+	});
+
+	it("round-trips a flow-promoted table selection as document blocks", () => {
+		const sourceEditor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const firstBlockId = sourceEditor.firstBlock()!.id;
+		const paragraphId = crypto.randomUUID();
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+
+		sourceEditor.apply([
+			{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Intro" },
+		]);
+		seedTable(sourceEditor, "table-flow");
+		sourceEditor.apply([
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		sourceEditor.selectTextRange(
+			{ blockId: firstBlockId, offset: 0 },
+			{ blockId: paragraphId, offset: 5 },
+		);
+		handleCopy(sourceEditor, { clipboardData } as ClipboardEvent);
+
+		expect(getClipboardPenBlocks(clipboardData).map((block) => block.type)).toEqual([
+			"paragraph",
+			"table",
+			"paragraph",
+		]);
+
+		const targetEditor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const emptyBlockId = targetEditor.firstBlock()!.id;
+		targetEditor.selectText(emptyBlockId, 0, 0);
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			targetEditor,
+			fieldEditor,
+		);
+
+		const blockOrder = targetEditor.documentState.blockOrder;
+		expect(blockOrder).toHaveLength(3);
+		expect(targetEditor.getBlock(blockOrder[0])?.textContent()).toBe("Intro");
+		expect(targetEditor.getBlock(blockOrder[1])?.type).toBe("table");
+		expect(targetEditor.getBlock(blockOrder[1])?.tableCell(0, 0)?.textContent()).toBe(
+			"Alpha",
+		);
+		expect(targetEditor.getBlock(blockOrder[2])?.textContent()).toBe("After");
+
+		sourceEditor.destroy();
+		targetEditor.destroy();
+	});
+
+	it("round-trips a structured database block selection as a database block payload", () => {
+		const sourceEditor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+
+		seedDatabase(sourceEditor, "database-structured");
+		sourceEditor.selectBlock("database-structured");
+		handleCopy(sourceEditor, { clipboardData } as ClipboardEvent);
+
+		expect(getClipboardPenBlocks(clipboardData).map((block) => block.type)).toEqual([
+			"database",
+		]);
+
+		const targetEditor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const emptyBlockId = targetEditor.firstBlock()!.id;
+		targetEditor.selectText(emptyBlockId, 0, 0);
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			targetEditor,
+			fieldEditor,
+		);
+
+		const blockOrder = targetEditor.documentState.blockOrder;
+		expect(blockOrder).toHaveLength(1);
+		expect(targetEditor.getBlock(blockOrder[0])?.type).toBe("database");
+
+		sourceEditor.destroy();
+		targetEditor.destroy();
+	});
+
+	it("round-trips a flow-promoted database selection as document blocks", () => {
+		const seedEditor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const firstBlockId = seedEditor.firstBlock()!.id;
+		const paragraphId = crypto.randomUUID();
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+
+		seedEditor.apply([
+			{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Intro" },
+		]);
+		seedDatabase(seedEditor, "database-flow");
+		seedEditor.apply([
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const document = seedEditor.internals.crdtDoc;
+		seedEditor.internals.adapter.setDocumentProfile?.(document, "flow");
+
+		const sourceEditor = createEditor({
+			document,
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		seedEditor.destroy();
+
+		sourceEditor.selectTextRange(
+			{ blockId: firstBlockId, offset: 0 },
+			{ blockId: paragraphId, offset: 5 },
+		);
+		handleCopy(sourceEditor, { clipboardData } as ClipboardEvent);
+
+		expect(getClipboardPenBlocks(clipboardData).map((block) => block.type)).toEqual([
+			"paragraph",
+			"database",
+			"paragraph",
+		]);
+
+		const targetEditor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const emptyBlockId = targetEditor.firstBlock()!.id;
+		targetEditor.selectText(emptyBlockId, 0, 0);
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			targetEditor,
+			fieldEditor,
+		);
+
+		const blockOrder = targetEditor.documentState.blockOrder;
+		expect(blockOrder).toHaveLength(3);
+		expect(targetEditor.getBlock(blockOrder[0])?.textContent()).toBe("Intro");
+		expect(targetEditor.getBlock(blockOrder[1])?.type).toBe("database");
+		expect(targetEditor.getBlock(blockOrder[2])?.textContent()).toBe("After");
+
+		sourceEditor.destroy();
+		targetEditor.destroy();
+	});
+
+	it("avoids direct database block paste in flow documents", () => {
+		const sourceEditor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const firstBlockId = sourceEditor.firstBlock()!.id;
+		const paragraphId = crypto.randomUUID();
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+
+		sourceEditor.apply([
+			{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Intro" },
+		]);
+		seedDatabase(sourceEditor, "database-flow-paste");
+		sourceEditor.apply([
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		sourceEditor.selectTextRange(
+			{ blockId: firstBlockId, offset: 0 },
+			{ blockId: paragraphId, offset: 5 },
+		);
+		handleCopy(sourceEditor, { clipboardData } as ClipboardEvent);
+
+		const targetEditor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const emptyBlockId = targetEditor.firstBlock()!.id;
+		targetEditor.selectText(emptyBlockId, 0, 0);
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			targetEditor,
+			fieldEditor,
+		);
+
+		const blockOrder = targetEditor.documentState.blockOrder;
+		expect(
+			blockOrder.some((blockId) => targetEditor.getBlock(blockId)?.type === "database"),
+		).toBe(false);
+
+		sourceEditor.destroy();
+		targetEditor.destroy();
+	});
+
+	it("does not direct-paste unknown pen block payloads in flow documents", () => {
+		const targetEditor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const emptyBlockId = targetEditor.firstBlock()!.id;
+		const clipboardData = createClipboardData();
+		const fieldEditor = createFieldEditorStub();
+
+		targetEditor.apply([
+			{ type: "insert-text", blockId: emptyBlockId, offset: 0, text: "Hello" },
+		]);
+		targetEditor.selectText(emptyBlockId, 0, 5);
+		clipboardData.setData(
+			"application/x-pen-blocks",
+			JSON.stringify([
+				{ type: "customWidget", props: {}, content: "Ignored" },
+			]),
+		);
+
+		handleClipboardPaste(
+			{ clipboardData } as ClipboardEvent,
+			targetEditor,
+			fieldEditor,
+		);
+
+		expect(targetEditor.documentState.blockOrder).toHaveLength(1);
+		expect(targetEditor.getBlock(emptyBlockId)?.textContent()).toBe("Hello");
+
+		targetEditor.destroy();
 	});
 });

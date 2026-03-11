@@ -2,6 +2,8 @@ import type { DocumentOp, OpOrigin } from "./ops";
 import type { Unsubscribe } from "./utility";
 import type { DocumentRange } from "./documentRange";
 
+export type DocumentProfile = "structured" | "flow";
+
 // ── Abstract CRDT Collections ───────────────────────────────
 
 export interface CRDTArray<T> {
@@ -52,6 +54,9 @@ export interface CRDTAdapter {
   merge?(target: CRDTDocument, source: CRDTDocument): void;
 
   getClientId(doc: CRDTDocument): number;
+
+  getDocumentProfile?(doc: CRDTDocument): DocumentProfile | null;
+  setDocumentProfile?(doc: CRDTDocument, profile: DocumentProfile): void;
 
   raw<T>(doc: CRDTDocument): T;
 

@@ -32,8 +32,9 @@
   },
   "dependencies": {
     "@pen/core": "workspace:*",
+    "@pen/schema-default": "workspace:*",
     "@pen/shortcuts": "workspace:*",
-    "@pen/schema-default": "workspace:*"
+    "@pen/types": "workspace:^"
   },
   "peerDependencies": {
     "@pen/import-html": "workspace:*",

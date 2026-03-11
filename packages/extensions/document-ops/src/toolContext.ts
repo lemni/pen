@@ -4,6 +4,7 @@ import type {
   PenStreamPart,
   Position,
 } from "@pen/types";
+import { assertToolCanUseBlockType } from "./utils/blockTypePolicy";
 
 export class ToolContextImpl implements ToolContext {
   readonly editor: Editor;
@@ -30,6 +31,7 @@ export class ToolContextImpl implements ToolContext {
     props: Record<string, unknown>,
     position: Position,
   ): string {
+    assertToolCanUseBlockType(this.editor, blockType);
     const blockId = crypto.randomUUID();
 
     this.emit({

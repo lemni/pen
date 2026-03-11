@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { createEditor } from "@pen/core";
 import type { FieldEditorImpl } from "../field-editor/fieldEditorImpl";
+import { handleCopy } from "../field-editor/clipboard";
 import { FIELD_EDITOR_SLOT_KEY } from "../constants/fieldEditor";
 import { Pen } from "../primitives/index";
 
@@ -36,6 +37,21 @@ function createSelectAllEvent(): KeyboardEvent {
 	return createKeyEvent("a", {
 		metaKey: true,
 	});
+}
+
+function createClipboardData(): DataTransfer {
+	const data = new Map<string, string>();
+
+	return {
+		files: [] as unknown as FileList,
+		types: [],
+		getData(type: string) {
+			return data.get(type) ?? "";
+		},
+		setData(type: string, value: string) {
+			data.set(type, value);
+		},
+	} as unknown as DataTransfer;
 }
 
 function createMouseEvent(
@@ -698,8 +714,9 @@ describe("@pen/react table rendering", () => {
 		editor.destroy();
 	});
 
-	it("maps cmd+a from a selected table directly to full-document selection by default", async () => {
+	it("maps cmd+a from a selected table directly to full-document selection in flow documents", async () => {
 		const editor = createEditor({
+			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
@@ -775,6 +792,167 @@ describe("@pen/react table rendering", () => {
 		editor.destroy();
 	});
 
+	it("keeps block-first cmd+a copy scoped to the selected table in structured documents", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const paragraphId = crypto.randomUUID();
+		const clipboardData = createClipboardData();
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "t8-copy-structured",
+				blockType: "table",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const tableBlock = container.querySelector(
+			`[data-block-id="t8-copy-structured"]`,
+		) as HTMLElement | null;
+		expect(tableBlock).not.toBeNull();
+
+		await act(async () => {
+			editor.selectBlock("t8-copy-structured");
+			tableBlock?.focus();
+		});
+
+		await act(async () => {
+			document.dispatchEvent(createSelectAllEvent());
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["t8-copy-structured"],
+		});
+
+		handleCopy(editor, { clipboardData } as ClipboardEvent);
+
+		const penBlocks = JSON.parse(
+			clipboardData.getData("application/x-pen-blocks"),
+		) as Array<{ type: string }>;
+
+		expect(penBlocks.map((block) => block.type)).toEqual(["table"]);
+		expect(clipboardData.getData("text/plain")).not.toContain("After");
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("promotes cmd+a copy from a selected table to the full document in flow documents", async () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const paragraphId = crypto.randomUUID();
+		const clipboardData = createClipboardData();
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "t8-copy-flow",
+				blockType: "table",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const tableBlock = container.querySelector(
+			`[data-block-id="t8-copy-flow"]`,
+		) as HTMLElement | null;
+		expect(tableBlock).not.toBeNull();
+
+		await act(async () => {
+			editor.selectBlock("t8-copy-flow");
+			tableBlock?.focus();
+		});
+
+		await act(async () => {
+			document.dispatchEvent(createSelectAllEvent());
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toMatchObject({
+			type: "text",
+			isMultiBlock: true,
+		});
+
+		handleCopy(editor, { clipboardData } as ClipboardEvent);
+
+		const penBlocks = JSON.parse(
+			clipboardData.getData("application/x-pen-blocks"),
+		) as Array<{ type: string }>;
+
+		expect(penBlocks.map((block) => block.type)).toEqual([
+			"paragraph",
+			"table",
+			"paragraph",
+		]);
+		expect(clipboardData.getData("text/plain")).toContain("After");
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
 	it("pressing enter on a block-selected table inserts a paragraph after it", async () => {
 		const editor = createEditor({
 			without: ["document-ops", "delta-stream", "undo"],
@@ -825,8 +1003,9 @@ describe("@pen/react table rendering", () => {
 		editor.destroy();
 	});
 
-	it("keeps the first cmd+a cell-local before promoting to the document", async () => {
+	it("keeps the first cmd+a cell-local before promoting to the document in flow documents", async () => {
 		const editor = createEditor({
+			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
@@ -928,8 +1107,9 @@ describe("@pen/react table rendering", () => {
 		editor.destroy();
 	});
 
-	it("creates a canonical cross-block selection when dragging from a table into text", async () => {
+	it("creates a canonical cross-block selection when dragging from a table into text in flow documents", async () => {
 		const editor = createEditor({
+			documentProfile: "flow",
 			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
@@ -1015,6 +1195,250 @@ describe("@pen/react table rendering", () => {
 		});
 
 		docWithCaretRange.caretRangeFromPoint = originalCaretRangeFromPoint;
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("falls back to block selection when dragging from a table into text in structured documents", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const paragraphId = crypto.randomUUID();
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "t9-structured",
+				blockType: "table",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const tableCell = container.querySelector(
+			`[data-block-id="t9-structured"] [data-pen-table-cell][data-cell-row="0"][data-cell-col="0"]`,
+		) as HTMLElement | null;
+		const paragraphInline = container.querySelector(
+			`[data-block-id="${paragraphId}"] [data-pen-inline-content]`,
+		) as HTMLElement | null;
+		expect(tableCell).not.toBeNull();
+		expect(paragraphInline).not.toBeNull();
+
+		const docWithCaretRange = document as Document & {
+			caretRangeFromPoint?: (x: number, y: number) => Range | null;
+		};
+		const originalCaretRangeFromPoint = docWithCaretRange.caretRangeFromPoint;
+		docWithCaretRange.caretRangeFromPoint = () => {
+			const range = document.createRange();
+			range.setStart(paragraphInline!.firstChild ?? paragraphInline!, 2);
+			range.setEnd(paragraphInline!.firstChild ?? paragraphInline!, 2);
+			return range;
+		};
+
+		await act(async () => {
+			tableCell?.dispatchEvent(
+				createMouseEvent("mousedown", {
+					detail: 1,
+					clientX: 10,
+					clientY: 10,
+				}),
+			);
+			paragraphInline?.dispatchEvent(
+				createMouseEvent("mouseup", {
+					detail: 1,
+					clientX: 60,
+					clientY: 40,
+				}),
+			);
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["t9-structured", paragraphId],
+		});
+
+		docWithCaretRange.caretRangeFromPoint = originalCaretRangeFromPoint;
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("creates a canonical cross-block selection when shift-clicking from a table into text in flow documents", async () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const paragraphId = crypto.randomUUID();
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "t10-shift-flow",
+				blockType: "table",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const tableBlock = container.querySelector(
+			`[data-block-id="t10-shift-flow"]`,
+		) as HTMLElement | null;
+		const paragraphInline = container.querySelector(
+			`[data-block-id="${paragraphId}"] [data-pen-inline-content]`,
+		) as HTMLElement | null;
+		expect(tableBlock).not.toBeNull();
+		expect(paragraphInline).not.toBeNull();
+
+		await act(async () => {
+			editor.selectBlock("t10-shift-flow");
+			tableBlock?.focus();
+			paragraphInline?.dispatchEvent(
+				createMouseEvent("click", {
+					detail: 1,
+					shiftKey: true,
+				}),
+			);
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toMatchObject({
+			type: "text",
+			isMultiBlock: true,
+			anchor: { blockId: "t10-shift-flow", offset: 0 },
+			focus: { blockId: paragraphId, offset: 5 },
+		});
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("falls back to block selection when shift-clicking from a table into text in structured documents", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const paragraphId = crypto.randomUUID();
+
+		editor.apply([
+			{
+				type: "insert-block",
+				blockId: "t10-shift-structured",
+				blockType: "table",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-block",
+				blockId: paragraphId,
+				blockType: "paragraph",
+				props: {},
+				position: "last",
+			},
+			{
+				type: "insert-text",
+				blockId: paragraphId,
+				offset: 0,
+				text: "After",
+			},
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const tableBlock = container.querySelector(
+			`[data-block-id="t10-shift-structured"]`,
+		) as HTMLElement | null;
+		const paragraphInline = container.querySelector(
+			`[data-block-id="${paragraphId}"] [data-pen-inline-content]`,
+		) as HTMLElement | null;
+		expect(tableBlock).not.toBeNull();
+		expect(paragraphInline).not.toBeNull();
+
+		await act(async () => {
+			editor.selectBlock("t10-shift-structured");
+			tableBlock?.focus();
+			paragraphInline?.dispatchEvent(
+				createMouseEvent("click", {
+					detail: 1,
+					shiftKey: true,
+				}),
+			);
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.selection).toEqual({
+			type: "block",
+			blockIds: ["t10-shift-structured", paragraphId],
+		});
 
 		await act(async () => {
 			root.unmount();

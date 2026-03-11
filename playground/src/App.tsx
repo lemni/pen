@@ -25,7 +25,6 @@ const PLAYGROUND_RENDERERS = {
 } satisfies RendererOverrides;
 
 export function App() {
-	const linkToggleRef = useRef<(() => void) | null>(null);
 	const editor = useEditor({
 		without: [RICH_TEXT_SHORTCUTS_EXTENSION_NAME],
 		extensions: [
@@ -40,13 +39,19 @@ export function App() {
 			}),
 		],
 	});
+	const linkToggleRef = useRef<(() => void) | null>(null);
+	const playgroundRef = useRef<HTMLDivElement | null>(null);
 	const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+
 	const handleToggleInspector = () => {
 		setIsInspectorOpen((value) => !value);
 	};
+	const getPlaygroundSelectionRegion = () => {
+		return playgroundRef.current?.getBoundingClientRect() ?? null;
+	};
 
 	return (
-		<div className="playground">
+		<div className="playground" ref={playgroundRef}>
 			<div className="playground-body">
 				<Pen.Editor.Root
 					editor={editor}
@@ -60,7 +65,9 @@ export function App() {
 						<Pen.Editor.Content
 							emptyPlaceholder="Start writing, or press / for commands..."
 						/>
-						<Pen.Editor.RegionSelector />
+						<Pen.Editor.RegionSelector
+							getRegionRect={getPlaygroundSelectionRegion}
+						/>
 						<Pen.Editor.SelectionRect />
 						<SlashMenu editor={editor} />
 						<SelectionToolbar />

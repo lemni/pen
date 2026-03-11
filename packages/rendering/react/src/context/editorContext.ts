@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type {
 	Editor,
+	EditorViewMode,
 	AssetProvider,
 	BlockRenderer,
 	Importer,
@@ -19,6 +20,8 @@ export type RendererOverrides = Partial<Record<string, BlockRenderer>>;
 export interface EditorContextValue {
 	editor: Editor;
 	readonly: boolean;
+	documentProfile: Editor["documentProfile"];
+	editorViewMode: EditorViewMode;
 	importers?: PasteImporters;
 	assets?: AssetProvider;
 	renderers?: RendererOverrides;

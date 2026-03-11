@@ -78,6 +78,7 @@ export function insertUploadedImages(
 	editor: Editor,
 	uploaded: UploadedImage[],
 	position: Position,
+	options?: { undoGroup?: boolean },
 ): {
 	position: Position | null;
 	lastInsertedBlockId: string | null;
@@ -113,7 +114,10 @@ export function insertUploadedImages(
 		return { position: null, lastInsertedBlockId: null };
 	}
 
-	editor.apply(ops, { origin: "user", undoGroup: true });
+	editor.apply(ops, {
+		origin: "user",
+		...(options?.undoGroup === false ? {} : { undoGroup: true }),
+	});
 	return { position: resolvedPosition, lastInsertedBlockId };
 }
 
@@ -121,9 +125,10 @@ export function insertUploadedImagesAtDropTarget(
 	editor: Editor,
 	uploaded: UploadedImage[],
 	target: ResolvedDropTarget,
+	options?: { undoGroup?: boolean },
 ): string | null {
 	if (target.kind === "block-edge" || target.kind === "document-end") {
-		return insertUploadedImages(editor, uploaded, target.position)
+		return insertUploadedImages(editor, uploaded, target.position, options)
 			.lastInsertedBlockId;
 	}
 
@@ -131,7 +136,7 @@ export function insertUploadedImagesAtDropTarget(
 	const block = editor.getBlock(point.blockId);
 	const schema = block ? editor.schema.resolve(block.type) : null;
 	if (!block || schema?.content !== "inline") {
-		return insertUploadedImages(editor, uploaded, "last").lastInsertedBlockId;
+		return insertUploadedImages(editor, uploaded, "last", options).lastInsertedBlockId;
 	}
 
 	const textLength = block.textContent().length;
@@ -139,12 +144,12 @@ export function insertUploadedImagesAtDropTarget(
 	if (clampedOffset === 0) {
 		return insertUploadedImages(editor, uploaded, {
 			before: point.blockId,
-		}).lastInsertedBlockId;
+		}, options).lastInsertedBlockId;
 	}
 	if (clampedOffset >= textLength) {
 		return insertUploadedImages(editor, uploaded, {
 			after: point.blockId,
-		}).lastInsertedBlockId;
+		}, options).lastInsertedBlockId;
 	}
 
 	const tailBlockId = crypto.randomUUID();
@@ -181,7 +186,10 @@ export function insertUploadedImagesAtDropTarget(
 		return null;
 	}
 
-	editor.apply(ops, { origin: "user", undoGroup: true });
+	editor.apply(ops, {
+		origin: "user",
+		...(options?.undoGroup === false ? {} : { undoGroup: true }),
+	});
 	return lastInsertedBlockId;
 }
 

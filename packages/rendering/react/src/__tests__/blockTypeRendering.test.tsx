@@ -34,6 +34,82 @@ function numberedListMarkers(container: HTMLElement): string[] {
 }
 
 describe("@pen/react block type rendering", () => {
+	it("derives flow-aware default block type options from schema metadata", async () => {
+		const editor = createEditor({
+			documentProfile: "flow",
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.selectText(blockId, 0, 0);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Toolbar.Root editor={editor}>
+						<Pen.Toolbar.Select format="blockType" />
+					</Pen.Toolbar.Root>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const optionValues = Array.from(container.querySelectorAll("option")).map(
+			(option) => (option as HTMLOptionElement).value,
+		);
+		expect(optionValues).toContain("paragraph");
+		expect(optionValues).toContain("table");
+		expect(optionValues).not.toContain("database");
+		expect(optionValues).not.toContain("subdocument");
+		expect(optionValues.indexOf("paragraph")).toBeLessThan(
+			optionValues.indexOf("table"),
+		);
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("keeps structured-only block types in default toolbar options", async () => {
+		const editor = createEditor({
+			without: ["document-ops", "delta-stream", "undo"],
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.selectText(blockId, 0, 0);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Toolbar.Root editor={editor}>
+						<Pen.Toolbar.Select format="blockType" />
+					</Pen.Toolbar.Root>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const optionValues = Array.from(container.querySelectorAll("option")).map(
+			(option) => (option as HTMLOptionElement).value,
+		);
+		expect(optionValues).toContain("database");
+		expect(optionValues).not.toContain("subdocument");
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
 	it("updates the rendered block immediately when the toolbar converts block type", async () => {
 		const editor = createEditor({
 			without: ["document-ops", "delta-stream", "undo"],

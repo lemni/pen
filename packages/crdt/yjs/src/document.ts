@@ -1,4 +1,9 @@
-import type { CRDTAdapter, CRDTDocument, PenDocument } from "@pen/types";
+import type {
+  CRDTAdapter,
+  CRDTDocument,
+  DocumentProfile,
+  PenDocument,
+} from "@pen/types";
 import { generateId } from "@pen/types";
 import * as Y from "yjs";
 
@@ -26,8 +31,33 @@ export interface YjsPenDocument extends PenDocument {
   readonly adapter: CRDTAdapter;
 }
 
+export type YjsDoc = Y.Doc;
+export type YjsMap<T = unknown> = Y.Map<T>;
+
 export function asYjsDoc(doc: CRDTDocument): YjsCRDTDocument {
   return doc as YjsCRDTDocument;
+}
+
+export function isYjsDoc(value: unknown): value is Y.Doc {
+  return value instanceof Y.Doc;
+}
+
+export function isYjsMap<T = unknown>(value: unknown): value is Y.Map<T> {
+  return value instanceof Y.Map;
+}
+
+export function createYjsSubdocument(
+  parent: Y.Doc,
+  options?: {
+    guid?: string;
+    autoLoad?: boolean;
+  },
+): Y.Doc {
+  return new Y.Doc({
+    guid: options?.guid,
+    autoLoad: options?.autoLoad ?? true,
+    gc: parent.gc,
+  });
 }
 
 // ── Constants ───────────────────────────────────────────────
@@ -37,6 +67,7 @@ export const BLOCKS = "blocks";
 export const APPS = "apps";
 export const METADATA = "metadata";
 export const SUBDOCUMENT = "subdocument";
+export const DOCUMENT_PROFILE = "documentProfile";
 
 // ── Document Validation ─────────────────────────────────────
 
@@ -286,6 +317,22 @@ export interface YjsDocumentOptions {
   gc?: boolean;
 }
 
+function normalizeDocumentProfile(value: unknown): DocumentProfile | null {
+  return value === "structured" || value === "flow" ? value : null;
+}
+
+export function getDocumentProfile(doc: CRDTDocument): DocumentProfile | null {
+  const value = asYjsDoc(doc).penDocument.metadata.get(DOCUMENT_PROFILE);
+  return normalizeDocumentProfile(value);
+}
+
+export function setDocumentProfile(
+  doc: CRDTDocument,
+  profile: DocumentProfile,
+): void {
+  asYjsDoc(doc).penDocument.metadata.set(DOCUMENT_PROFILE, profile);
+}
+
 export function createYjsDocument(
   adapter: CRDTAdapter,
   options?: YjsDocumentOptions,
@@ -374,6 +421,7 @@ export function initBlockMap(
   blockMap.set("type", blockType);
   blockMap.set("props", new Y.Map<unknown>());
   blockMap.set("meta", new Y.Map<unknown>());
+  const parentDoc = (blocks as Y.Map<Y.Map<unknown>> & { doc?: Y.Doc | null }).doc;
 
   switch (contentType) {
     case "inline":
@@ -392,7 +440,10 @@ export function initBlockMap(
       break;
     }
     case "subdocument":
-      blockMap.set(SUBDOCUMENT, new Y.Doc({ autoLoad: true }));
+      blockMap.set(
+        SUBDOCUMENT,
+        parentDoc ? createYjsSubdocument(parentDoc) : new Y.Doc({ autoLoad: true }),
+      );
       break;
     case "nested":
       blockMap.set("children", new Y.Array<string>());

@@ -5,11 +5,14 @@ import {
   APPS,
   BLOCKS,
   BLOCK_ORDER,
+  DOCUMENT_PROFILE,
   METADATA,
   SUBDOCUMENT,
   createYjsDocument,
+  getDocumentProfile,
   initBlockMap,
   isYjsCRDTDocument,
+  setDocumentProfile,
   validateDocument,
   wrapYjsDocument,
   createTableCell,
@@ -40,6 +43,12 @@ describe("document", () => {
     it("respects gc: false option", () => {
       const doc = createYjsDocument(adapter, { gc: false });
       expect(doc.ydoc.gc).toBe(false);
+    });
+
+    it("starts without a persisted document profile", () => {
+      const doc = createYjsDocument(adapter);
+      expect(doc.penDocument.metadata.get(DOCUMENT_PROFILE)).toBeUndefined();
+      expect(getDocumentProfile(doc)).toBeNull();
     });
   });
 
@@ -119,7 +128,9 @@ describe("document", () => {
       });
 
       const block = doc.penDocument.blocks.get("b-sub")!;
-      expect(block.get(SUBDOCUMENT)).toBeInstanceOf(Y.Doc);
+      const subdoc = block.get(SUBDOCUMENT) as Y.Doc;
+      expect(subdoc).toBeInstanceOf(Y.Doc);
+      expect(subdoc.gc).toBe(doc.ydoc.gc);
       expect(block.has("content")).toBe(false);
       expect(block.has("children")).toBe(false);
       expect(block.has("tableContent")).toBe(false);
@@ -170,6 +181,16 @@ describe("document", () => {
       expect(BLOCKS).toBe("blocks");
       expect(APPS).toBe("apps");
       expect(METADATA).toBe("metadata");
+      expect(DOCUMENT_PROFILE).toBe("documentProfile");
+    });
+  });
+
+  describe("document profile helpers", () => {
+    it("updates document profile metadata", () => {
+      const doc = createYjsDocument(adapter);
+      setDocumentProfile(doc, "flow");
+      expect(getDocumentProfile(doc)).toBe("flow");
+      expect(doc.penDocument.metadata.get(DOCUMENT_PROFILE)).toBe("flow");
     });
   });
 

@@ -132,6 +132,9 @@ export {
 	type PropSchema,
 	type ContentType,
 	type BlockDisplay,
+	type BlockAuthoring,
+	type BlockSelectionRole,
+	type FlowBlockCapability,
 	type ImportInlineMark,
 	type ImportContentSource,
 	type BlockImportMatch,
@@ -204,6 +207,7 @@ export type {
 	GenerationZone,
 	UndoManagerOptions,
 	AttributionRange,
+	DocumentProfile,
 	DocumentScopeKind,
 	DocumentScopeInfo,
 	DocumentScope,
@@ -235,6 +239,7 @@ export {
 	type DiagnosticEvent,
 	type DocumentValidationError,
 	type CommandContext,
+	type EditorViewMode,
 	HOOK_PRIORITY_AUTH,
 	HOOK_PRIORITY_SUGGEST,
 	HOOK_PRIORITY_INPUT_RULE,
@@ -287,6 +292,7 @@ export type {
 	ExportOptions,
 	Importer,
 	ImportOptions,
+	ImportResult,
 } from "./serialization";
 
 // ── Rendering ───────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { isDevelopmentEnvironment } from "../utils/environment";
 export interface ToolbarState {
 	activeMarks: Record<string, unknown>;
 	blockType: string | null;
+	blockTypeOptions: Array<{ value: string; label: string }>;
 	canBold: boolean;
 	canItalic: boolean;
 	canUnderline: boolean;
@@ -16,6 +17,7 @@ export interface ToolbarState {
 export const EMPTY_TOOLBAR_STATE: ToolbarState = {
 	activeMarks: {},
 	blockType: null,
+	blockTypeOptions: [],
 	canBold: false,
 	canItalic: false,
 	canUnderline: false,

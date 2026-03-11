@@ -105,6 +105,12 @@ export class ApplyPipeline {
 		) => DocumentOp[];
 		priority: number;
 	}> = [];
+	private _finalBeforeApplyHook:
+		| ((
+				ops: DocumentOp[],
+				options: { origin?: OpOrigin },
+		  ) => DocumentOp[])
+		| null = null;
 
 	get suppressObserver(): boolean {
 		return this._suppressObserver;
@@ -177,6 +183,17 @@ export class ApplyPipeline {
 		};
 	}
 
+	setFinalBeforeApplyHook(
+		hook:
+			| ((
+					ops: DocumentOp[],
+					options: { origin?: OpOrigin },
+			  ) => DocumentOp[])
+			| null,
+	): void {
+		this._finalBeforeApplyHook = hook;
+	}
+
 	// ── Apply ────────────────────────────────────────────────
 
 	apply(ops: DocumentOp[], origin: OpOrigin): void {
@@ -218,6 +235,22 @@ export class ApplyPipeline {
 					message: "onBeforeApply hook threw",
 					remediation:
 						"Update the onBeforeApply hook to handle incoming ops defensively and " +
+						"always return a valid DocumentOp array.",
+					error: err,
+				});
+			}
+		}
+		if (this._finalBeforeApplyHook) {
+			try {
+				transformedOps = this._finalBeforeApplyHook(transformedOps, { origin });
+			} catch (err) {
+				this._emitter.emit("diagnostic", {
+					code: "PEN_APPLY_007",
+					level: "error",
+					source: "apply",
+					message: "final apply boundary hook threw",
+					remediation:
+						"Update the final apply boundary hook to handle incoming ops defensively and " +
 						"always return a valid DocumentOp array.",
 					error: err,
 				});

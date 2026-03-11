@@ -31,7 +31,11 @@ export function ToolbarRoot(props: ToolbarRootProps) {
 	const editorContextValue = {
 		editor,
 		readonly: editorContext?.readonly ?? false,
+		documentProfile: editor.documentProfile,
+		editorViewMode: editorContext?.editorViewMode ?? editor.editorViewMode,
 		importers: editorContext?.importers,
+		assets: editorContext?.assets,
+		renderers: editorContext?.renderers,
 	};
 
 	const ctx: ToolbarContextValue = { editor, state };

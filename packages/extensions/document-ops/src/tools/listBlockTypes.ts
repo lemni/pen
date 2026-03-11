@@ -1,4 +1,5 @@
 import type { Editor, ToolDefinition } from "@pen/types";
+import { getAvailableToolBlockSchemas } from "../utils/blockTypePolicy";
 
 export function listBlockTypesTool(editor: Editor): ToolDefinition {
   return {
@@ -16,7 +17,7 @@ export function listBlockTypesTool(editor: Editor): ToolDefinition {
         props: string[];
       }> = [];
 
-      for (const schema of editor.schema.allBlocks()) {
+      for (const schema of getAvailableToolBlockSchemas(editor)) {
         types.push({
           type: schema.type,
           content: Array.isArray(schema.content)

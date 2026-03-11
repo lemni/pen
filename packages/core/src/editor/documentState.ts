@@ -3,6 +3,7 @@ import type {
   CRDTDocument,
   CRDTMap,
   DocumentState,
+  DocumentProfile,
   PenDocument,
   SchemaRegistry,
   BlockHandle,
@@ -16,6 +17,7 @@ export class DocumentStateImpl implements DocumentState {
   private _parentIndex: Map<string, string>;
   private _blockOrder: string[];
   private _generation = 0;
+  private _documentProfile: DocumentProfile;
   private _doc: PenDocument;
   private _crdtDoc: CRDTDocument;
   private readonly _registry: SchemaRegistry;
@@ -24,10 +26,12 @@ export class DocumentStateImpl implements DocumentState {
     doc: PenDocument,
     crdtDoc: CRDTDocument,
     registry: SchemaRegistry,
+    documentProfile: DocumentProfile,
   ) {
     this._doc = doc;
     this._crdtDoc = crdtDoc;
     this._registry = registry;
+    this._documentProfile = documentProfile;
     this._positionIndex = new Map();
     this._parentIndex = new Map();
     this._blockOrder = [];
@@ -36,6 +40,10 @@ export class DocumentStateImpl implements DocumentState {
 
   get blockOrder(): readonly string[] {
     return this._blockOrder;
+  }
+
+  get documentProfile(): DocumentProfile {
+    return this._documentProfile;
   }
 
   get blockCount(): number {
@@ -150,11 +158,24 @@ export class DocumentStateImpl implements DocumentState {
     }
   }
 
-  updateDocument(doc: PenDocument, crdtDoc: CRDTDocument): void {
+  updateDocument(
+    doc: PenDocument,
+    crdtDoc: CRDTDocument,
+    documentProfile: DocumentProfile,
+  ): void {
     this._doc = doc;
     this._crdtDoc = crdtDoc;
+    this._documentProfile = documentProfile;
     this.rebuild();
   }
+
+	setDocumentProfile(documentProfile: DocumentProfile): void {
+		if (this._documentProfile === documentProfile) {
+			return;
+		}
+		this._documentProfile = documentProfile;
+		this._generation++;
+	}
 
   private *_iterateBlocks(): Iterable<BlockHandle> {
     for (const id of this._blockOrder) {

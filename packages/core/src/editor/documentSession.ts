@@ -11,11 +11,14 @@ import type {
 } from "@pen/types";
 import {
   SUBDOCUMENT,
+  createYjsSubdocument,
+  isYjsDoc,
+  isYjsMap,
   isYjsCRDTDocument,
   wrapYjsDocument,
+  type YjsDoc,
   type YjsCRDTDocument,
 } from "@pen/crdt-yjs";
-import * as Y from "yjs";
 
 type ScopeListener = (event: CRDTEvent) => void;
 
@@ -24,9 +27,9 @@ type ScopeEntry = {
   awareness: Awareness | null;
   observerUnsub: Unsubscribe;
   subdocsHandler: ((event: {
-    added: Set<Y.Doc>;
-    loaded: Set<Y.Doc>;
-    removed: Set<Y.Doc>;
+    added: Set<YjsDoc>;
+    loaded: Set<YjsDoc>;
+    removed: Set<YjsDoc>;
   }) => void) | null;
 };
 
@@ -37,8 +40,8 @@ export interface CreateDocumentSessionOptions {
   ownsDocuments?: boolean;
 }
 
-function getDocumentGuid(doc: Y.Doc): string {
-  const guid = (doc as Y.Doc & { guid?: string }).guid;
+function getDocumentGuid(doc: YjsDoc): string {
+  const guid = (doc as YjsDoc & { guid?: string }).guid;
   return typeof guid === "string" && guid.length > 0
     ? guid
     : `doc-${doc.clientID}`;
@@ -162,7 +165,7 @@ export class DocumentSessionImpl implements DocumentSession {
     }
 
     const existing = blockMap.get(SUBDOCUMENT);
-    if (existing instanceof Y.Doc) {
+    if (isYjsDoc(existing)) {
       const existingScope = this.getScopeByGuid(getDocumentGuid(existing));
       if (existingScope) {
         return existingScope;
@@ -176,17 +179,13 @@ export class DocumentSessionImpl implements DocumentSession {
       );
     }
 
-    const subdoc = new Y.Doc({
-      guid: options?.guid,
-      autoLoad: options?.autoLoad ?? true,
-      gc: parentEntry.scope.doc.ydoc.gc,
-    });
+    const subdoc = createYjsSubdocument(parentEntry.scope.doc.ydoc, options);
     const subdocGuid = getDocumentGuid(subdoc);
 
     parentEntry.scope.doc.ydoc.transact(() => {
       blockMap.set(SUBDOCUMENT, subdoc);
       const props = blockMap.get("props");
-      if (props instanceof Y.Map) {
+      if (isYjsMap(props)) {
         props.set("subdocumentGuid", subdocGuid);
       }
     }, "system");
@@ -301,7 +300,7 @@ export class DocumentSessionImpl implements DocumentSession {
     entry: ScopeEntry,
     doc: YjsCRDTDocument,
   ): void {
-    const registerSubdoc = (subdoc: Y.Doc) => {
+    const registerSubdoc = (subdoc: YjsDoc) => {
       const ownerBlockId = this._resolveOwnerBlockId(doc, subdoc);
       if (!ownerBlockId) {
         return;
@@ -318,9 +317,9 @@ export class DocumentSessionImpl implements DocumentSession {
     }
 
     const handler = (event: {
-      added: Set<Y.Doc>;
-      loaded: Set<Y.Doc>;
-      removed: Set<Y.Doc>;
+      added: Set<YjsDoc>;
+      loaded: Set<YjsDoc>;
+      removed: Set<YjsDoc>;
     }) => {
       for (const subdoc of event.added) {
         registerSubdoc(subdoc);
@@ -339,7 +338,7 @@ export class DocumentSessionImpl implements DocumentSession {
 
   private _resolveOwnerBlockId(
     doc: YjsCRDTDocument,
-    subdoc: Y.Doc,
+    subdoc: YjsDoc,
   ): string | null {
     for (const [blockId, blockMap] of doc.penDocument.blocks.entries()) {
       if (blockMap.get(SUBDOCUMENT) === subdoc) {
@@ -421,7 +420,7 @@ export class DocumentSessionImpl implements DocumentSession {
     const subdoc = parentEntry.scope.doc.penDocument.blocks.get(blockId)?.get(
       SUBDOCUMENT,
     );
-    if (!(subdoc instanceof Y.Doc)) {
+    if (!isYjsDoc(subdoc)) {
       return null;
     }
     return this.getScopeByGuid(getDocumentGuid(subdoc));
@@ -441,7 +440,7 @@ export class DocumentSessionImpl implements DocumentSession {
     for (const blockId of targetBlockIds) {
       const blockMap = entry.scope.doc.penDocument.blocks.get(blockId);
       const subdoc = blockMap?.get(SUBDOCUMENT);
-      if (!(subdoc instanceof Y.Doc)) {
+      if (!isYjsDoc(subdoc)) {
         continue;
       }
       this._registerScope(wrapYjsDocument(this.adapter, subdoc), {

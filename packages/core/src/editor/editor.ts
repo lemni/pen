@@ -12,6 +12,7 @@ import type {
 	Awareness,
 	DocumentSession,
 	DocumentScope,
+	DocumentProfile,
 	Extension,
 	DocumentOp,
 	ApplyOptions,
@@ -27,6 +28,7 @@ import type {
 	CRDTArray,
 	Position,
 	DecorationSet,
+	EditorViewMode,
 } from "@pen/types";
 import { usesInlineTextSelection } from "@pen/types";
 import { yjsAdapter } from "@pen/crdt-yjs";
@@ -40,6 +42,7 @@ import { createBlockHandle } from "../schema/handles";
 import { EventEmitter } from "./events";
 import { ApplyPipeline } from "./apply";
 import { resolveCellSelectionMatrix } from "./cellSelection";
+import { filterOpsForDocumentProfile } from "./profilePolicy";
 import type { CRDTUnknownMap } from "./crdtShapes";
 import { getTextProp, getTableContent, getCellText as getCellTextFromRow, isCRDTMap } from "./crdtShapes";
 import { ExtensionManagerImpl } from "./extensionManager";
@@ -84,6 +87,9 @@ class EditorImpl implements Editor {
 	private _awareness: Awareness | null = null;
 	private readonly _slots = new Map<string, unknown>();
 	private _clientId: number;
+	private _documentProfile: DocumentProfile;
+	private readonly _explicitEditorViewMode: EditorViewMode | null;
+	private _editorViewMode: EditorViewMode;
 	private _commitId = 0;
 	private readonly _blockRevisions = new Map<string, number>();
 	private readonly _viewId = crypto.randomUUID();
@@ -92,6 +98,7 @@ class EditorImpl implements Editor {
 
 	constructor(options: CreateEditorOptions = {}) {
 		this._registry = options.schema ?? builtInDefaultSchema;
+		this._explicitEditorViewMode = options.editorViewMode ?? null;
 		this._adapter = options.documentSession?.adapter ?? options.crdt ?? yjsAdapter();
 		const documentSession =
 			options.documentSession ??
@@ -102,6 +109,9 @@ class EditorImpl implements Editor {
 				ownsDocuments: options.document == null,
 			});
 		this._bindSession(documentSession, options.documentScopeId);
+		this._documentProfile = this._resolveDocumentProfile(options.documentProfile);
+		this._editorViewMode =
+			this._explicitEditorViewMode ?? this._documentProfile;
 		this._clientId = this._adapter.getClientId(this._crdtDoc);
 
 		this._emitter = new EventEmitter();
@@ -129,6 +139,7 @@ class EditorImpl implements Editor {
 			this._doc,
 			this._crdtDoc,
 			this._registry,
+			this._documentProfile,
 		);
 
 		this._extensions = new ExtensionManagerImpl(this._emitter);
@@ -140,6 +151,7 @@ class EditorImpl implements Editor {
 		this._pipeline._init((event) => {
 			this._dispatchCRDTEvent(event);
 		});
+		this._installProfilePolicyHook();
 
 		this.undoManager = NOOP_UNDO;
 		this._refreshCoreSlots();
@@ -159,6 +171,14 @@ class EditorImpl implements Editor {
 
 	get documentScope(): DocumentScope {
 		return this._documentScope;
+	}
+
+	get documentProfile(): DocumentProfile {
+		return this._documentProfile;
+	}
+
+	get editorViewMode(): EditorViewMode {
+		return this._editorViewMode;
 	}
 
 	get schema(): SchemaRegistry {
@@ -241,6 +261,9 @@ class EditorImpl implements Editor {
 				ownsDocuments: false,
 			}),
 		);
+		this._documentProfile = this._resolveDocumentProfile();
+		this._editorViewMode =
+			this._explicitEditorViewMode ?? this._documentProfile;
 		this._clientId = this._adapter.getClientId(this._crdtDoc);
 
 		this._engine = new SchemaEngineImpl(
@@ -250,7 +273,11 @@ class EditorImpl implements Editor {
 		);
 		this._selection.updateDocument(this._doc, this._crdtDoc);
 		this._pipeline.updateDocument(this._doc, this._crdtDoc, this._engine);
-		this._documentState.updateDocument(this._doc, this._crdtDoc);
+		this._documentState.updateDocument(
+			this._doc,
+			this._crdtDoc,
+			this._documentProfile,
+		);
 		this._pipeline._init((event) => {
 			this._dispatchCRDTEvent(event);
 		});
@@ -488,14 +515,14 @@ class EditorImpl implements Editor {
 		}
 	}
 
-	deleteSelection(): void {
+	deleteSelection(options?: ApplyOptions): void {
 		const sel = this._selection.getSelection();
 		if (!sel) return;
 
 		if (sel.type === "text") {
 			const range = this._getSelectionRange(sel);
 			if (range.isMultiBlock) {
-				this._deleteMultiBlockTextRange(range);
+				this._deleteMultiBlockTextRange(range, options);
 				return;
 			}
 
@@ -507,12 +534,15 @@ class EditorImpl implements Editor {
 					range.end.offset,
 				)
 			) {
-				this.apply([
-					{
-						type: "delete-block",
-						blockId: range.start.blockId,
-					},
-				]);
+				this.apply(
+					[
+						{
+							type: "delete-block",
+							blockId: range.start.blockId,
+						},
+					],
+					options,
+				);
 				this.setSelection(null);
 				return;
 			}
@@ -520,14 +550,17 @@ class EditorImpl implements Editor {
 			const from = range.start.offset;
 			const to = range.end.offset;
 			if (to > from) {
-				this.apply([
-					{
-						type: "delete-text",
-						blockId: range.start.blockId,
-						offset: from,
-						length: to - from,
-					},
-				]);
+				this.apply(
+					[
+						{
+							type: "delete-text",
+							blockId: range.start.blockId,
+							offset: from,
+							length: to - from,
+						},
+					],
+					options,
+				);
 			}
 			this._collapseToPoint({
 				blockId: range.start.blockId,
@@ -541,7 +574,7 @@ class EditorImpl implements Editor {
 				type: "delete-block" as const,
 				blockId: id,
 			}));
-			this.apply(ops);
+			this.apply(ops, options);
 			this.setSelection(null);
 		}
 
@@ -567,7 +600,7 @@ class EditorImpl implements Editor {
 				}
 			}
 			if (ops.length > 0) {
-				this.apply(ops, { origin: "user" });
+				this.apply(ops, options);
 			}
 			this.setSelection({
 				...sel,
@@ -668,6 +701,39 @@ class EditorImpl implements Editor {
 		return [...defaults, ...userExtensions];
 	}
 
+	private _installProfilePolicyHook(): void {
+		this._pipeline.setFinalBeforeApplyHook((ops) =>
+			this._enforceDocumentProfileBoundary(ops),
+		);
+	}
+
+	private _enforceDocumentProfileBoundary(ops: DocumentOp[]): DocumentOp[] {
+		const result = filterOpsForDocumentProfile(
+			ops,
+			this._documentProfile,
+			this._registry,
+		);
+
+		for (const violation of result.violations) {
+			this._emitter.emit("diagnostic", {
+				code: "PEN_PROFILE_001",
+				level: "warn",
+				source: "profile-policy",
+				message:
+					`profile-policy: dropped ${violation.op.type} for disallowed ` +
+					`block type "${violation.blockType}" in ${violation.documentProfile} documents`,
+				remediation:
+					"Use a block type allowed by the active documentProfile or " +
+					"change the documentProfile before applying structural mutations.",
+				op: violation.op,
+				blockType: violation.blockType,
+				documentProfile: violation.documentProfile,
+			});
+		}
+
+		return result.ops;
+	}
+
 	private _refreshCoreSlots(): void {
 		this._slots.set("core:engine", this._engine);
 	}
@@ -692,6 +758,18 @@ class EditorImpl implements Editor {
 				session as { attachEditor: () => Unsubscribe }
 			).attachEditor();
 		}
+	}
+
+	private _resolveDocumentProfile(
+		requestedProfile?: DocumentProfile,
+	): DocumentProfile {
+		const persistedProfile =
+			this._adapter.getDocumentProfile?.(this._crdtDoc) ?? null;
+		const resolvedProfile = persistedProfile ?? requestedProfile ?? "structured";
+		if (persistedProfile == null) {
+			this._adapter.setDocumentProfile?.(this._crdtDoc, resolvedProfile);
+		}
+		return resolvedProfile;
 	}
 
 	private _refreshUndoManager(): void {
@@ -748,11 +826,26 @@ class EditorImpl implements Editor {
 	}
 
 	private _dispatchCRDTEvent(event: CRDTEvent): void {
+		this._syncDocumentProfileFromStorage();
 		const commitEvent = this._createCommitEvent(event);
 		this._documentState.incrementalUpdate(event.affectedBlocks);
 		this._extensions.dispatchObserve([event], this);
 		this._emitter.emit("change", [event]);
 		this._emitter.emit("documentCommit", commitEvent);
+	}
+
+	private _syncDocumentProfileFromStorage(): void {
+		const persistedProfile =
+			this._adapter.getDocumentProfile?.(this._crdtDoc) ?? null;
+		if (!persistedProfile || persistedProfile === this._documentProfile) {
+			return;
+		}
+
+		this._documentProfile = persistedProfile;
+		if (this._explicitEditorViewMode == null) {
+			this._editorViewMode = persistedProfile;
+		}
+		this._documentState.setDocumentProfile(persistedProfile);
 	}
 
 	private _wireObservation(): void {
@@ -940,6 +1033,7 @@ class EditorImpl implements Editor {
 
 	private _deleteMultiBlockTextRange(
 		range: DocumentRange,
+		options?: ApplyOptions,
 	): { blockId: string; offset: number } | null {
 		const startId = range.start.blockId;
 		const endId = range.end.blockId;
@@ -947,14 +1041,17 @@ class EditorImpl implements Editor {
 			const from = range.start.offset;
 			const to = range.end.offset;
 			if (to > from) {
-				this.apply([
-					{
-						type: "delete-text",
-						blockId: startId,
-						offset: from,
-						length: to - from,
-					},
-				]);
+				this.apply(
+					[
+						{
+							type: "delete-text",
+							blockId: startId,
+							offset: from,
+							length: to - from,
+						},
+					],
+					options,
+				);
 			}
 			const caret = { blockId: startId, offset: from };
 			this._collapseToPoint(caret);
@@ -965,7 +1062,7 @@ class EditorImpl implements Editor {
 		const endInline = this._usesInlineTextSelection(endId);
 		if (startInline && endInline) {
 			const { ops, caret } = this._buildMultiBlockTextReplacement(range, "");
-			this.apply(ops);
+			this.apply(ops, options);
 			this._collapseToPoint(caret);
 			return caret;
 		}
@@ -1026,7 +1123,7 @@ class EditorImpl implements Editor {
 		}
 
 		if (ops.length > 0) {
-			this.apply(ops);
+			this.apply(ops, options);
 		}
 
 		const caret = startInline

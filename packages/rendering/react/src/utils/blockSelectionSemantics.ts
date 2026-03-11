@@ -1,47 +1,21 @@
 import type { Editor } from "@pen/core";
-import type { ExpandedBlockRole } from "../field-editor/crossBlock";
-
-export type BlockSelectionRole = ExpandedBlockRole;
-
-type BlockSchemaLike = {
-	content?: string;
-	fieldEditor?: unknown;
-} | null | undefined;
+import {
+	getBlockSelectionRoleFromSchema as getSharedBlockSelectionRoleFromSchema,
+	getBlockSelectionRoleFromType as getSharedBlockSelectionRoleFromType,
+	type BlockSelectionRole,
+} from "@pen/core";
+export type { BlockSelectionRole } from "@pen/core";
 
 export function getBlockSelectionRoleFromSchema(
-	schema: BlockSchemaLike,
+	schema: Parameters<typeof getSharedBlockSelectionRoleFromSchema>[0],
 ): BlockSelectionRole | null {
-	if (!schema) {
-		return null;
-	}
-
-	if (schema.fieldEditor === "none") {
-		return "structural";
-	}
-
-	if (schema.content === "inline") {
-		return "editable-inline";
-	}
-
-	return "delegated";
+	return getSharedBlockSelectionRoleFromSchema(schema);
 }
 
 export function getBlockSelectionRoleFromType(
 	blockType: string | null | undefined,
 ): BlockSelectionRole {
-	if (blockType === "divider" || blockType === "image") {
-		return "structural";
-	}
-
-	if (
-		blockType === "codeBlock" ||
-		blockType === "table" ||
-		blockType === "database"
-	) {
-		return "delegated";
-	}
-
-	return "editable-inline";
+	return getSharedBlockSelectionRoleFromType(blockType);
 }
 
 export function getEditorBlockSelectionRole(

@@ -24,6 +24,25 @@ function editorWithTable(
   return editor;
 }
 
+function createFlowEditorFromSeededDocument(
+  seed: (editor: ReturnType<typeof createEditor>) => void,
+) {
+  const seedEditor = createEditor({
+    without: ["document-ops", "delta-stream", "undo"],
+  });
+  seed(seedEditor);
+
+  const document = seedEditor.internals.crdtDoc;
+  seedEditor.internals.adapter.setDocumentProfile?.(document, "flow");
+
+  const editor = createEditor({
+    document,
+    without: ["document-ops", "delta-stream", "undo"],
+  });
+  seedEditor.destroy();
+  return editor;
+}
+
 describe("@pen/export-html", () => {
   it("exports a heading as HTML", () => {
     const editor = editorWithBlocks([
@@ -331,6 +350,47 @@ describe("@pen/export-html", () => {
 
     const html = htmlExporter.export(editor);
     expect(html).toContain("<strong>Alpha</strong>");
+    editor.destroy();
+  });
+
+  it("preserves seeded structured and hidden blocks when exporting flow documents", () => {
+    const editor = createFlowEditorFromSeededDocument((seedEditor) => {
+      seedEditor.apply([
+        {
+          type: "insert-block",
+          blockId: "db1",
+          blockType: "database",
+          props: {},
+          position: "last",
+        },
+        {
+          type: "update-table-columns",
+          blockId: "db1",
+          columns: [{ id: "name", title: "Name", type: "text" }],
+        } as any,
+        {
+          type: "database-insert-row",
+          blockId: "db1",
+          rowId: "row-1",
+          values: { name: "Alice" },
+        } as any,
+        {
+          type: "insert-block",
+          blockId: "sub-1",
+          blockType: "subdocument",
+          props: { subdocumentGuid: "nested-guid" },
+          position: "last",
+        },
+      ]);
+    });
+
+    const html = htmlExporter.export(editor);
+
+    expect(editor.documentProfile).toBe("flow");
+    expect(html).toContain("data-pen-database=");
+    expect(html).toContain(">Alice</td>");
+    expect(html).toContain('data-pen-subdocument="');
+
     editor.destroy();
   });
 });

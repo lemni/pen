@@ -9,7 +9,9 @@ import { createYjsAwareness } from "./awareness";
 import {
   asYjsDoc,
   createYjsDocument,
+  getDocumentProfile as getPersistedDocumentProfile,
   initBlockMap,
+  setDocumentProfile as setPersistedDocumentProfile,
   validateDocument,
 } from "./document";
 import type { BlockContentType } from "./document";
@@ -120,6 +122,14 @@ export function yjsAdapter(options?: YjsAdapterOptions): CRDTAdapter {
 
     getClientId(doc) {
       return asYjsDoc(doc).ydoc.clientID;
+    },
+
+    getDocumentProfile(doc) {
+      return getPersistedDocumentProfile(doc);
+    },
+
+    setDocumentProfile(doc, profile) {
+      setPersistedDocumentProfile(doc, profile);
     },
 
     raw<T>(doc: CRDTDocument): T {

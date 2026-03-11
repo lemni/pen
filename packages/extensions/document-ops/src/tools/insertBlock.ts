@@ -1,4 +1,5 @@
 import type { Editor, ToolDefinition, Position } from "@pen/types";
+import { assertToolCanUseBlockType } from "../utils/blockTypePolicy";
 
 export function insertBlockTool(editor: Editor): ToolDefinition {
   return {
@@ -21,6 +22,7 @@ export function insertBlockTool(editor: Editor): ToolDefinition {
         props?: Record<string, unknown>;
         content?: string;
       };
+      assertToolCanUseBlockType(editor, opts.blockType);
       const blockId = crypto.randomUUID();
 
       editor.apply(

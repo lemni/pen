@@ -7,7 +7,6 @@ import { getConvertBlockOps } from "../../field-editor/commands";
 import {
 	getStarterTableProps,
 	getTableActivationTarget,
-	hasMeaningfulBlockText,
 } from "../../utils/tableDefaults";
 
 export interface ToolbarSelectProps extends AsChildProps {
@@ -20,6 +19,11 @@ export function ToolbarSelect(props: ToolbarSelectProps) {
   const { format, options, ...rest } = props;
   const { editor, state } = useToolbarContext();
   const { readonly } = useEditorContext();
+  const resolvedOptions =
+    format === "blockType" ? options ?? state.blockTypeOptions : options;
+  const selectedValue = resolvedOptions?.some((opt) => opt.value === state.blockType)
+    ? state.blockType ?? ""
+    : "";
 
   const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     if (readonly) return;
@@ -73,8 +77,8 @@ export function ToolbarSelect(props: ToolbarSelectProps) {
     }
   };
 
-  const selectOptions = options
-    ? options.map((opt) =>
+  const selectOptions = resolvedOptions
+    ? resolvedOptions.map((opt) =>
         React.createElement("option", { key: opt.value, value: opt.value }, opt.label),
       )
     : null;
@@ -83,7 +87,7 @@ export function ToolbarSelect(props: ToolbarSelectProps) {
     "data-pen-toolbar-select": "",
     "data-format": format,
     "data-current": state.blockType ?? undefined,
-    value: state.blockType ?? "",
+    value: selectedValue,
     onChange: handleChange,
   };
 

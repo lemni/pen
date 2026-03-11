@@ -1,3 +1,18 @@
+import {
+  filterOpsForDocumentProfile,
+  filterPendingBlocksForDocumentProfile,
+  createImportResult,
+  isContinuousTextFlowCapability,
+  normalizePendingBlocksForImport,
+  reportPendingBlockImportViolations,
+  reportPendingBlockProfileViolations,
+  resolveBlockFlowCapability,
+  shouldAllowDirectBlockPaste,
+  shouldAllowFlowInsertionInSlashMenu,
+  shouldFallbackMixedSelectionToBlock,
+  shouldForceBlockScopedSelectAll,
+} from "./editor/profilePolicy";
+
 // Re-export the entire @pen/types surface
 export * from "@pen/types";
 
@@ -44,6 +59,25 @@ export {
 	resolveCellSelectionMatrix,
 } from "./editor/cellSelection";
 export { getNumberedListItemValue } from "./editor/orderedList";
+export {
+  createImportResult,
+  filterOpsForDocumentProfile,
+  filterPendingBlocksForDocumentProfile,
+  isContinuousTextFlowCapability,
+  normalizePendingBlocksForImport,
+  reportPendingBlockImportViolations,
+  reportPendingBlockProfileViolations,
+  resolveBlockFlowCapability,
+  shouldAllowDirectBlockPaste,
+  shouldAllowFlowInsertionInSlashMenu,
+  shouldFallbackMixedSelectionToBlock,
+  shouldForceBlockScopedSelectAll,
+};
+export type {
+  PendingBlockImportPolicyViolation,
+  PendingBlockProfilePolicyViolation,
+  ProfilePolicyViolation,
+} from "./editor/profilePolicy";
 
 // Importer utilities (used by Wave 4 importers)
 export { blocksToOps } from "./importerUtils";

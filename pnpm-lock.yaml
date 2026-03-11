@@ -35,6 +35,9 @@ importers:
       '@pen/document-ops':
         specifier: workspace:*
         version: link:../extensions/document-ops
+      '@pen/schema-default':
+        specifier: workspace:^
+        version: link:../schema/default
       '@pen/shortcuts':
         specifier: workspace:*
         version: link:../extensions/shortcuts
@@ -142,6 +145,9 @@ importers:
         specifier: workspace:*
         version: link:../../types
     devDependencies:
+      '@pen/schema-default':
+        specifier: workspace:^
+        version: link:../../schema/default
       tsup:
         specifier: ^8.4.0
         version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)
@@ -342,6 +348,9 @@ importers:
       '@pen/shortcuts':
         specifier: workspace:*
         version: link:../../extensions/shortcuts
+      '@pen/types':
+        specifier: workspace:^
+        version: link:../../types
     devDependencies:
       '@types/react':
         specifier: ^19.0.0
@@ -370,9 +379,6 @@ importers:
 
   packages/schema/default:
     dependencies:
-      '@pen/core':
-        specifier: workspace:*
-        version: link:../../core
       '@pen/types':
         specifier: workspace:*
         version: link:../../types

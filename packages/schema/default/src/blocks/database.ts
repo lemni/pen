@@ -121,6 +121,10 @@ export const database = defineBlock("database", {
 	},
 	content: "database",
 	fieldEditor: "database",
+	authoring: {
+		flowCapability: "flow-disallowed",
+		selectionRole: "delegated",
+	},
 	display: {
 		title: "Database",
 		description: "Structured data with typed columns, views, and queries",

@@ -87,6 +87,19 @@ export type FieldEditorType =
   | "subdocument"
   | "none";
 
+export type FlowBlockCapability =
+  | "flow-inline"
+  | "flow-structural"
+  | "flow-delegated"
+  | "flow-disallowed";
+
+export type BlockSelectionRole = "editable-inline" | "structural" | "delegated";
+
+export interface BlockAuthoring {
+  flowCapability?: FlowBlockCapability;
+  selectionRole?: BlockSelectionRole;
+}
+
 export interface BlockSchema<
   Type extends string = string,
   Props extends Record<string, PropSchema> = Record<string, PropSchema>,
@@ -114,6 +127,7 @@ export interface BlockSchema<
   keyBindings?: readonly KeyBinding[];
   placeholder?: string;
   display?: BlockDisplay;
+  authoring?: BlockAuthoring;
   isContainer?: boolean;
   aiDescription?: string;
 }

@@ -16,6 +16,7 @@ export interface RegionSelectorConfig {
 	threshold: number;
 	selectionMode: RegionSelectorSelectionMode;
 	activation: RegionSelectorActivation;
+	getRegionRect?: (() => DOMRect | null) | undefined;
 }
 
 export interface RegionSelectionSnapshot {
@@ -103,7 +104,8 @@ function configsEqual(
 		a.enabled === b.enabled &&
 		a.threshold === b.threshold &&
 		a.selectionMode === b.selectionMode &&
-		a.activation === b.activation
+		a.activation === b.activation &&
+		a.getRegionRect === b.getRegionRect
 	);
 }
 
@@ -119,4 +121,35 @@ function rectsEqual(
 		a.width === b.width &&
 		a.height === b.height
 	);
+}
+
+export function resolveRegionRect(
+	config: RegionSelectorConfig | null,
+): DOMRect | null {
+	return config?.getRegionRect?.() ?? null;
+}
+
+export function intersectRegionSelectionRect(
+	rect: RegionSelectionRect,
+	regionRect: DOMRect | null,
+): RegionSelectionRect | null {
+	if (!regionRect) {
+		return rect;
+	}
+
+	const left = Math.max(rect.left, regionRect.left);
+	const top = Math.max(rect.top, regionRect.top);
+	const right = Math.min(rect.left + rect.width, regionRect.right);
+	const bottom = Math.min(rect.top + rect.height, regionRect.bottom);
+
+	if (right <= left || bottom <= top) {
+		return null;
+	}
+
+	return {
+		left,
+		top,
+		width: right - left,
+		height: bottom - top,
+	};
 }

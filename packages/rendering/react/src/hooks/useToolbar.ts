@@ -9,6 +9,7 @@ import {
 	getAttachedFieldEditorStore,
 } from "../utils/fieldEditor";
 import type { FieldEditor } from "@pen/core";
+import { getDefaultToolbarBlockTypeOptions } from "../utils/toolbarOptions";
 
 export function useToolbar(editor: Editor): ToolbarState {
 	const cacheRef = useRef<ToolbarState>(EMPTY_TOOLBAR_STATE);
@@ -42,9 +43,13 @@ function computeToolbarState(
 	editor: Editor,
 	fieldEditor: FieldEditor | null,
 ): ToolbarState {
+	const blockTypeOptions = getDefaultToolbarBlockTypeOptions(editor);
 	const selection = editor.selection;
 	if (!selection || selection.type !== "text") {
-		return EMPTY_TOOLBAR_STATE;
+		return {
+			...EMPTY_TOOLBAR_STATE,
+			blockTypeOptions,
+		};
 	}
 
 	const block = editor.getBlock(selection.anchor.blockId);
@@ -58,6 +63,7 @@ function computeToolbarState(
 	return {
 		activeMarks,
 		blockType,
+		blockTypeOptions,
 		canBold: canMark("bold"),
 		canItalic: canMark("italic"),
 		canUnderline: canMark("underline"),
@@ -215,6 +221,7 @@ function shallowEqual(
 function toolbarStateEqual(a: ToolbarState, b: ToolbarState): boolean {
 	return (
 		a.blockType === b.blockType &&
+		blockTypeOptionsEqual(a.blockTypeOptions, b.blockTypeOptions) &&
 		a.canBold === b.canBold &&
 		a.canItalic === b.canItalic &&
 		a.canUnderline === b.canUnderline &&
@@ -223,4 +230,19 @@ function toolbarStateEqual(a: ToolbarState, b: ToolbarState): boolean {
 		a.canLink === b.canLink &&
 		shallowEqual(a.activeMarks, b.activeMarks)
 	);
+}
+
+function blockTypeOptionsEqual(
+	a: ToolbarState["blockTypeOptions"],
+	b: ToolbarState["blockTypeOptions"],
+): boolean {
+	if (a.length !== b.length) {
+		return false;
+	}
+	for (let i = 0; i < a.length; i++) {
+		if (a[i]?.value !== b[i]?.value || a[i]?.label !== b[i]?.label) {
+			return false;
+		}
+	}
+	return true;
 }
