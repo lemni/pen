@@ -174,6 +174,19 @@ async function waitForAttributeValue(
 	}
 }
 
+async function waitForCondition(
+	check: () => boolean,
+	maxTicks = 20,
+): Promise<void> {
+	for (let tick = 0; tick < maxTicks; tick += 1) {
+		if (check()) {
+			return;
+		}
+		await Promise.resolve();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	}
+}
+
 function testStreamingToolExtension() {
 	let toolRuntime: ToolRuntime | null = null;
 
@@ -242,19 +255,26 @@ describe("@pen/react AI primitives", () => {
 			);
 		});
 
-		const session = controller!.startSession({
-			surface: "bottom-chat",
-			target: "document",
-		});
+		let session:
+			| ReturnType<NonNullable<typeof controller>["startSession"]>
+			| null = null;
 		let generationPromise: Promise<unknown> | null = null;
 
 		await act(async () => {
+			session = controller!.startSession({
+				surface: "bottom-chat",
+				target: "document",
+			});
 			generationPromise = controller!.runSessionPrompt(
-				session.id,
+				session!.id,
 				"Write a short story",
 				{ target: "document" },
 			);
-			await new Promise((resolve) => setTimeout(resolve, 120));
+			await waitForCondition(() => {
+				const heading = container.querySelector("h1[data-block-type='heading']");
+				const text = (container.textContent ?? "").replace(/\u200B/g, "");
+				return heading?.textContent?.includes("Story") === true && text.includes("Once upon");
+			});
 		});
 
 		const heading = container.querySelector("h1[data-block-type='heading']");
