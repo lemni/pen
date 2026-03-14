@@ -1,5 +1,5 @@
 import type { Editor } from "@pen/core";
-import { useAIActions, useAISessionActions, useAISessions, useSuggestions } from "@pen/react";
+import { useAISessionActions, useAISessions, useSuggestions } from "@pen/react";
 import {
 	useEffect,
 	useMemo,
@@ -24,6 +24,8 @@ interface PlaygroundChatMessage {
 	role: PlaygroundChatMessageRole;
 	content: string;
 	status: PlaygroundChatMessageStatus;
+	sessionId?: string;
+	turnId?: string;
 }
 
 const DEFAULT_CHAT_PROMPT =
@@ -35,7 +37,6 @@ export function PlaygroundChatDock({
 	editor,
 }: PlaygroundChatDockProps) {
 	const sessionActions = useAISessionActions(editor);
-	const aiActions = useAIActions(editor);
 	const sessions = useAISessions(editor);
 	const suggestions = useSuggestions(editor);
 	const playgroundAIState = usePlaygroundAIState();
@@ -46,21 +47,35 @@ export function PlaygroundChatDock({
 	const [activePanel, setActivePanel] = useState<PlaygroundDockPanel>("chat");
 	const [messages, setMessages] = useState<readonly PlaygroundChatMessage[]>(() => []);
 	const [lastError, setLastError] = useState<string | null>(null);
-	const [isResolvingPendingChanges, setIsResolvingPendingChanges] = useState(false);
+	const [resolvingTurnIds, setResolvingTurnIds] = useState<readonly string[]>([]);
+	const [acceptedTurnIds, setAcceptedTurnIds] = useState<readonly string[]>([]);
 
 	const bottomChatSession =
 		sessions.find((session) => session.id === bottomChatSessionIdRef.current) ?? null;
-	const bottomChatSuggestionIds = useMemo(() => {
+	const bottomChatTurnPendingState = useMemo(() => {
 		if (!bottomChatSession) {
-			return [];
+			return new Map<string, { suggestionIds: readonly string[]; pendingReviewItemCount: number }>();
 		}
-		const suggestionIds = new Set(bottomChatSession.pendingSuggestionIds);
-		for (const suggestion of suggestions) {
-			if (suggestion.sessionId === bottomChatSession.id) {
-				suggestionIds.add(suggestion.id);
-			}
-		}
-		return [...suggestionIds];
+		const pendingSuggestionIdSet = new Set(bottomChatSession.pendingSuggestionIds);
+		const pendingReviewItemIdSet = new Set(bottomChatSession.pendingReviewItemIds);
+		const documentSuggestionIdSet = new Set(
+			suggestions
+				.filter((suggestion) => suggestion.sessionId === bottomChatSession.id)
+				.map((suggestion) => suggestion.id),
+		);
+		return new Map(
+			bottomChatSession.turns.map((turn) => {
+				const suggestionIds = turn.suggestionIds.filter(
+					(suggestionId) =>
+						pendingSuggestionIdSet.has(suggestionId) &&
+						documentSuggestionIdSet.has(suggestionId),
+				);
+				const pendingReviewItemCount = turn.reviewItemIds.filter((reviewItemId) =>
+					pendingReviewItemIdSet.has(reviewItemId),
+				).length;
+				return [turn.id, { suggestionIds, pendingReviewItemCount }];
+			}),
+		);
 	}, [bottomChatSession, suggestions]);
 	const sessionPreview = playgroundAIState.sessionId
 		? playgroundAIState.sessionId.slice(0, 8)
@@ -70,16 +85,6 @@ export function PlaygroundChatDock({
 		: lastError
 			? "Error"
 			: "Ready";
-	const pendingChangeCount =
-		bottomChatSuggestionIds.length +
-		(bottomChatSession?.pendingReviewItemIds.length ?? 0);
-	const visiblePendingChangeCount = isResolvingPendingChanges ? 0 : pendingChangeCount;
-	const canKeepAll =
-		!isResolvingPendingChanges &&
-		!!bottomChatSession &&
-		(bottomChatSession.pendingSuggestionIds.length > 0 ||
-			bottomChatSuggestionIds.length > 0 ||
-			bottomChatSession.pendingReviewItemIds.length > 0);
 
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -147,6 +152,8 @@ export function PlaygroundChatDock({
 					...message,
 					status: "complete",
 					content: assistantContent,
+					sessionId,
+					turnId: generation?.turnId,
 				})),
 			);
 		} catch (error) {
@@ -191,43 +198,52 @@ export function PlaygroundChatDock({
 		});
 	};
 
-	const handleKeepAll = () => {
-		const sessionId = bottomChatSession?.id;
-		if (!sessionId || pendingChangeCount === 0) {
+	const handleKeepAllForTurn = (sessionId: string, turnId: string) => {
+		const pendingState = bottomChatTurnPendingState.get(turnId);
+		const pendingChangeCount =
+			(pendingState?.suggestionIds.length ?? 0) +
+			(pendingState?.pendingReviewItemCount ?? 0);
+		if (pendingChangeCount === 0) {
 			return;
 		}
-		setIsResolvingPendingChanges(true);
-		let accepted = false;
-		for (const suggestionId of bottomChatSuggestionIds) {
-			accepted = aiActions.acceptSuggestion(suggestionId) || accepted;
-		}
-		accepted = sessionActions.acceptSession(sessionId) || accepted;
+		setResolvingTurnIds((currentTurnIds) =>
+			currentTurnIds.includes(turnId)
+				? currentTurnIds
+				: [...currentTurnIds, turnId],
+		);
+		const accepted = sessionActions.acceptSessionTurn(sessionId, turnId);
 		if (!accepted) {
-			setIsResolvingPendingChanges(false);
+			setResolvingTurnIds((currentTurnIds) =>
+				currentTurnIds.filter((currentTurnId) => currentTurnId !== turnId),
+			);
 			setLastError("Unable to keep all pending AI changes.");
 			return;
 		}
 		setLastError(null);
-		setMessages((currentMessages) => [
-			...currentMessages,
-			{
-				id: crypto.randomUUID(),
-				role: "assistant",
-				content: "Kept all pending changes.",
-				status: "complete",
-			},
-		]);
+		setAcceptedTurnIds((currentTurnIds) =>
+			currentTurnIds.includes(turnId)
+				? currentTurnIds
+				: [...currentTurnIds, turnId],
+		);
 	};
 
 	useEffect(() => {
-		if (!isResolvingPendingChanges) {
+		if (resolvingTurnIds.length === 0) {
 			return;
 		}
-		setIsResolvingPendingChanges(false);
+		setResolvingTurnIds((currentTurnIds) =>
+			currentTurnIds.filter((turnId) => {
+				const pendingState = bottomChatTurnPendingState.get(turnId);
+				return (
+					(pendingState?.suggestionIds.length ?? 0) +
+						(pendingState?.pendingReviewItemCount ?? 0) >
+					0
+				);
+			}),
+		);
 	}, [
-		bottomChatSession?.pendingReviewItemIds.length,
-		bottomChatSuggestionIds,
-		isResolvingPendingChanges,
+		bottomChatTurnPendingState,
+		resolvingTurnIds.length,
 	]);
 
 	useEffect(() => {
@@ -275,6 +291,28 @@ export function PlaygroundChatDock({
 		</div>
 	);
 	const chatMessageItems = messages.map((message) => {
+		const pendingState =
+			message.role === "assistant" && message.turnId
+				? bottomChatTurnPendingState.get(message.turnId)
+				: undefined;
+		const pendingChangeCount =
+			(pendingState?.suggestionIds.length ?? 0) +
+			(pendingState?.pendingReviewItemCount ?? 0);
+		const isResolvingTurn =
+			message.turnId != null && resolvingTurnIds.includes(message.turnId);
+		const visiblePendingChangeCount = isResolvingTurn ? 0 : pendingChangeCount;
+		const canKeepAll =
+			message.role === "assistant" &&
+			message.status === "complete" &&
+			!!message.sessionId &&
+			!!message.turnId &&
+			!isResolvingTurn &&
+			pendingChangeCount > 0;
+		const shouldShowAcceptedState =
+			message.role === "assistant" &&
+			message.turnId != null &&
+			acceptedTurnIds.includes(message.turnId) &&
+			pendingChangeCount === 0;
 		return (
 			<article
 				key={message.id}
@@ -293,6 +331,25 @@ export function PlaygroundChatDock({
 				<div className="playground-chat-message-body">
 					{message.content || (message.role === "assistant" ? "Thinking..." : "")}
 				</div>
+				{canKeepAll ? (
+					<div className="playground-chat-message-actions">
+						<div className="playground-chat-message-note">
+							{visiblePendingChangeCount} pending change
+							{visiblePendingChangeCount === 1 ? "" : "s"}
+						</div>
+						<button
+							className="toolbar-button playground-chat-message-button"
+							type="button"
+							onClick={() => handleKeepAllForTurn(message.sessionId!, message.turnId!)}
+						>
+							Keep All
+						</button>
+					</div>
+				) : shouldShowAcceptedState ? (
+					<div className="playground-chat-message-actions">
+						<div className="playground-chat-message-note">Changes accepted</div>
+					</div>
+				) : null}
 			</article>
 		);
 	});
@@ -308,24 +365,6 @@ export function PlaygroundChatDock({
 			<div className="playground-chat-window">
 				{activePanel === "chat" ? (
 					<>
-						<div className="playground-chat-header">
-							{canKeepAll ? (
-								<div className="playground-chat-header-actions">
-									<div className="playground-chat-message-note">
-										{visiblePendingChangeCount} pending change
-										{visiblePendingChangeCount === 1 ? "" : "s"}
-									</div>
-									<button
-										className="toolbar-button playground-chat-message-button"
-										type="button"
-										onClick={handleKeepAll}
-									>
-										Keep All
-									</button>
-								</div>
-							) : null}
-						</div>
-
 						<div className="playground-chat-transcript" ref={transcriptRef}>
 							{chatMessageItems}
 						</div>
