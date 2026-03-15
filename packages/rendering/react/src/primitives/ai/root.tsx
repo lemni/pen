@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useEffect } from "react";
-import type { Editor } from "@pen/core";
-import { getAIController, type AIController } from "@pen/ai";
+import type { Editor } from "@pen/types";
+import {
+	getAIController,
+	type AIController,
+} from "@pen/ai";
+import { getAutocompleteController } from "@pen/ai-autocomplete";
 import { EditorContext } from "../../context/editorContext";
 import { useAI } from "../../hooks/useAI";
 import { DATA_ATTRS } from "../../utils/dataAttributes";
@@ -66,12 +70,10 @@ export function AIRoot(props: AIRootProps) {
 			if (shouldIgnoreAIKeyboardEvent(editor, event)) {
 				return;
 			}
-			if (event.key === "Tab") {
-				event.preventDefault();
-				controller.acceptEphemeralSuggestion();
+			const autocomplete = getAutocompleteController(editor);
+			if (autocomplete?.hasVisibleSuggestion()) {
 				return;
 			}
-
 			if (
 				event.key.length === 1 ||
 				event.key === "Backspace" ||
@@ -85,37 +87,6 @@ export function AIRoot(props: AIRootProps) {
 		document.addEventListener("keydown", handleKeyDown, true);
 		return () => document.removeEventListener("keydown", handleKeyDown, true);
 	}, [controller, editor, state.ephemeralSuggestion]);
-
-	useEffect(() => {
-		if (!controller) {
-			return;
-		}
-
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (shouldIgnoreAIKeyboardEvent(editor, event)) {
-				return;
-			}
-			if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") {
-				return;
-			}
-			if (event.altKey) {
-				return;
-			}
-			const isRedo = event.shiftKey;
-			const handled = isRedo
-				? controller.redoInlineHistory()
-				: controller.undoInlineHistory();
-			if (!handled) {
-				return;
-			}
-			event.preventDefault();
-			event.stopPropagation();
-			event.stopImmediatePropagation?.();
-		};
-
-		document.addEventListener("keydown", handleKeyDown, true);
-		return () => document.removeEventListener("keydown", handleKeyDown, true);
-	}, [controller, editor]);
 
 	return (
 		<AIContext.Provider value={{ editor, controller, state }}>

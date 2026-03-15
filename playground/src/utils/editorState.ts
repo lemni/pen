@@ -1,4 +1,4 @@
-import type { BlockHandle, Editor } from "@pen/core";
+import type { BlockHandle, Editor } from "@pen/types";
 import { getAttachedFieldEditorStore } from "@pen/react";
 
 interface SerializedTableCell {

@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import { Pen } from "../primitives/index";
 
 (
@@ -48,7 +49,11 @@ function setRect(
 
 function createThreeBlockEditor() {
 	const editor = createEditor({
-		without: ["document-ops", "delta-stream", "undo"],
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
 	});
 	const firstBlockId = editor.firstBlock()!.id;
 	const secondBlockId = crypto.randomUUID();
@@ -95,7 +100,11 @@ function createThreeBlockEditor() {
 describe("@pen/react region selection", () => {
 	it("focuses the existing empty placeholder block on background click", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 		const container = document.createElement("div");
@@ -148,7 +157,11 @@ describe("@pen/react region selection", () => {
 
 	it("inserts a new paragraph when the editor has no blocks", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 		editor.apply([{ type: "delete-block", blockId: firstBlockId }]);

@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import type { ActiveCellCoord } from "./controller";
 import type { FieldEditorTextLike } from "./crdt";
 

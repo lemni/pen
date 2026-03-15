@@ -1,5 +1,5 @@
 import { useRef, useSyncExternalStore } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 
 interface BlockModelSnapshot {
 	exists: boolean;

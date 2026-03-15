@@ -1,4 +1,4 @@
-import type { SchemaRegistry } from "@pen/core";
+import type { SchemaRegistry } from "@pen/types";
 import type { FieldEditorTextLike } from "./crdt";
 
 /**

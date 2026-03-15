@@ -3,7 +3,8 @@
 import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
-import { createEditor } from "@pen/core";
+import { createEditor as createCoreEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import type { FieldEditorImpl } from "../field-editor/fieldEditorImpl";
 import { FIELD_EDITOR_SLOT_KEY } from "../constants/fieldEditor";
 import { domSelectionToEditor } from "../field-editor/selectionBridge";
@@ -40,6 +41,70 @@ function createSelectAllEvent(): KeyboardEvent {
 	});
 }
 
+function createEditor(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+): ReturnType<typeof createCoreEditor> {
+	if (shouldUseSelectionDeletionPreset(options)) {
+		const { without: _without, ...rest } = options;
+		return createCoreEditor({
+			...rest,
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
+		});
+	}
+
+	if (usesLegacySelectionDeletionDefaults(options.without)) {
+		const { without: _without, ...rest } = options;
+		return createCoreEditor({
+			...rest,
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
+		});
+	}
+
+	return createCoreEditor(options);
+}
+
+function createUndoSelectionDeletionEditor(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+): ReturnType<typeof createCoreEditor> {
+	return createCoreEditor({
+		...options,
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: true,
+		}),
+	});
+}
+
+function shouldUseSelectionDeletionPreset(
+	options: NonNullable<Parameters<typeof createCoreEditor>[0]>,
+): boolean {
+	return (
+		options.without == null &&
+		options.preset == null &&
+		options.extensions == null
+	);
+}
+
+function usesLegacySelectionDeletionDefaults(
+	without: NonNullable<Parameters<typeof createCoreEditor>[0]>["without"],
+): boolean {
+	return (
+		without?.length === 3 &&
+		without[0] === "document-ops" &&
+		without[1] === "delta-stream" &&
+		without[2] === "undo"
+	);
+}
+
 function getFieldEditor(
 	editor: ReturnType<typeof createEditor>,
 ): FieldEditorImpl {
@@ -68,9 +133,7 @@ function setNativeSelectionRange(
 
 describe("@pen/react selected text deletion", () => {
 	it("preserves the full native selection on mouseup after a word select gesture", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -177,9 +240,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("collapses a selected inline range to a caret when clicking inside it", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -288,9 +349,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("preserves third-click block selection when the native range settles after mouseup", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -403,9 +462,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("selects the full block on the third click after a word selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -509,9 +566,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("collapses a full-block text selection to a caret on the fourth click", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -615,9 +670,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("collapses an immediate fourth click after triple-click paragraph selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -754,9 +807,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("collapses an immediate follow-up single click after triple-click paragraph selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -900,9 +951,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("ignores a late native full-block selectionchange after collapsing to a caret", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -1027,9 +1076,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("collapses a double-click word selection to a caret after a paused single click", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -1133,9 +1180,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("collapses backspace deletion to the normalized range start", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -1222,9 +1267,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("backspace exits an empty blockquote via beforeinput", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([{ type: "convert-block", blockId, newType: "blockquote" }]);
@@ -1289,9 +1332,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("backspace exits an empty bullet list item via beforeinput", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -1358,9 +1399,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("converts '- ' into a bullet list item via beforeinput", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		const container = document.createElement("div");
@@ -1437,9 +1476,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("converts '3. ' into a numbered list item via beforeinput", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		const container = document.createElement("div");
@@ -1521,9 +1558,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("converts '[ ] ' into a check list item via beforeinput", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		const container = document.createElement("div");
@@ -1612,9 +1647,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("does not convert headings with list triggers via beforeinput", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([{ type: "convert-block", blockId, newType: "heading" }]);
@@ -1689,9 +1722,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("deletes first cmd+a selection from the active editing surface on backspace", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -1758,9 +1789,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("deletes the full selected paragraph on backspace keydown in the active surface", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -1813,9 +1842,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("deletes the full selected heading on backspace keydown in the active surface", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -1870,9 +1897,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("deletes a selected single-block range from editor chrome even with a stale DOM selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -1937,9 +1962,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("deletes a selected single-block range when focus moves to editor chrome", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -2007,9 +2030,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("resets an empty heading to paragraph on backspace keydown", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([{ type: "convert-block", blockId, newType: "heading" }]);
@@ -2070,7 +2091,6 @@ describe("@pen/react selected text deletion", () => {
 	it("deletes the full-document selection after first cmd+a in flow documents", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
@@ -2155,9 +2175,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("keeps advancing the caret across consecutive insertText events", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -2248,9 +2266,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("moves the caret into the inserted block after Enter at block end", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -2320,9 +2336,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("shows the next ordered-list marker after Enter continues a numbered list", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -2386,9 +2400,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("deletes a promoted cross-block selection from document keydown", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -2474,9 +2486,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("reconciles expanded active blocks after replaceSelection commits", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -2547,9 +2557,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("prevents native drag and drop on a single-block text selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -2614,9 +2622,7 @@ describe("@pen/react selected text deletion", () => {
 			}
 		).EditContext = FakeEditContext;
 
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -2729,9 +2735,7 @@ describe("@pen/react selected text deletion", () => {
 			}
 		).EditContext = FakeEditContext;
 
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		const container = document.createElement("div");
@@ -2814,9 +2818,7 @@ describe("@pen/react selected text deletion", () => {
 			}
 		).EditContext = FakeEditContext;
 
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		const container = document.createElement("div");
@@ -2927,9 +2929,7 @@ describe("@pen/react selected text deletion", () => {
 			}
 		).EditContext = FakeEditContext;
 
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -3010,9 +3010,7 @@ describe("@pen/react selected text deletion", () => {
 			}
 		).EditContext = FakeEditContext;
 
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -3087,9 +3085,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("restores logical selection on undo and redo", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createUndoSelectionDeletionEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -3183,9 +3179,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("moves the DOM caret across blocks on undo and redo", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createUndoSelectionDeletionEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -3283,9 +3277,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("reconciles blurred active blocks during undo and redo", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createUndoSelectionDeletionEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -3356,9 +3348,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("reconciles repeated undo steps while focus is on a toolbar button", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createUndoSelectionDeletionEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -3464,9 +3454,7 @@ describe("@pen/react selected text deletion", () => {
 		).EditContext = FakeEditContext;
 
 		try {
-			const editor = createEditor({
-				without: ["document-ops", "delta-stream"],
-			});
+			const editor = createUndoSelectionDeletionEditor();
 			const blockId = editor.firstBlock()!.id;
 
 			editor.apply([
@@ -3580,9 +3568,7 @@ describe("@pen/react selected text deletion", () => {
 		).EditContext = FakeEditContext;
 
 		try {
-			const editor = createEditor({
-				without: ["document-ops", "delta-stream"],
-			});
+			const editor = createUndoSelectionDeletionEditor();
 			const blockId = editor.firstBlock()!.id;
 
 			editor.apply([
@@ -3673,9 +3659,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("reconciles history changes for passive blocks outside activeBlockIds", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createUndoSelectionDeletionEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -3795,9 +3779,7 @@ describe("@pen/react selected text deletion", () => {
 	});
 
 	it("reconciles repeated history changes outside activeBlockIds during expanded editing", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createUndoSelectionDeletionEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 		const thirdBlockId = crypto.randomUUID();

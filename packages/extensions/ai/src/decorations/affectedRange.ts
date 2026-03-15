@@ -1,4 +1,4 @@
-import type { Decoration, Editor, InlineDecoration } from "@pen/core";
+import type { Decoration, Editor, InlineDecoration } from "@pen/types";
 import type { AISession, AISessionSelectionSnapshot } from "../types";
 
 const AFFECTED_RANGE_CLASS = "pen-ai-affected-range";

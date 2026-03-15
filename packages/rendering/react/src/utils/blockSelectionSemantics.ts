@@ -1,10 +1,9 @@
-import type { Editor } from "@pen/core";
+import type { BlockSelectionRole, Editor } from "@pen/types";
 import {
 	getBlockSelectionRoleFromSchema as getSharedBlockSelectionRoleFromSchema,
 	getBlockSelectionRoleFromType as getSharedBlockSelectionRoleFromType,
-	type BlockSelectionRole,
-} from "@pen/core";
-export type { BlockSelectionRole } from "@pen/core";
+} from "@pen/types";
+export type { BlockSelectionRole } from "@pen/types";
 
 export function getBlockSelectionRoleFromSchema(
 	schema: Parameters<typeof getSharedBlockSelectionRoleFromSchema>[0],

@@ -6,13 +6,15 @@ import type {
 	SelectionState,
 	Unsubscribe,
 	InputBackend,
-} from "@pen/core";
+} from "@pen/types";
 import {
 	DocumentRangeImpl,
+} from "@pen/core";
+import {
 	hasFieldEditorSurface,
 	resolveFieldEditorInputMode,
 	usesInlineTextSelection,
-} from "@pen/core";
+} from "@pen/types";
 import { EditContextBackend } from "./editContextBackend";
 import { ContentEditableBackend } from "./contenteditableBackend";
 import { ExpandedContentEditableBackend } from "./expandedContentEditableBackend";

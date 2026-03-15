@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { getAIController, type AIStreamEvent } from "@pen/ai";
 
 const EMPTY_STREAM_EVENTS: readonly AIStreamEvent[] = Object.freeze([]);

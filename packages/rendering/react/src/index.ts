@@ -297,7 +297,7 @@ export {
 } from "./utils/fieldEditor";
 export { isCellInSelection } from "./utils/cellSelection";
 
-// ── Re-export key types from @pen/core for convenience ──────
+// ── Re-export key types from @pen/types for convenience ─────
 export type {
 	BlockRenderContext,
 	BlockRenderer,
@@ -310,6 +310,6 @@ export type {
 	BlockDecoration,
 	FieldEditor,
 	InputBackend,
-} from "@pen/core";
+} from "@pen/types";
 
-export type { CreateEditorOptions } from "@pen/core";
+export type { CreateEditorOptions } from "@pen/types";

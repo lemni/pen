@@ -2,11 +2,21 @@ import { describe, expect, it } from "vitest";
 import { createEditor } from "@pen/core";
 import { buildDocumentMutationPlanExecution } from "../planExecutor";
 
+const noDefaultExtensionsPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
+
+function createPlanExecutorEditor() {
+	return createEditor({
+		preset: noDefaultExtensionsPreset,
+	});
+}
+
 describe("document mutation plan executor", () => {
 	it("builds replace-text ops for text edit plans", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const blockId = editor.firstBlock()!.id;
 		editor.apply(
 			[{ type: "insert-text", blockId, offset: 0, text: "Hello world" }],
@@ -40,9 +50,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("builds native ops for flow patch plans", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		editor.apply(
 			[{
@@ -108,9 +116,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("optimizes single-block markdown replacements into native ops", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const blockId = editor.firstBlock()!.id;
 		editor.apply(
 			[{ type: "insert-text", blockId, offset: 0, text: "Old title" }],
@@ -153,9 +159,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("optimizes adjacent multi-block markdown replacements into native ops", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const headingId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -220,9 +224,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("optimizes adjacent list rewrites into native ops", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -294,9 +296,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("reuses matching suffix blocks when a flow patch inserts at the front", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -354,9 +354,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("reuses matching prefix blocks when a flow patch deletes at the end", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -418,9 +416,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("reuses and rewrites a near-match suffix block during front insertions", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -491,9 +487,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("reuses and reformats a suffix block when inline marks are added", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -571,9 +565,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("reuses block ids when a flow patch inserts in the middle", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -652,9 +644,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("reuses block ids when a flow patch deletes in the middle", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -724,9 +714,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("prefers the lower-op middle alignment when repeated blocks create multiple match options", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		const firstId = editor.firstBlock()!.id;
 		editor.apply(
 			[
@@ -815,9 +803,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("builds database ops and stringifies database values", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		editor.apply(
 			[{
 				type: "insert-block",
@@ -867,9 +853,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("marks review bundles as not review-safe when they contain database edits", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 		editor.apply(
 			[
 				{
@@ -911,9 +895,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("supports review bundles that insert then update and edit a regular block", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 
 		const execution = buildDocumentMutationPlanExecution(editor, {
 			kind: "review_bundle",
@@ -978,9 +960,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("supports review bundles that insert then convert a regular block", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 
 		const execution = buildDocumentMutationPlanExecution(editor, {
 			kind: "review_bundle",
@@ -1028,9 +1008,7 @@ describe("document mutation plan executor", () => {
 	});
 
 	it("supports review bundles that insert and then populate a database", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createPlanExecutorEditor();
 
 		const execution = buildDocumentMutationPlanExecution(editor, {
 			kind: "review_bundle",

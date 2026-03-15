@@ -8,14 +8,17 @@ Use this package when you want to:
 - attach helper scripts or references to a skill bundle
 - keep skill instructions aligned with the same `@pen/ai-tools` registry used at runtime
 
-## UsageØ
+## Usage
 
 ```ts
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import { getAIToolRuntime, listAITools } from "@pen/ai-tools";
 import { listDefaultAISkills, renderSkillFiles } from "@pen/ai-skills";
 
-const editor = createEditor();
+const editor = createEditor({
+  preset: defaultPreset(),
+});
 const toolRuntime = getAIToolRuntime(editor);
 
 if (!toolRuntime) {

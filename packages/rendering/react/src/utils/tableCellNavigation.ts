@@ -1,11 +1,13 @@
-import type { Editor, CellSelection, DocumentOp } from "@pen/core";
+import type { CellSelection, DocumentOp, Editor } from "@pen/types";
 import {
-	delegatesToGridEditing,
 	hasIndexedCellSelectionMetadata,
 	resolveCellSelectionCoord,
 	resolveCellSelectionMatrix,
-	usesInlineTextSelection,
 } from "@pen/core";
+import {
+	delegatesToGridEditing,
+	usesInlineTextSelection,
+} from "@pen/types";
 import type { FieldEditorTableNavigationController } from "../field-editor/controller";
 import { getAdjacentVisibleBlockId } from "./parentIdTree";
 

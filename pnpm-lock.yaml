@@ -117,8 +117,33 @@ importers:
         specifier: ^3.0.7
         version: 3.2.4(@types/debug@4.1.12)(@types/node@25.4.0)(jsdom@28.1.0)(tsx@4.21.0)
 
+  packages/extensions/ai-autocomplete:
+    dependencies:
+      '@pen/content-ops':
+        specifier: workspace:*
+        version: link:../../shared/content-ops
+      '@pen/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@pen/types':
+        specifier: workspace:*
+        version: link:../../types
+    devDependencies:
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@25.4.0)(jsdom@28.1.0)(tsx@4.21.0)
+
   packages/extensions/ai-skills:
     dependencies:
+      '@pen/ai-autocomplete':
+        specifier: workspace:*
+        version: link:../ai-autocomplete
       '@pen/ai-tools':
         specifier: workspace:*
         version: link:../ai-tools
@@ -285,6 +310,9 @@ importers:
       '@pen/core':
         specifier: workspace:*
         version: link:../../core
+      '@pen/types':
+        specifier: workspace:*
+        version: link:../../types
       domhandler:
         specifier: ^5.0.0
         version: 5.0.3
@@ -387,11 +415,42 @@ importers:
         specifier: ^3.0.7
         version: 3.2.4(@types/debug@4.1.12)(@types/node@25.4.0)(jsdom@28.1.0)(tsx@4.21.0)
 
+  packages/presets/default:
+    dependencies:
+      '@pen/delta-stream':
+        specifier: workspace:*
+        version: link:../../extensions/delta-stream
+      '@pen/document-ops':
+        specifier: workspace:*
+        version: link:../../extensions/document-ops
+      '@pen/shortcuts':
+        specifier: workspace:*
+        version: link:../../extensions/shortcuts
+      '@pen/types':
+        specifier: workspace:*
+        version: link:../../types
+      '@pen/undo':
+        specifier: workspace:*
+        version: link:../../extensions/undo
+    devDependencies:
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@25.4.0)(jsdom@28.1.0)(tsx@4.21.0)
+
   packages/rendering/react:
     dependencies:
       '@pen/ai':
         specifier: workspace:*
         version: link:../../extensions/ai
+      '@pen/ai-autocomplete':
+        specifier: workspace:*
+        version: link:../../extensions/ai-autocomplete
       '@pen/core':
         specifier: workspace:*
         version: link:../../core
@@ -411,6 +470,9 @@ importers:
         specifier: workspace:^
         version: link:../../types
     devDependencies:
+      '@pen/preset-default':
+        specifier: workspace:*
+        version: link:../../presets/default
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.14
@@ -517,6 +579,12 @@ importers:
 
   packages/tooling/bench:
     devDependencies:
+      '@pen/ai':
+        specifier: workspace:*
+        version: link:../../extensions/ai
+      '@pen/ai-autocomplete':
+        specifier: workspace:*
+        version: link:../../extensions/ai-autocomplete
       '@pen/core':
         specifier: workspace:*
         version: link:../../core
@@ -584,6 +652,9 @@ importers:
       '@pen/core':
         specifier: workspace:*
         version: link:../../core
+      '@pen/types':
+        specifier: workspace:*
+        version: link:../../types
     devDependencies:
       tsup:
         specifier: ^8.4.0
@@ -600,6 +671,9 @@ importers:
       '@pen/core':
         specifier: workspace:*
         version: link:../../core
+      '@pen/types':
+        specifier: workspace:*
+        version: link:../../types
     devDependencies:
       tsup:
         specifier: ^8.4.0
@@ -631,6 +705,9 @@ importers:
       '@pen/ai':
         specifier: workspace:*
         version: link:../packages/extensions/ai
+      '@pen/ai-autocomplete':
+        specifier: workspace:*
+        version: link:../packages/extensions/ai-autocomplete
       '@pen/ai-skills':
         specifier: workspace:*
         version: link:../packages/extensions/ai-skills
@@ -661,6 +738,9 @@ importers:
       '@pen/input-rules':
         specifier: workspace:*
         version: link:../packages/extensions/input-rules
+      '@pen/preset-default':
+        specifier: workspace:*
+        version: link:../packages/presets/default
       '@pen/react':
         specifier: workspace:*
         version: link:../packages/rendering/react
@@ -670,6 +750,9 @@ importers:
       '@pen/shortcuts':
         specifier: workspace:*
         version: link:../packages/extensions/shortcuts
+      '@pen/types':
+        specifier: workspace:*
+        version: link:../packages/types
       ai:
         specifier: ^6.0.116
         version: 6.0.116(zod@4.3.6)

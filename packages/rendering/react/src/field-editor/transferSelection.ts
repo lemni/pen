@@ -1,4 +1,4 @@
-import { type Editor, type Position } from "@pen/core";
+import type { Editor, Position } from "@pen/types";
 
 export interface TransferCursorContext {
 	blockId: string;

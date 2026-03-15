@@ -1,15 +1,51 @@
 import { yjsAdapter } from "@pen/crdt-yjs";
 import { processStream } from "@pen/delta-stream";
 import { inputRulesExtension } from "@pen/input-rules";
-import type { PenStreamPart } from "@pen/types";
-import { describe, expect, it } from "vitest";
+import { undoExtension } from "@pen/undo";
+import { defineExtension, type PenStreamPart } from "@pen/types";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	createDecorationSet,
 	createDocumentSession,
-	createEditor,
-	defineExtension,
+	createEditor as createCoreEditor,
 } from "../index";
+
+const noDefaultExtensionsPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
+
+const undoOnlyPreset = {
+	resolve() {
+		return { extensions: [undoExtension()] };
+	},
+};
+
+function createEditor(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+) {
+	return createCoreEditor({
+		...options,
+		preset: options.preset ?? noDefaultExtensionsPreset,
+	});
+}
+
+function createDefaultEditor(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+) {
+	return createCoreEditor(options);
+}
+
+function createEditorWithUndo(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+) {
+	return createCoreEditor({
+		...options,
+		preset: options.preset ?? undoOnlyPreset,
+	});
+}
 
 async function* createStream(parts: PenStreamPart[]) {
 	for (const part of parts) {
@@ -52,17 +88,53 @@ type TestTableContentLike = {
 };
 
 describe("@pen/core createEditor", () => {
+	it("warns once when using the deprecated without option", () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		const editor = createCoreEditor({
+			without: ["document-ops"],
+		});
+		editor.destroy();
+
+		expect(warnSpy).toHaveBeenCalledWith(
+			"Pen: createEditor({ without }) is deprecated. Prefer createEditor({ preset: defaultPreset(...) }) for default feature composition.",
+		);
+
+		warnSpy.mockRestore();
+	});
+
+	it("installs extensions from presets before user extensions", () => {
+		const editor = createEditor({
+			preset: {
+				resolve() {
+					return {
+						extensions: [
+							defineExtension({
+								name: "preset-test-extension",
+								activateClient: async (ctx) => {
+									ctx.editor.internals.setSlot("test:preset-installed", true);
+								},
+							}),
+						],
+					};
+				},
+			},
+		});
+
+		expect(editor.internals.getSlot("test:preset-installed")).toBe(true);
+
+		editor.destroy();
+	});
+
 	it("supports multiple editors sharing one document session", () => {
 		const session = createDocumentSession({
 			adapter: yjsAdapter(),
 		});
 		const editorA = createEditor({
 			documentSession: session,
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const editorB = createEditor({
 			documentSession: session,
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const blockId = editorA.firstBlock()!.id;
 
@@ -101,7 +173,6 @@ describe("@pen/core createEditor", () => {
 		const document = adapter.createDocument();
 		const editorA = createEditor({
 			document,
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const blockId = editorA.firstBlock()!.id;
 
@@ -117,7 +188,6 @@ describe("@pen/core createEditor", () => {
 
 		const editorB = createEditor({
 			document,
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		expect(editorB.getBlock(blockId)?.textContent()).toBe("Persisted");
@@ -128,7 +198,6 @@ describe("@pen/core createEditor", () => {
 	it("persists document profile metadata for new editors", () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		expect(editor.documentProfile).toBe("flow");
@@ -149,7 +218,6 @@ describe("@pen/core createEditor", () => {
 		const editor = createEditor({
 			document,
 			editorViewMode: "structured",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		expect(editor.documentProfile).toBe("flow");
@@ -164,7 +232,6 @@ describe("@pen/core createEditor", () => {
 		const document = adapter.createDocument();
 		const editor = createEditor({
 			document,
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		expect(editor.documentProfile).toBe("structured");
@@ -182,7 +249,6 @@ describe("@pen/core createEditor", () => {
 	it("drops flow-disallowed block insertions at the mutation boundary", () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const diagnostics: unknown[] = [];
 
@@ -217,7 +283,6 @@ describe("@pen/core createEditor", () => {
 	it("re-applies the flow mutation boundary after extension hooks run", () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const diagnostics: unknown[] = [];
 
@@ -265,7 +330,6 @@ describe("@pen/core createEditor", () => {
 	it("drops flow-disallowed block conversions at the mutation boundary", () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 
@@ -296,7 +360,6 @@ describe("@pen/core createEditor", () => {
 	it("still allows optional structural blocks in flow documents", () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		editor.apply([
@@ -320,7 +383,6 @@ describe("@pen/core createEditor", () => {
 		});
 		const rootEditor = createEditor({
 			documentSession: session,
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		rootEditor.apply([
@@ -344,7 +406,6 @@ describe("@pen/core createEditor", () => {
 		const childEditor = createEditor({
 			documentSession: session,
 			documentScopeId: childScope!.id,
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const childBlockId = childEditor.firstBlock()!.id;
 
@@ -386,7 +447,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("creates a working editor with default schema and extensions", () => {
-		const editor = createEditor();
+		const editor = createDefaultEditor();
 
 		expect(editor.schema.resolve("paragraph")).toBeTruthy();
 		expect(typeof editor.clientId).toBe("number");
@@ -402,7 +463,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("starts with a single empty paragraph block in zero-config mode", () => {
-		const editor = createEditor();
+		const editor = createDefaultEditor();
 
 		expect(editor.blockCount()).toBe(1);
 		expect(editor.firstBlock()?.type).toBe("paragraph");
@@ -412,9 +473,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("applies insert-block and insert-text operations", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -441,9 +500,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("splits and merges inline blocks", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -488,9 +545,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("preserves full text offsets for code blocks", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -514,9 +569,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("clears stale grid state when converting table or database blocks", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -616,7 +669,6 @@ describe("@pen/core createEditor", () => {
 		});
 
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 			extensions: [ext],
 		});
 
@@ -643,7 +695,6 @@ describe("@pen/core createEditor", () => {
 
 	it("activates input-rules extensions and applies block conversions", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 			extensions: [inputRulesExtension()],
 		});
 		const blockId = editor.firstBlock()!.id;
@@ -690,7 +741,6 @@ describe("@pen/core createEditor", () => {
 
 	it("activates input-rules extensions and applies inline markdown conversions", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 			extensions: [inputRulesExtension()],
 		});
 		const blockId = editor.firstBlock()!.id;
@@ -739,7 +789,6 @@ describe("@pen/core createEditor", () => {
 			},
 		});
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 			extensions: [ext],
 		});
 		const changes: unknown[][] = [];
@@ -795,7 +844,6 @@ describe("@pen/core createEditor", () => {
 			},
 		});
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 			extensions: [ext],
 		});
 		const changes: unknown[][] = [];
@@ -852,9 +900,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("clamps text selections and returns backwards selected text", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -897,9 +943,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("selects text ranges across blocks in document order", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -951,9 +995,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("deletes multi-block text selections and collapses at the start", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1003,9 +1045,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("deletes a fully selected structural block", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1030,9 +1070,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("deletes a fully selected delegated block", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1057,9 +1095,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("deletes structural blocks at multi-block selection boundaries", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1099,9 +1135,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("replaces multi-block text selections at a single insertion point", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1151,9 +1185,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("preserves formatted suffix text when deleting across blocks", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1200,9 +1232,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("replaces multi-block text selections in a single document commit batch", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const events: Array<{ ops: readonly { type: string }[] }> = [];
 
 		editor.on("documentCommit", (event) => {
@@ -1257,7 +1287,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("rebinds undo manager after loadDocument", () => {
-		const editor = createEditor();
+		const editor = createDefaultEditor();
 		const oldUndoManager = editor.undoManager;
 		const newDoc = editor.internals.adapter.createDocument();
 
@@ -1271,10 +1301,39 @@ describe("@pen/core createEditor", () => {
 		editor.destroy();
 	});
 
-	it("updates documentState parent relationships after parentId changes", () => {
+	it("refreshes editor.undoManager immediately when the undo slot is set", async () => {
+		const registeredUndoManager = {
+			undo: () => false,
+			redo: () => false,
+			canUndo: () => false,
+			canRedo: () => false,
+			stopCapturing: () => { },
+			setGroupTimeout: () => { },
+			registerTrackedOrigins: () => () => { },
+			onStackChange: () => () => { },
+		};
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			extensions: [
+				defineExtension({
+					name: "test-undo-slot",
+					activateClient: async ({ editor }) => {
+						expect(editor.undoManager).not.toBe(registeredUndoManager);
+						editor.internals.setSlot("undo:manager", registeredUndoManager);
+						expect(editor.undoManager).toBe(registeredUndoManager);
+					},
+				}),
+			],
 		});
+
+		await Promise.resolve();
+
+		expect(editor.undoManager).toBe(registeredUndoManager);
+
+		editor.destroy();
+	});
+
+	it("updates documentState parent relationships after parentId changes", () => {
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1314,9 +1373,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("emits structured diagnostics for unknown block types", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const diagnostics: unknown[] = [];
 
 		editor.on("diagnostic", (event) => {
@@ -1353,7 +1410,6 @@ describe("@pen/core createEditor", () => {
 			},
 		});
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 			extensions: [ext],
 		});
 
@@ -1384,7 +1440,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("processes streamed AI deltas through the default delta-stream pipeline", async () => {
-		const editor = createEditor();
+		const editor = createDefaultEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		await processStream(
@@ -1410,7 +1466,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("keeps streamed AI generations in their own undo group", async () => {
-		const editor = createEditor();
+		const editor = createDefaultEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1481,7 +1537,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("keeps concurrent user edits outside the generation zone in a separate undo group", async () => {
-		const editor = createEditor();
+		const editor = createDefaultEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1561,7 +1617,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("keeps user edits inside the generation zone in the same undo group", async () => {
-		const editor = createEditor();
+		const editor = createDefaultEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		await processStream(
@@ -1611,9 +1667,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("tracks imported edits in the undo stack", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createEditorWithUndo();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply(
@@ -1638,9 +1692,7 @@ describe("@pen/core createEditor", () => {
 	});
 
 	it("emits history origin for undo transactions on documentCommit", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createEditorWithUndo();
 		const blockId = editor.firstBlock()!.id;
 		const commitOrigins: string[] = [];
 
@@ -1668,9 +1720,7 @@ describe("@pen/core createEditor", () => {
 
 describe("@pen/core table operations", () => {
 	it("insert-block with table type produces seeded 2x2 grid", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1696,9 +1746,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("insert-table-row adds a row matching existing column count", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1728,9 +1776,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("repairs table width from the widest row when legacy rows are short", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1785,9 +1831,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("insert-table-column adds a column to all rows", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1817,9 +1861,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("delete-table-row removes a row", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1845,9 +1887,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("delete-table-column removes a column from all rows", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1873,9 +1913,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("insert-table-cell-text writes text into a specific cell", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1905,9 +1943,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("delete-table-cell-text removes text from a specific cell", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1942,9 +1978,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("format-table-cell-text applies formatting to cell text", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1983,9 +2017,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("convert-block to table seeds tableContent", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -2015,9 +2047,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("convert-block to table preserves inline text in the first cell", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -2055,9 +2085,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("tableCell returns null for out-of-bounds coordinates", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -2079,9 +2107,7 @@ describe("@pen/core table operations", () => {
 	});
 
 	it("tableRowCount/tableColumnCount return 0 for non-table blocks", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		const block = editor.firstBlock()!;
 		expect(block.tableRowCount()).toBe(0);
@@ -2093,7 +2119,6 @@ describe("@pen/core table operations", () => {
 
 	it("caches decoration snapshots between decoration updates", () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 			extensions: [
 				defineExtension({
 					name: "test-decorations",

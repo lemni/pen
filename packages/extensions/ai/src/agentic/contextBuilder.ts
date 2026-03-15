@@ -2,7 +2,7 @@ import type {
 	Editor,
 	PenStreamPart,
 	ToolContext,
-} from "@pen/core";
+} from "@pen/types";
 import { ToolContextImpl } from "@pen/document-ops";
 
 export function buildToolContext(

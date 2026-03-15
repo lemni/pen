@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createEditor, defineExtension, type ToolRuntime } from "@pen/core";
+import { createEditor } from "@pen/core";
+import { defineExtension, type ToolRuntime } from "@pen/types";
 import {
+	acceptAllSuggestions,
 	acceptSuggestion,
 	aiExtension,
+	getAIInlineHistoryController,
 	getAIController,
 	rejectSuggestion,
 } from "../index";
@@ -141,6 +144,113 @@ describe("aiExtension", () => {
 		expect(readSuggestionsFromBlock(editor, blockId)).toEqual([]);
 		expect(readAllSuggestions(editor)).toEqual([]);
 		expect(editor.getBlock(blockId)!.textContent()).toBe("");
+	});
+
+	it("keeps accepted delete suggestions in document undo history", () => {
+		const editor = createEditor({
+			extensions: [aiExtension({ suggestMode: true, author: "tester" })],
+		});
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply(
+			[{ type: "insert-text", blockId, offset: 0, text: "Hello" }],
+			{ origin: "system" },
+		);
+		editor.apply(
+			[{ type: "delete-text", blockId, offset: 0, length: 5 }],
+			{ origin: "user" },
+		);
+
+		const [suggestion] = readSuggestionsFromBlock(editor, blockId);
+		expect(suggestion).toBeDefined();
+		expect(acceptSuggestion(editor, suggestion.id)).toBe(true);
+		expect(editor.getBlock(blockId)!.textContent()).toBe("");
+		expect(readSuggestionsFromBlock(editor, blockId)).toEqual([]);
+
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(readSuggestionsFromBlock(editor, blockId)).toHaveLength(1);
+		expect(readAllSuggestions(editor)).toHaveLength(1);
+
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(editor.getBlock(blockId)!.textContent({ resolved: true })).toBe("Hello");
+		expect(readSuggestionsFromBlock(editor, blockId)).toEqual([]);
+
+		expect(editor.undoManager.redo()).toBe(true);
+		expect(readSuggestionsFromBlock(editor, blockId)).toHaveLength(1);
+		expect(readAllSuggestions(editor)).toHaveLength(1);
+
+		expect(editor.undoManager.redo()).toBe(true);
+		expect(editor.getBlock(blockId)!.textContent()).toBe("");
+		expect(readSuggestionsFromBlock(editor, blockId)).toEqual([]);
+	});
+
+	it("keeps rejected insert suggestions in document undo history", () => {
+		const editor = createEditor({
+			extensions: [aiExtension({ suggestMode: true, author: "tester" })],
+		});
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply(
+			[{ type: "insert-text", blockId, offset: 0, text: "Hello" }],
+			{ origin: "user" },
+		);
+
+		const [suggestion] = readSuggestionsFromBlock(editor, blockId);
+		expect(suggestion).toBeDefined();
+		expect(rejectSuggestion(editor, suggestion.id)).toBe(true);
+		expect(editor.getBlock(blockId)!.textContent()).toBe("");
+		expect(readSuggestionsFromBlock(editor, blockId)).toEqual([]);
+
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(readSuggestionsFromBlock(editor, blockId)).toHaveLength(1);
+		expect(readAllSuggestions(editor)).toHaveLength(1);
+
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(editor.getBlock(blockId)!.textContent({ resolved: true })).toBe("");
+		expect(readSuggestionsFromBlock(editor, blockId)).toEqual([]);
+
+		expect(editor.undoManager.redo()).toBe(true);
+		expect(readSuggestionsFromBlock(editor, blockId)).toHaveLength(1);
+		expect(readAllSuggestions(editor)).toHaveLength(1);
+
+		expect(editor.undoManager.redo()).toBe(true);
+		expect(editor.getBlock(blockId)!.textContent()).toBe("");
+		expect(readSuggestionsFromBlock(editor, blockId)).toEqual([]);
+	});
+
+	it("accepts multiple suggestions in one undo group", () => {
+		const editor = createEditor({
+			extensions: [aiExtension({ suggestMode: true, author: "tester" })],
+		});
+		const firstBlockId = editor.firstBlock()!.id;
+
+		editor.apply(
+			[{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Hello" }],
+			{ origin: "user" },
+		);
+		editor.apply(
+			[
+				{
+					type: "insert-block",
+					blockId: "b2",
+					blockType: "paragraph",
+					props: {},
+					position: "last",
+				},
+			],
+			{ origin: "user" },
+		);
+
+		expect(readAllSuggestions(editor)).toHaveLength(2);
+
+		acceptAllSuggestions(editor);
+		expect(readAllSuggestions(editor)).toEqual([]);
+
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(readAllSuggestions(editor)).toHaveLength(2);
+
+		expect(editor.undoManager.redo()).toBe(true);
+		expect(readAllSuggestions(editor)).toEqual([]);
 	});
 
 	it("runs a block generation with a model adapter", async () => {
@@ -606,24 +716,223 @@ describe("aiExtension", () => {
 			target: "selection",
 		});
 		expect(session).not.toBeNull();
+		const inlineHistory = getAIInlineHistoryController(editor)!;
 
 		await controller.runSessionPrompt(session!.id, "Rewrite this");
 		controller.suspendInlineSession(session!.id);
 		expect(controller.getState().sessions[0]?.turns).toHaveLength(1);
 		expect(controller.getState().sessions[0]?.turns[0]?.status).toBe("review");
 
-		expect(controller.undoInlineHistory()).toBe(true);
+		expect(inlineHistory.undoInlineHistory()).toBe(true);
 		expect(controller.getState().activeSessionId).toBe(session!.id);
 		expect(
 			controller.getState().sessions[0]?.contextualPrompt?.composer.isOpen,
 		).toBe(true);
 		expect(controller.getState().sessions[0]?.turns).toHaveLength(1);
 
-		expect(controller.undoInlineHistory()).toBe(true);
+		expect(inlineHistory.undoInlineHistory()).toBe(true);
 		expect(controller.getState().sessions[0]?.turns).toHaveLength(0);
 		expect(
 			controller.getState().sessions[0]?.contextualPrompt?.composer.draftPrompt,
 		).toBe("Rewrite this");
+	});
+
+	it("cycles selection inline turn history one turn at a time through shortcuts", async () => {
+		let turnIndex = 0;
+		const turnOutputs = ["planet", "galaxy"];
+		const editor = createEditor({
+			extensions: [
+				aiExtension({
+					model: {
+						async *stream() {
+							yield { type: "text-delta" as const, delta: turnOutputs[turnIndex] ?? "done" };
+							yield { type: "done" as const };
+							turnIndex += 1;
+						},
+					},
+				}),
+			],
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.apply(
+			[{ type: "insert-text", blockId, offset: 0, text: "Hello world" }],
+			{ origin: "system" },
+		);
+		editor.selectTextRange(
+			{ blockId, offset: 6 },
+			{ blockId, offset: 11 },
+		);
+
+		const controller = getAIController(editor)!;
+		const inlineHistory = getAIInlineHistoryController(editor)!;
+		const session = controller.openContextualPrompt({
+			surface: "inline-edit",
+			target: "selection",
+		});
+		expect(session).not.toBeNull();
+
+		await controller.runSessionPrompt(session!.id, "First rewrite");
+		controller.suspendInlineSession(session!.id);
+		await controller.runSessionPrompt(session!.id, "Second rewrite");
+		controller.suspendInlineSession(session!.id);
+
+		expect(controller.getState().sessions[0]?.turns).toHaveLength(2);
+		expect(inlineHistory.canHandleShortcut("undo")).toBe(true);
+
+		expect(inlineHistory.handleShortcut("undo")).toBe(true);
+		expect(controller.getState().sessions[0]?.turns).toHaveLength(1);
+
+		expect(inlineHistory.handleShortcut("undo")).toBe(true);
+		expect(controller.getState().sessions).toHaveLength(0);
+		expect(controller.getState().activeSessionId).toBeNull();
+
+		expect(inlineHistory.canHandleShortcut("redo")).toBe(true);
+		expect(inlineHistory.handleShortcut("redo")).toBe(true);
+		expect(controller.getState().sessions[0]?.turns).toHaveLength(1);
+
+		expect(inlineHistory.handleShortcut("redo")).toBe(true);
+		expect(controller.getState().sessions[0]?.turns).toHaveLength(2);
+	});
+
+	it("keeps the public AI controller inline history methods available", async () => {
+		let turnIndex = 0;
+		const turnOutputs = ["planet", "galaxy"];
+		const editor = createEditor({
+			extensions: [
+				aiExtension({
+					model: {
+						async *stream() {
+							yield { type: "text-delta" as const, delta: turnOutputs[turnIndex] ?? "done" };
+							yield { type: "done" as const };
+							turnIndex += 1;
+						},
+					},
+				}),
+			],
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.apply(
+			[{ type: "insert-text", blockId, offset: 0, text: "Hello world" }],
+			{ origin: "system" },
+		);
+		editor.selectTextRange(
+			{ blockId, offset: 6 },
+			{ blockId, offset: 11 },
+		);
+
+		const controller = getAIController(editor)!;
+		const inlineHistory = getAIInlineHistoryController(editor)!;
+		const session = controller.openContextualPrompt({
+			surface: "inline-edit",
+			target: "selection",
+		});
+		expect(session).not.toBeNull();
+
+		await controller.runSessionPrompt(session!.id, "First rewrite");
+		controller.suspendInlineSession(session!.id);
+		await controller.runSessionPrompt(session!.id, "Second rewrite");
+		controller.suspendInlineSession(session!.id);
+
+		expect(controller.canUndoInlineHistory()).toBe(true);
+		expect(controller.canRedoInlineHistory()).toBe(false);
+		expect(inlineHistory.canHandleShortcut("undo")).toBe(true);
+		expect(inlineHistory.canUndoInlineHistory()).toBe(true);
+		expect(controller.undoInlineHistory()).toBe(true);
+		expect(controller.canRedoInlineHistory()).toBe(true);
+		expect(controller.redoInlineHistory()).toBe(true);
+	});
+
+	it("cycles selection inline turn history even when suggest mode is enabled", async () => {
+		let turnIndex = 0;
+		const turnOutputs = ["planet", "galaxy"];
+		const editor = createEditor({
+			extensions: [
+				aiExtension({
+					suggestMode: true,
+					model: {
+						async *stream() {
+							yield { type: "text-delta" as const, delta: turnOutputs[turnIndex] ?? "done" };
+							yield { type: "done" as const };
+							turnIndex += 1;
+						},
+					},
+				}),
+			],
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.apply(
+			[{ type: "insert-text", blockId, offset: 0, text: "Hello world" }],
+			{ origin: "system" },
+		);
+		editor.selectTextRange(
+			{ blockId, offset: 6 },
+			{ blockId, offset: 11 },
+		);
+
+		const controller = getAIController(editor)!;
+		const inlineHistory = getAIInlineHistoryController(editor)!;
+		const session = controller.openContextualPrompt({
+			surface: "inline-edit",
+			target: "selection",
+		});
+		expect(session).not.toBeNull();
+
+		await controller.runSessionPrompt(session!.id, "First rewrite");
+		controller.suspendInlineSession(session!.id);
+		await controller.runSessionPrompt(session!.id, "Second rewrite");
+		controller.suspendInlineSession(session!.id);
+
+		expect(inlineHistory.canHandleShortcut("undo")).toBe(true);
+		expect(inlineHistory.handleShortcut("undo")).toBe(true);
+		expect(controller.getState().sessions[0]?.turns).toHaveLength(1);
+
+		expect(inlineHistory.handleShortcut("undo")).toBe(true);
+		expect(controller.getState().sessions).toHaveLength(0);
+	});
+
+	it("prefers document undo over local inline history shortcuts when both exist", () => {
+		const editor = createEditor({
+			extensions: [
+				aiExtension({
+					model: {
+						async *stream() {
+							yield { type: "done" as const };
+						},
+					},
+				}),
+			],
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.apply(
+			[{ type: "insert-text", blockId, offset: 0, text: "Hello world" }],
+			{ origin: "system" },
+		);
+		editor.selectTextRange(
+			{ blockId, offset: 6 },
+			{ blockId, offset: 11 },
+		);
+
+		const controller = getAIController(editor)!;
+		const inlineHistory = getAIInlineHistoryController(editor)!;
+		const session = controller.openContextualPrompt({
+			surface: "inline-edit",
+			target: "selection",
+		});
+		expect(session).not.toBeNull();
+		controller.suspendInlineSession(session!.id);
+
+		editor.apply(
+			[{ type: "insert-text", blockId, offset: 11, text: "!" }],
+			{ origin: "user" },
+		);
+
+		expect(editor.getBlock(blockId)!.textContent()).toBe("Hello world!");
+		expect(inlineHistory.canUndoInlineHistory()).toBe(true);
+		expect(inlineHistory.canHandleShortcut("undo")).toBe(false);
+
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(editor.getBlock(blockId)!.textContent()).toBe("Hello world");
+		expect(inlineHistory.canHandleShortcut("undo")).toBe(false);
 	});
 
 	it("creates a fresh inline session when the selection target changes", async () => {
@@ -2540,6 +2849,234 @@ describe("aiExtension", () => {
 				after: "Beta",
 			}),
 		]);
+	});
+
+	it("keeps accepted structured review items in document undo history", async () => {
+		const editor = createEditor({
+			extensions: [
+				aiExtension({
+					model: {
+						async *stream() {
+							yield {
+								type: "text-delta" as const,
+								delta: JSON.stringify({
+									kind: "database_edit",
+									blockId: "database-1",
+									steps: [
+										{
+											op: "update_cell",
+											rowId: "row-1",
+											columnId: "name",
+											value: "Beta",
+										},
+									],
+								}),
+							};
+							yield { type: "done" as const };
+						},
+					},
+				}),
+			],
+		});
+		const firstBlockId = editor.firstBlock()!.id;
+		editor.apply(
+			[
+				{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Intro" },
+				{
+					type: "insert-block",
+					blockId: "database-1",
+					blockType: "database",
+					props: {},
+					position: { after: firstBlockId },
+				},
+				{
+					type: "database-insert-row",
+					blockId: "database-1",
+					rowId: "row-1",
+					values: {
+						name: "Alpha",
+						tags: "[]",
+						done: "false",
+					},
+				},
+			],
+			{ origin: "system" },
+		);
+
+		const controller = getAIController(editor)!;
+		const generation = await controller.runPrompt("Update this database cell", {
+			blockId: "database-1",
+		});
+		const reviewItems = generation.reviewItems ?? [];
+		const reviewItemIds = reviewItems.map((item) => item.id);
+
+		expect(generation.planState).toBe("validated");
+		expect(reviewItems).toHaveLength(1);
+		expect(reviewItemIds).toHaveLength(1);
+
+		expect(controller.acceptReviewItems(reviewItemIds)).toBe(true);
+		expect(editor.getBlock("database-1")!.tableCell(0, 0)?.textContent()).toBe(
+			"Beta",
+		);
+
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(editor.getBlock("database-1")!.tableCell(0, 0)?.textContent()).toBe(
+			"Alpha",
+		);
+
+		expect(editor.undoManager.redo()).toBe(true);
+		expect(editor.getBlock("database-1")!.tableCell(0, 0)?.textContent()).toBe(
+			"Beta",
+		);
+	});
+
+	it("treats structured review rejection as non-mutating UI state", async () => {
+		const editor = createEditor({
+			extensions: [
+				aiExtension({
+					model: {
+						async *stream() {
+							yield {
+								type: "text-delta" as const,
+								delta: JSON.stringify({
+									kind: "database_edit",
+									blockId: "database-1",
+									steps: [
+										{
+											op: "update_cell",
+											rowId: "row-1",
+											columnId: "name",
+											value: "Beta",
+										},
+									],
+								}),
+							};
+							yield { type: "done" as const };
+						},
+					},
+				}),
+			],
+		});
+		const firstBlockId = editor.firstBlock()!.id;
+		editor.apply(
+			[
+				{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Intro" },
+				{
+					type: "insert-block",
+					blockId: "database-1",
+					blockType: "database",
+					props: {},
+					position: { after: firstBlockId },
+				},
+				{
+					type: "database-insert-row",
+					blockId: "database-1",
+					rowId: "row-1",
+					values: {
+						name: "Alpha",
+						tags: "[]",
+						done: "false",
+					},
+				},
+			],
+			{ origin: "system" },
+		);
+
+		const controller = getAIController(editor)!;
+		const generation = await controller.runPrompt("Update this database cell", {
+			blockId: "database-1",
+		});
+		const reviewItems = generation.reviewItems ?? [];
+		const reviewItemIds = reviewItems.map((item) => item.id);
+
+		expect(reviewItemIds).toHaveLength(1);
+		expect(controller.rejectReviewItems(reviewItemIds)).toBe(true);
+		expect(editor.getBlock("database-1")!.tableCell(0, 0)?.textContent()).toBe(
+			"Alpha",
+		);
+		expect(editor.undoManager.canUndo()).toBe(false);
+		expect(editor.undoManager.undo()).toBe(false);
+		expect(controller.getState().activeGeneration?.planState).toBe("rejected");
+		expect(controller.getState().activeGeneration?.reviewItems).toEqual([]);
+	});
+
+	it("keeps accepted structured review artifacts transient across history replay", async () => {
+		const editor = createEditor({
+			extensions: [
+				aiExtension({
+					model: {
+						async *stream() {
+							yield {
+								type: "text-delta" as const,
+								delta: JSON.stringify({
+									kind: "database_edit",
+									blockId: "database-1",
+									steps: [
+										{
+											op: "update_cell",
+											rowId: "row-1",
+											columnId: "name",
+											value: "Beta",
+										},
+									],
+								}),
+							};
+							yield { type: "done" as const };
+						},
+					},
+				}),
+			],
+		});
+		const firstBlockId = editor.firstBlock()!.id;
+		editor.apply(
+			[
+				{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Intro" },
+				{
+					type: "insert-block",
+					blockId: "database-1",
+					blockType: "database",
+					props: {},
+					position: { after: firstBlockId },
+				},
+				{
+					type: "database-insert-row",
+					blockId: "database-1",
+					rowId: "row-1",
+					values: {
+						name: "Alpha",
+						tags: "[]",
+						done: "false",
+					},
+				},
+			],
+			{ origin: "system" },
+		);
+
+		const controller = getAIController(editor)!;
+		const generation = await controller.runPrompt("Update this database cell", {
+			blockId: "database-1",
+		});
+		const reviewItems = generation.reviewItems ?? [];
+		const reviewItemIds = reviewItems.map((item) => item.id);
+
+		expect(reviewItemIds).toHaveLength(1);
+		expect(controller.acceptReviewItems(reviewItemIds)).toBe(true);
+		expect(controller.getState().activeGeneration?.planState).toBe("none");
+		expect(controller.getState().activeGeneration?.reviewItems).toEqual([]);
+
+		expect(editor.undoManager.undo()).toBe(true);
+		expect(editor.getBlock("database-1")!.tableCell(0, 0)?.textContent()).toBe(
+			"Alpha",
+		);
+		expect(controller.getState().activeGeneration?.planState).toBe("none");
+		expect(controller.getState().activeGeneration?.reviewItems).toEqual([]);
+
+		expect(editor.undoManager.redo()).toBe(true);
+		expect(editor.getBlock("database-1")!.tableCell(0, 0)?.textContent()).toBe(
+			"Beta",
+		);
+		expect(controller.getState().activeGeneration?.planState).toBe("none");
+		expect(controller.getState().activeGeneration?.reviewItems).toEqual([]);
 	});
 
 	it("builds comparison rows for database view changes", async () => {

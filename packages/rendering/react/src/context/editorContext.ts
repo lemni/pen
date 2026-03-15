@@ -1,13 +1,13 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type {
-	Editor,
-	EditorViewMode,
 	AssetProvider,
 	BlockRenderer,
+	Editor,
+	EditorViewMode,
 	Importer,
 	InteractionModel,
-	PendingBlock,
-} from "@pen/core";
+} from "@pen/types";
+import type { PendingBlock } from "@pen/core";
 import {
 	resolveSelectAllBehavior,
 	type EditorSelectAllBehavior,

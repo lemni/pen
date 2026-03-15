@@ -1,5 +1,5 @@
 import React, { useRef, useLayoutEffect } from "react";
-import type { Editor, InlineDecoration, Decoration } from "@pen/core";
+import type { Editor, InlineDecoration } from "@pen/types";
 import { useEditorContentContext } from "../../context/editorContentContext";
 import { useEditorContext } from "../../context/editorContext";
 import { useFieldEditorContext } from "../../context/fieldEditorContext";
@@ -69,15 +69,14 @@ export function InlineContent(props: InlineContentProps) {
 				: showBlockPlaceholder
 					? schemaPlaceholder
 					: undefined;
-	const affectedRangeDecorations = blockDecorations.filter(
-		(decoration): decoration is InlineDecoration =>
-			isAffectedRangeDecoration(decoration),
+	const inlineDecorations = blockDecorations.filter(
+		(decoration): decoration is InlineDecoration => decoration.type === "inline",
 	);
 	const renderedDeltas =
-		affectedRangeDecorations.length > 0
+		inlineDecorations.length > 0
 			? applyInlineDecorationsToDeltas(
 				textSnapshot.deltas,
-				affectedRangeDecorations,
+				inlineDecorations,
 			)
 			: textSnapshot.deltas;
 
@@ -157,15 +156,6 @@ export function InlineContent(props: InlineContentProps) {
 	};
 
 	return renderAsChild({ ...rest, ref: elementRef }, "span", primitiveProps);
-}
-
-function isAffectedRangeDecoration(
-	decoration: Decoration,
-): decoration is InlineDecoration {
-	return (
-		decoration.type === "inline" &&
-		"data-ai-affected-range" in decoration.attributes
-	);
 }
 
 function resolveSchemaPlaceholder(

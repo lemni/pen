@@ -1,9 +1,9 @@
 import {
 	delegatesToGridEditing,
+	usesInlineTextSelection,
 	type BlockSchema,
 	type SelectionState,
-	usesInlineTextSelection,
-} from "@pen/core";
+} from "@pen/types";
 import type { ResolvedInteractionModel } from "../context/editorContext";
 
 export type PointerCellCoord = {

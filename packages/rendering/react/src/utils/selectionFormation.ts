@@ -1,4 +1,5 @@
-import { DocumentRangeImpl, type Editor } from "@pen/core";
+import { DocumentRangeImpl } from "@pen/core";
+import type { Editor } from "@pen/types";
 import type { SelectionPoint } from "../field-editor/selectionBridge";
 import {
 	getEditorFlowCapability,

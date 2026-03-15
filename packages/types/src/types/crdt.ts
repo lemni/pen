@@ -170,6 +170,8 @@ export interface CRDTUndoManager {
   canUndo(): boolean;
   canRedo(): boolean;
   stopCapturing(): void;
+  addTrackedOrigin(origin: OpOrigin): void;
+  removeTrackedOrigin(origin: OpOrigin): void;
   onStackItemAdded?(
     callback: (
       stackItem: CRDTUndoStackItem,

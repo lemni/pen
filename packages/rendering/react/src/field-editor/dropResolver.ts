@@ -1,4 +1,4 @@
-import type { Editor, Position } from "@pen/core";
+import type { Editor, Position } from "@pen/types";
 import { DATA_ATTRS } from "../utils/dataAttributes";
 import {
 	getClosestBlockElementFromPoint,

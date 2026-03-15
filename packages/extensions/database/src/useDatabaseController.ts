@@ -1,4 +1,4 @@
-import type { BlockHandle, CellSelection } from "@pen/core";
+import type { BlockHandle, CellSelection } from "@pen/types";
 import {
 	DATA_ATTRS,
 	useEditorContext,

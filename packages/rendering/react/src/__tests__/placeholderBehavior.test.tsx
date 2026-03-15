@@ -3,8 +3,9 @@
 import React, { act } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
-import type { BlockHandle, BlockRenderContext } from "@pen/core";
 import { createEditor } from "@pen/core";
+import type { BlockHandle, BlockRenderContext } from "@pen/types";
+import { defaultPreset } from "@pen/preset-default";
 import { InlineContent } from "../primitives/editor/inlineContent";
 import { Pen } from "../primitives/index";
 import {
@@ -43,7 +44,11 @@ describe("@pen/react placeholder behavior", () => {
 		registerRenderer("paragraph", PlaceholderParagraphRenderer);
 
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const container = document.createElement("div");
 		document.body.appendChild(container);
@@ -75,7 +80,11 @@ describe("@pen/react placeholder behavior", () => {
 
 	it("does not treat a single structural block as an empty document", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const blockId = editor.firstBlock()!.id;
 		const container = document.createElement("div");
@@ -112,7 +121,11 @@ describe("@pen/react placeholder behavior", () => {
 		registerRenderer("paragraph", PlaceholderParagraphRenderer);
 
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
@@ -159,7 +172,11 @@ describe("@pen/react placeholder behavior", () => {
 		registerRenderer("paragraph", PlaceholderParagraphRenderer);
 
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();

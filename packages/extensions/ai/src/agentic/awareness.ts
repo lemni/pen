@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import type { AIAwarenessState } from "../types";
 
 export function publishAwareness(

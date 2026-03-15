@@ -13,6 +13,7 @@ Start here when you need to:
 
 ```ts
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import {
   getAIToolRuntime,
   listAITools,
@@ -20,7 +21,9 @@ import {
   AIToolContextImpl,
 } from "@pen/ai-tools";
 
-const editor = createEditor();
+const editor = createEditor({
+  preset: defaultPreset(),
+});
 const toolRuntime = getAIToolRuntime(editor);
 
 if (!toolRuntime) {

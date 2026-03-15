@@ -1,4 +1,4 @@
-import type { InputBackend, Editor, DocumentOp } from "@pen/core";
+import type { DocumentOp, Editor, InlineDecoration, InputBackend } from "@pen/types";
 import type { FieldEditorInputController } from "./controller";
 import { fullReconcileToDOM, applyDeltaToDOM } from "./reconciler";
 import {
@@ -90,7 +90,9 @@ export class ContentEditableBackend implements InputBackend {
 		this.observer = (event) => this.handleYTextChange(event);
 		this.ytext.observe(this.observer);
 
-		fullReconcileToDOM(this.ytext, element, this.editor.schema);
+		fullReconcileToDOM(this.ytext, element, this.editor.schema, {
+			inlineDecorations: this.getInlineDecorationsForBlock(),
+		});
 		this.restoreDOMSelectionFromEditor();
 		requestAnimationFrame(() => {
 			this.isApplyingSelection--;
@@ -417,7 +419,9 @@ export class ContentEditableBackend implements InputBackend {
 
 		if (this.deferredRemoteDeltas.length > 0) {
 			this.deferredRemoteDeltas = [];
-			fullReconcileToDOM(this.ytext, this.element!, this.editor.schema);
+			fullReconcileToDOM(this.ytext, this.element!, this.editor.schema, {
+				inlineDecorations: this.getInlineDecorationsForBlock(),
+			});
 		}
 
 		this.compositionStartText = null;
@@ -465,6 +469,7 @@ export class ContentEditableBackend implements InputBackend {
 		if (isActiveCell) {
 			fullReconcileToDOM(this.ytext, this.element, this.editor.schema, {
 				preserveSelection: true,
+				inlineDecorations: this.getInlineDecorationsForBlock(),
 			});
 			if (
 				this.pendingSelectionOverride != null ||
@@ -484,6 +489,7 @@ export class ContentEditableBackend implements InputBackend {
 		if (!applied) {
 			fullReconcileToDOM(this.ytext, this.element, this.editor.schema, {
 				preserveSelection: true,
+				inlineDecorations: this.getInlineDecorationsForBlock(),
 			});
 		}
 
@@ -573,6 +579,19 @@ export class ContentEditableBackend implements InputBackend {
 			}
 		}
 		this.pendingSelectionOverride = null;
+	}
+
+	private getInlineDecorationsForBlock(): readonly InlineDecoration[] {
+		const blockId = this.fieldEditor.focusBlockId;
+		if (!blockId) {
+			return [];
+		}
+		return this.editor
+			.getDecorations()
+			.forBlock(blockId)
+			.filter(
+				(decoration): decoration is InlineDecoration => decoration.type === "inline",
+			);
 	}
 
 	// ── Keyboard shortcuts ────────────────────────────────────

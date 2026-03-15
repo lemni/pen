@@ -32,6 +32,8 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "devDependencies": {
+    "@pen/ai": "workspace:*",
+    "@pen/ai-autocomplete": "workspace:*",
     "@pen/core": "workspace:*",
     "@pen/crdt-yjs": "workspace:*",
     "@pen/schema-default": "workspace:*",

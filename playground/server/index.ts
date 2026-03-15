@@ -6,10 +6,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { fileURLToPath } from "node:url";
 import {
 	createEditor,
-	type Editor,
-	type TableColumnSchema,
-	type ToolRuntime,
 } from "../../packages/core/src/index";
+import type {
+	Editor,
+	TableColumnSchema,
+	ToolRuntime,
+} from "../../packages/types/src/index";
 import {
 	buildPlaygroundRequestPlan as buildSharedPlaygroundRequestPlan,
 	buildPromptContext as buildSharedPromptContext,
@@ -30,7 +32,10 @@ import {
 	listDefaultAISkills,
 	renderSkillFiles,
 } from "../../packages/extensions/ai-skills/src/index";
+import { getAutocompleteController } from "../../packages/extensions/ai-autocomplete/src/index";
+import { AUTOCOMPLETE_SYSTEM_PROMPT } from "../../packages/extensions/ai-autocomplete/src/promptBuilder";
 import { createDefaultSchema } from "../../packages/schema/default/src/index";
+import { defaultPreset } from "../../packages/presets/default/src/index";
 
 loadEnv({
 	path: fileURLToPath(new URL("../.env.local", import.meta.url)),
@@ -48,6 +53,7 @@ const PLAYGROUND_SELECTION_FAST_PATH_SYSTEM_PROMPT =
 	"You are the local AI rewrite engine for the Pen editor. " +
 	"Return only the exact replacement text for the current selection. " +
 	"Do not add commentary, labels, markdown fences, or quotation marks around the answer.";
+const PLAYGROUND_AUTOCOMPLETE_OUTPUT_TOKEN_CAP = 128;
 const PLAYGROUND_DOCUMENT_SYSTEM_PROMPT =
 	"You are the local AI assistant for the Pen playground. " +
 	"Use the inline document context first, and call tools only when you need more precision or broader context. " +
@@ -197,7 +203,8 @@ interface PromptContextEnvelope {
 type PlaygroundRequestMode =
 	| "document-agent"
 	| "structured-planner"
-	| "selection-fast";
+	| "selection-fast"
+	| "inline-autocomplete";
 type PlaygroundResolvedContextFormat = "json" | "none";
 
 interface PlaygroundRequestPlan {
@@ -665,7 +672,10 @@ function handleListSkillsRequest(
 		return;
 	}
 
-	const skills = listDefaultAISkills(listAITools(resolved.toolRuntime));
+	const skills = listDefaultAISkills(listAITools(resolved.toolRuntime), {
+		autocompleteProviders:
+			getAutocompleteController(resolved.editor)?.listProviderDescriptors() ?? [],
+	});
 	sendJson(res, 200, {
 		skills: skills.map((skill) => ({
 			name: skill.name,
@@ -720,9 +730,12 @@ async function handleDirectToolRequest(
 
 function createPlaygroundEditor(): Editor {
 	return createEditor({
+		preset: defaultPreset({
+			deltaStream: false,
+			undo: false,
+		}),
 		schema: createDefaultSchema(),
 		documentProfile: "structured",
-		without: ["delta-stream", "undo"],
 	});
 }
 
@@ -791,9 +804,11 @@ function buildPlaygroundRequestPlan(
 		documentSystemPrompt: PLAYGROUND_DOCUMENT_SYSTEM_PROMPT,
 		structuredPlannerSystemPrompt: PLAYGROUND_STRUCTURED_PLANNER_SYSTEM_PROMPT,
 		selectionFastPathSystemPrompt: PLAYGROUND_SELECTION_FAST_PATH_SYSTEM_PROMPT,
+		autocompleteSystemPrompt: AUTOCOMPLETE_SYSTEM_PROMPT,
 		selectionSourceCharLimit: PLAYGROUND_SELECTION_SOURCE_CHAR_LIMIT,
 		selectionStopSentinel: PLAYGROUND_SELECTION_STOP_SENTINEL,
 		selectionOutputTokenCap: PLAYGROUND_SELECTION_OUTPUT_TOKEN_CAP,
+		autocompleteOutputTokenCap: PLAYGROUND_AUTOCOMPLETE_OUTPUT_TOKEN_CAP,
 		selectionDefaultOutputTokens: PLAYGROUND_SELECTION_DEFAULT_OUTPUT_TOKENS,
 		selectionExpandOutputTokens: PLAYGROUND_SELECTION_EXPAND_OUTPUT_TOKENS,
 		selectionSummarizeOutputTokens: PLAYGROUND_SELECTION_SUMMARIZE_OUTPUT_TOKENS,

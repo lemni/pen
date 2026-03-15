@@ -1,14 +1,31 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
-import { createEditor } from "@pen/core";
-import type { AssetProvider } from "@pen/core";
+import { createEditor as createCoreEditor } from "@pen/core";
+import type { AssetProvider } from "@pen/types";
+import { defaultPreset } from "@pen/preset-default";
 import {
 	handleClipboardPaste,
 	handleCopy,
 } from "../field-editor/clipboard";
 import type { FieldEditorImpl } from "../field-editor/fieldEditorImpl";
 import type { PasteImporters } from "../context/editorContext";
+
+function createEditor(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+	config: {
+		undo?: boolean;
+	} = {},
+) {
+	return createCoreEditor({
+		...options,
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: config.undo ?? false,
+		}),
+	});
+}
 
 function createFileList(files: File[]): FileList {
 	return Object.assign([...files], {
@@ -96,9 +113,7 @@ function seedDatabase(
 
 describe("@pen/react clipboard", () => {
 	it("preserves inline formatting for internal copy/paste round-trips", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
@@ -134,9 +149,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("supports unicode round-trips through embedded HTML payloads", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
@@ -161,9 +174,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("undoes paste-over-selection as a single history entry", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream"],
-		});
+		const editor = createEditor({}, { undo: true });
 		const blockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
@@ -187,9 +198,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("does not delete the current selection when image upload fails", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 		const fieldEditor = createFieldEditorStub();
 		const clipboardData = createClipboardData([
@@ -223,9 +232,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("pastes uploaded images through the transfer pipeline", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 		const fieldEditor = createFieldEditorStub();
 		const clipboardData = createClipboardData([
@@ -273,9 +280,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("replaces an empty block when pasting blocks into it", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const emptyBlockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
@@ -302,9 +307,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("does not replace a non-empty block when pasting blocks", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
@@ -334,9 +337,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("replaces an empty block through importer parse output", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const emptyBlockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
@@ -378,9 +379,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("keeps an empty block when importer parse yields no blocks", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const emptyBlockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
@@ -414,7 +413,6 @@ describe("@pen/react clipboard", () => {
 	it("filters flow-disallowed importer parse blocks before applying parsed paste", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const emptyBlockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
@@ -469,7 +467,6 @@ describe("@pen/react clipboard", () => {
 	it("preserves the current selection when parsed paste normalizes to zero blocks", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const blockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
@@ -519,9 +516,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("filters unknown importer parse blocks before applying parsed paste", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const emptyBlockId = editor.firstBlock()!.id;
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
@@ -563,9 +558,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("round-trips a structured table block selection as a table block payload", () => {
-		const sourceEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const sourceEditor = createEditor();
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
 
@@ -577,9 +570,7 @@ describe("@pen/react clipboard", () => {
 			"table",
 		]);
 
-		const targetEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const targetEditor = createEditor();
 		const emptyBlockId = targetEditor.firstBlock()!.id;
 		targetEditor.selectText(emptyBlockId, 0, 0);
 
@@ -606,7 +597,6 @@ describe("@pen/react clipboard", () => {
 	it("round-trips a flow-promoted table selection as document blocks", () => {
 		const sourceEditor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = sourceEditor.firstBlock()!.id;
 		const paragraphId = crypto.randomUUID();
@@ -645,9 +635,7 @@ describe("@pen/react clipboard", () => {
 			"paragraph",
 		]);
 
-		const targetEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const targetEditor = createEditor();
 		const emptyBlockId = targetEditor.firstBlock()!.id;
 		targetEditor.selectText(emptyBlockId, 0, 0);
 
@@ -671,9 +659,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("round-trips a structured database block selection as a database block payload", () => {
-		const sourceEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const sourceEditor = createEditor();
 		const clipboardData = createClipboardData();
 		const fieldEditor = createFieldEditorStub();
 
@@ -685,9 +671,7 @@ describe("@pen/react clipboard", () => {
 			"database",
 		]);
 
-		const targetEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const targetEditor = createEditor();
 		const emptyBlockId = targetEditor.firstBlock()!.id;
 		targetEditor.selectText(emptyBlockId, 0, 0);
 
@@ -706,9 +690,7 @@ describe("@pen/react clipboard", () => {
 	});
 
 	it("round-trips a flow-promoted database selection as document blocks", () => {
-		const seedEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const seedEditor = createEditor();
 		const firstBlockId = seedEditor.firstBlock()!.id;
 		const paragraphId = crypto.randomUUID();
 		const clipboardData = createClipboardData();
@@ -739,7 +721,6 @@ describe("@pen/react clipboard", () => {
 
 		const sourceEditor = createEditor({
 			document,
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedEditor.destroy();
 
@@ -755,9 +736,7 @@ describe("@pen/react clipboard", () => {
 			"paragraph",
 		]);
 
-		const targetEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const targetEditor = createEditor();
 		const emptyBlockId = targetEditor.firstBlock()!.id;
 		targetEditor.selectText(emptyBlockId, 0, 0);
 
@@ -780,7 +759,6 @@ describe("@pen/react clipboard", () => {
 	it("avoids direct database block paste in flow documents", () => {
 		const sourceEditor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = sourceEditor.firstBlock()!.id;
 		const paragraphId = crypto.randomUUID();
@@ -815,7 +793,6 @@ describe("@pen/react clipboard", () => {
 
 		const targetEditor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const emptyBlockId = targetEditor.firstBlock()!.id;
 		targetEditor.selectText(emptyBlockId, 0, 0);
@@ -838,7 +815,6 @@ describe("@pen/react clipboard", () => {
 	it("does not direct-paste unknown pen block payloads in flow documents", () => {
 		const targetEditor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const emptyBlockId = targetEditor.firstBlock()!.id;
 		const clipboardData = createClipboardData();

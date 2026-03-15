@@ -3,8 +3,10 @@
 import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
-import { createEditor, defineExtension, type ToolRuntime } from "@pen/core";
+import { createEditor } from "@pen/core";
+import { defineExtension, type ToolRuntime } from "@pen/types";
 import { aiExtension, getAIController } from "@pen/ai";
+import { defaultPreset } from "@pen/preset-default";
 import {
 	Pen,
 	useAIActions,
@@ -1121,7 +1123,7 @@ describe("@pen/react AI primitives", () => {
 		container.remove();
 	});
 
-	it("restores inline session UI history through keyboard shortcuts", async () => {
+	it("does not reopen raw inline UI history through keyboard shortcuts without a turn boundary", async () => {
 		const restoreSelectionRect = mockSelectionToolbarRect({
 			top: 120,
 			left: 160,
@@ -1188,9 +1190,7 @@ describe("@pen/react AI primitives", () => {
 			}
 		});
 
-		expect(
-			container.querySelector("[data-pen-ai-inline-session-input]"),
-		).not.toBeNull();
+		expect(container.querySelector("[data-pen-ai-inline-session-input]")).toBeNull();
 
 		await act(async () => {
 			document.dispatchEvent(
@@ -2585,7 +2585,11 @@ describe("@pen/react AI primitives", () => {
 
 	it("scopes inline suggestion controls to the active editor root", async () => {
 		const secondaryEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const editor = createEditor({
 			extensions: [
@@ -2943,7 +2947,6 @@ describe("@pen/react AI primitives", () => {
 		});
 
 		let scrollTopValue = 0;
-		let scrollToCalls = 0;
 		Object.defineProperty(scrollContainer, "scrollTop", {
 			configurable: true,
 			get: () => scrollTopValue,
@@ -2954,7 +2957,6 @@ describe("@pen/react AI primitives", () => {
 		Object.defineProperty(scrollContainer, "scrollTo", {
 			configurable: true,
 			value: ({ top }: { top?: number }) => {
-				scrollToCalls += 1;
 				scrollTopValue = top ?? scrollTopValue;
 			},
 		});
@@ -3014,8 +3016,8 @@ describe("@pen/react AI primitives", () => {
 		expect(
 			container.querySelector("[data-pen-ai-inline-suggestion-control]"),
 		).not.toBeNull();
-		expect(scrollToCalls).toBeGreaterThan(0);
-		const scrollToCallsAfterMount = scrollToCalls;
+		expect(scrollTopValue).toBeGreaterThan(0);
+		const scrollTopAfterMount = scrollTopValue;
 
 		await act(async () => {
 			scrollTopValue = 260;
@@ -3023,7 +3025,8 @@ describe("@pen/react AI primitives", () => {
 			await Promise.resolve();
 		});
 
-		expect(scrollToCalls).toBe(scrollToCallsAfterMount);
+		expect(scrollTopValue).toBe(260);
+		expect(scrollTopValue).not.toBe(scrollTopAfterMount);
 
 		await act(async () => {
 			root.unmount();

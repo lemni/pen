@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { getSelectionPointRect } from "../../field-editor/selectionBridge";
 import {
 	getDropPreview,

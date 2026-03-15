@@ -1,9 +1,9 @@
 import React, { useRef, useEffect, useLayoutEffect } from "react";
-import type { Editor, MoveBlockOp } from "@pen/core";
+import type { Editor, MoveBlockOp } from "@pen/types";
 import {
 	generateId,
 	usesInlineTextSelection,
-} from "@pen/core";
+} from "@pen/types";
 import { flushSync } from "react-dom";
 import { EditorContentContext } from "../../context/editorContentContext";
 import { useEditorContext } from "../../context/editorContext";
@@ -30,6 +30,7 @@ import {
 	useDocumentEmptyState,
 	useDocumentPlaceholderState,
 } from "../../hooks/useDocumentEmptyState";
+import { useInlineCompletionState } from "../../hooks/useInlineCompletionState";
 import {
 	getEditorFlowCapability,
 	shouldFallbackMixedSelectionToBlock,
@@ -37,6 +38,7 @@ import {
 import { renderAsChild, type AsChildProps } from "../../utils/asChild";
 import { DATA_ATTRS } from "../../utils/dataAttributes";
 import { AIStructuredTargetPreviewItem } from "../ai/structuredTargetPreview";
+import { AutocompletePreviewBlock } from "./autocompletePreviewBlock";
 import { EditorBlock } from "./block";
 import {
 	DropPreviewProvider,
@@ -82,6 +84,7 @@ export function EditorContent(props: EditorContentProps) {
 	const fieldEditorState = useFieldEditorState(fieldEditor);
 	const blockIds = useBlockList(editor);
 	const contentItems = useAIStructuredPreviewContent(editor, blockIds);
+	const visibleSuggestion = useInlineCompletionState(editor);
 	const blockDragSession = useBlockDragSession();
 	const contentRef = useRef<HTMLElement>(null);
 	const blocksHostRef = blockDragSession.blocksHostRef as React.RefObject<HTMLDivElement | null>;
@@ -1211,11 +1214,31 @@ export function EditorContent(props: EditorContentProps) {
 	}, [editor, fieldEditor, readonly, regionSelectionStore]);
 
 	const blockElements: React.ReactElement[] = [];
+	const previewBlocks = visibleSuggestion?.previewBlocks ?? [];
+	const anchorBlock = visibleSuggestion
+		? editor.getBlock(visibleSuggestion.blockId)
+		: null;
 	for (const contentItem of contentItems) {
 		if (contentItem.kind === "block") {
 			blockElements.push(
 				<EditorBlock key={contentItem.blockId} blockId={contentItem.blockId} />,
 			);
+			if (
+				previewBlocks.length > 0 &&
+				contentItem.blockId === visibleSuggestion?.blockId
+			) {
+				const previewBlockElements = previewBlocks.map((previewBlock, previewIndex) => (
+					<AutocompletePreviewBlock
+						key={`autocomplete-preview:${previewBlock.id}`}
+						anchorBlock={anchorBlock}
+						anchorBlockType={anchorBlock?.type}
+						anchorProps={anchorBlock?.props ?? null}
+						block={previewBlock}
+						previewIndex={previewIndex}
+					/>
+				));
+				blockElements.push(...previewBlockElements);
+			}
 			continue;
 		}
 		blockElements.push(

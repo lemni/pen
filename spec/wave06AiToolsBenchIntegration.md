@@ -1,4 +1,4 @@
-# Wave 6 — AI Tools, Skills & M0 Integration
+# Wave 6 — AI Tool Packages And Benchmarks
 
 **Milestone:** M0 · **Packages:** `@pen/ai-tools`, `@pen/ai-skills`, `@pen/bench` · **Depends on:** Waves 0-5
 
@@ -6,87 +6,98 @@
 
 ## Goal
 
-Ship the package-first agent integration layer for Pen.
+Ship the package-first AI integration seams for Pen without turning Pen core into an agent platform.
 
 After this wave:
 
 - Pen exposes a canonical native tool surface through `@pen/ai-tools`
-- external agent runtimes consume packaged skill artifacts through `@pen/ai-skills`
+- optional skill artifacts can be generated through `@pen/ai-skills`
 - benchmark coverage remains part of the M0 release bar
 
-This wave deliberately does not introduce a protocol bridge. Tool access stays native, typed, and package-first.
+This wave is about package boundaries and execution seams. It does not define chat products, protocol bridges, or runtime skill platforms.
+
+---
+
+## Scope
+
+### In scope
+
+- `@pen/ai-tools` as the public package for editor-attached tool execution
+- `@pen/ai-skills` as an optional artifact/distribution package
+- benchmark coverage for tool execution and integration hot paths
+
+### Out of scope
+
+- runtime skill registries as a core architecture concern
+- protocol bridge ownership
+- agent personas or task shells
+- product-specific orchestration
+- code-execution platforms
 
 ---
 
 ## Package 1: `@pen/ai-tools`
 
-`@pen/ai-tools` is the public agent/tool package that sits on top of the editor-attached `ToolRuntime` installed by `createEditor()`.
+`@pen/ai-tools` is the public AI/tool package that sits on top of the editor-attached `ToolRuntime`.
 
-### Responsibilities
+### Skill artifact responsibilities
 
-- Resolve the active tool runtime from a Pen editor
-- List tool descriptors for agent runtimes
-- Execute tools and normalize buffered async output
-- Re-export advanced tool context/runtime helpers where needed for hosted execution
+- resolve the active tool runtime from a Pen editor
+- list tool descriptors for hosted model runtimes
+- execute tools and normalize buffered output
+- re-export advanced helpers where hosted execution needs them
 
-### Public API
+### Skill artifact design rules
 
-```ts
-import { createEditor } from "@pen/core";
-import {
-  getAIToolRuntime,
-  listAITools,
-  executeAITool,
-  collectAIToolOutput,
-} from "@pen/ai-tools";
-```
-
-### Design Rules
-
-- Reuse `@pen/document-ops` and `@pen/content-ops` for document semantics
-- Do not duplicate mutation logic in `@pen/ai-tools`
-- Keep the package transport-friendly and environment-agnostic
+- reuse `@pen/document-ops` and `@pen/content-ops` for document semantics
+- do not duplicate mutation logic in `@pen/ai-tools`
+- keep the package environment-agnostic and transport-friendly
 
 ---
 
 ## Package 2: `@pen/ai-skills`
 
-`@pen/ai-skills` packages the same native tool surface into agent-facing skill artifacts.
+`@pen/ai-skills` is an optional artifact package that repackages the same native tool surface for external agent ecosystems.
 
 ### Responsibilities
 
-- Define skill metadata and registries
-- Render `SKILL.md`-style artifacts for agent runtimes
-- Attach optional helper scripts and references
-- Treat `@pen/ai-tools` as the execution source of truth
+- define skill metadata
+- render `SKILL.md`-style artifacts
+- attach helper references when useful
+- treat `@pen/ai-tools` as the execution source of truth
 
-### Public API
+### Design rules
 
-```ts
-import { listDefaultAISkills, renderSkillFiles } from "@pen/ai-skills";
-```
-
-### Design Rules
-
-- Skills are distribution artifacts, not the execution engine
-- Skill instructions should reference the native `@pen/ai-tools` surface
-- Keep artifacts simple enough to be embedded into agent-specific install flows
+- skills are distribution artifacts, not a runtime execution engine
+- skill instructions should point back to the canonical native tool surface
+- the package should remain simple enough to embed into external install flows
 
 ---
 
 ## Package 3: `@pen/bench`
 
-Wave 6 continues to require benchmark coverage for M0:
+Tooling and AI integration benchmarks remain part of the M0 quality bar.
 
-- native tool listing and execution should remain measurable
-- buffered tool output should not regress memory/latency budgets
-- benchmark governance remains part of the release bar
+### Required benchmark areas
+
+- native tool listing latency
+- tool execution overhead
+- buffered tool output memory and latency behavior
+- instrumentation overhead on hot paths
 
 ---
 
 ## Acceptance Criteria
 
-- `@pen/ai-tools` exists and is the documented public tool package
-- `@pen/ai-skills` exists and can render real skill artifacts from tool descriptors
-- the playground demonstrates native tool routes and skill artifact routes
-- benchmarks still run in CI as part of the M0 gate
+1. `@pen/ai-tools` exists and is the documented public tool package.
+2. `@pen/ai-skills` exists as an optional artifact package and can render real skill artifacts from tool descriptors.
+3. Benchmarks remain part of the release bar for AI integration paths.
+4. This wave does not redefine editor authority, chat UX, or runtime workflow ownership.
+
+---
+
+## Key Decisions
+
+1. **Tools are first-class; agent shells are not.**
+2. **`@pen/ai-tools` is canonical.** Skill packaging is downstream.
+3. **Benchmarks are part of architecture quality.** AI integration should stay measurable from the start.

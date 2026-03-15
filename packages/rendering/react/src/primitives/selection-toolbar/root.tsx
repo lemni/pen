@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { EditorContext } from "../../context/editorContext";
 import {
 	ToolbarContext,

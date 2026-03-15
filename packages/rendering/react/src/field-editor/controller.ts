@@ -1,4 +1,4 @@
-import type { BlockSchema } from "@pen/core";
+import type { BlockSchema } from "@pen/types";
 import type { FieldEditorStore } from "./store";
 import type { EditorSelectAllBehavior } from "../constants/selectAll";
 

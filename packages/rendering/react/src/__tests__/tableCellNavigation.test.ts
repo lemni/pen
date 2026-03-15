@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import type { FieldEditorImpl } from "../field-editor/fieldEditorImpl";
 import { handleTableCellSelectionKeyDown } from "../utils/tableCellNavigation";
 
@@ -56,7 +57,11 @@ async function flushAsyncWork(count = 4): Promise<void> {
 
 function createTableEditor() {
 	const editor = createEditor({
-		without: ["document-ops", "delta-stream", "undo"],
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
 	});
 
 	editor.apply([

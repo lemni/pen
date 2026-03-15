@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { blocksToOps, createEditor } from "@pen/core";
-import type { HTMLImportElement, SchemaRegistry } from "@pen/core";
+import type { HTMLImportElement, SchemaRegistry } from "@pen/types";
 import { createDefaultSchema } from "@pen/schema-default";
 import { htmlExporter } from "@pen/export-html";
 import { htmlImporter, parseHtmlToBlocks } from "../importer";
@@ -9,6 +9,12 @@ import { parseHTML } from "../domAdapter";
 import { domToBlocks } from "../domToBlocks";
 import { parseInlineContent } from "../inlineParser";
 import type { DOMNode } from "../domAdapter";
+
+const noDefaultExtensionsPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
 
 const stubRegistry: SchemaRegistry = {
 	resolve: () => null,
@@ -32,7 +38,7 @@ function convert(html: string, registry: SchemaRegistry = stubRegistry) {
 function databaseEditor() {
 	const editor = createEditor({
 		schema: defaultRegistry,
-		without: ["document-ops", "delta-stream", "undo"],
+		preset: noDefaultExtensionsPreset,
 	});
 	editor.apply([{
 		type: "insert-block",
@@ -395,7 +401,7 @@ describe("@pen/import-html dom-to-blocks", () => {
 
 		const target = createEditor({
 			schema: defaultRegistry,
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 		const ops = blocksToOps(blocks);
 		target.apply(ops, { origin: "import", undoGroup: true });
@@ -449,7 +455,7 @@ describe("@pen/import-html dom-to-blocks", () => {
 
 		const target = createEditor({
 			schema: defaultRegistry,
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 		target.apply(blocksToOps(blocks), { origin: "import", undoGroup: true });
 
@@ -732,7 +738,7 @@ describe("@pen/import-html dom-to-blocks", () => {
 		const editor = createEditor({
 			schema: defaultRegistry,
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 
 		const blocks = parseHtmlToBlocks(`${html}<h2>Allowed</h2>`, editor);
@@ -750,7 +756,7 @@ describe("@pen/import-html dom-to-blocks", () => {
     const editor = createEditor({
       schema: defaultRegistry,
       documentProfile: "flow",
-      without: ["document-ops", "delta-stream", "undo"],
+      preset: noDefaultExtensionsPreset,
     });
     const diagnostics: unknown[] = [];
 
@@ -772,7 +778,7 @@ describe("@pen/import-html dom-to-blocks", () => {
 		const editor = createEditor({
 			schema: defaultRegistry,
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 
 		await htmlImporter.import(`${html}<h2>Allowed</h2>`, editor);
@@ -795,7 +801,7 @@ describe("@pen/import-html dom-to-blocks", () => {
     const editor = createEditor({
       schema: defaultRegistry,
       documentProfile: "flow",
-      without: ["document-ops", "delta-stream", "undo"],
+      preset: noDefaultExtensionsPreset,
     });
 
     const result = await htmlImporter.import(`${html}<h2>Allowed</h2>`, editor);

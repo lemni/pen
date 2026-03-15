@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Editor, SelectionState } from "@pen/core";
+import type { Editor, SelectionState } from "@pen/types";
 
 export function useSelection(editor: Editor): SelectionState {
   return useSyncExternalStore(

@@ -2,7 +2,7 @@
 
 `@pen/document-ops` owns Pen's built-in document tool semantics.
 
-`createEditor()` installs this extension by default, so every editor starts with the standard document read/write/context tools already registered.
+The standard `defaultPreset()` installs this extension, so most editors start with the document read/write/context tools already registered.
 
 Use this package when you need to:
 
@@ -14,9 +14,12 @@ Use this package when you need to:
 
 ```ts
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import { getDocumentToolRuntime } from "@pen/document-ops";
 
-const editor = createEditor();
+const editor = createEditor({
+  preset: defaultPreset(),
+});
 const toolRuntime = getDocumentToolRuntime(editor);
 
 if (!toolRuntime) {

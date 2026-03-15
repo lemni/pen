@@ -3,7 +3,8 @@
 import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
-import { createEditor, DocumentRangeImpl } from "@pen/core";
+import { createEditor as createCoreEditor, DocumentRangeImpl } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import type { FieldEditorImpl } from "../field-editor/fieldEditorImpl";
 import { Pen } from "../primitives/index";
 import { FIELD_EDITOR_SLOT_KEY } from "../constants/fieldEditor";
@@ -16,6 +17,20 @@ import { FakeEditContext } from "./utils/fakeEditContext";
 (
 	globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+function createEditor(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+) {
+	const { without: _without, ...restOptions } = options;
+	return createCoreEditor({
+		...restOptions,
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
+	});
+}
 
 function createEscapeEvent(): KeyboardEvent {
 	return new KeyboardEvent("keydown", {
@@ -77,9 +92,7 @@ function createMouseUpEvent(clientX = 40, clientY = 40): MouseEvent {
 
 describe("@pen/react escape key handling", () => {
 	it("preserves backwards same-block selection direction when collapsing", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -166,9 +179,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("walks the selection ladder from range to caret to block to clear", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -268,9 +279,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("ignores Escape while composition is active", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -348,9 +357,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("preserves remote edits that land during IME composition", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -415,9 +422,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("re-homes the active field editor when native selection moves into another block", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -522,7 +527,6 @@ describe("@pen/react escape key handling", () => {
 	it("maps cmd+a from block selection directly to full-document selection in flow documents", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
@@ -613,7 +617,6 @@ describe("@pen/react escape key handling", () => {
 	it("maps cmd+a from an empty block directly to full-document selection in flow documents", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
@@ -706,7 +709,6 @@ describe("@pen/react escape key handling", () => {
 		try {
 			const editor = createEditor({
 				documentProfile: "flow",
-				without: ["document-ops", "delta-stream", "undo"],
 			});
 			const firstBlockId = editor.firstBlock()!.id;
 			const secondBlockId = crypto.randomUUID();
@@ -792,9 +794,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("uses document-first cmd+a by default for content-first structured documents", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -858,9 +858,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("uses block-first cmd+a when block-first interaction is enabled", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 		const thirdBlockId = crypto.randomUUID();
@@ -950,9 +948,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("keeps cmd+a block-scoped before selecting the document when a block is selected in block-first mode", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1033,9 +1029,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("collapses cross-block selections to the focus caret", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1130,7 +1124,6 @@ describe("@pen/react escape key handling", () => {
 	it("handles Escape from the active expanded host after cmd+a", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
@@ -1236,9 +1229,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("collapses backwards cross-block selections to the focus caret", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1332,9 +1323,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("promotes native cross-block DOM selection into expanded text selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1436,9 +1425,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("keeps expanded inline blocks reconciled from CRDT updates", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1538,9 +1525,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("expands an in-progress drag selection into the next block", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1669,9 +1654,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("hands off drag updates to native selection after expansion", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1800,9 +1783,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("waits for mouseup before promoting a native cross-block drag", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -1920,9 +1901,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("preserves a cross-block drag when the native range clears before mouseup", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -2060,9 +2039,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("uses the live DOM anchor when a cross-block drag starts unfocused", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -2189,9 +2166,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("promotes an unfocused cross-block drag on mousemove before mouseup", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -2319,9 +2294,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("keeps the initial pointer anchor when an unfocused cross-block drag has no stable native range", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -2447,9 +2420,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("keeps all blocks mounted during a three-block cross-selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 		const thirdBlockId = crypto.randomUUID();
@@ -2570,9 +2541,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("ignores deleteByDrag while extending an expanded selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 		const thirdBlockId = crypto.randomUUID();
@@ -2674,9 +2643,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("handles enter through the expanded backend without native DOM mutation", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -2759,9 +2726,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("prevents native drag start on the expanded host", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -2837,9 +2802,7 @@ describe("@pen/react escape key handling", () => {
 	});
 
 	it("snaps delegated block drag targets to legal block boundaries", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 

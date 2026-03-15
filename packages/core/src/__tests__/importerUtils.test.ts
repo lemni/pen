@@ -9,6 +9,12 @@ import { blocksToOps } from "../importerUtils";
 import type { DocumentOp } from "@pen/types";
 import type { PendingBlock } from "../importerUtils";
 
+const noDefaultExtensionsPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
+
 type InsertBlockOp = Extract<DocumentOp, { type: "insert-block" }>;
 type InsertTableCellTextOp = Extract<DocumentOp, { type: "insert-table-cell-text" }>;
 type InsertTableRowOp = Extract<DocumentOp, { type: "insert-table-row" }>;
@@ -235,7 +241,7 @@ describe("blocksToOps table materialization", () => {
 		];
 
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 
 		editor.apply(blocksToOps(blocks));
@@ -275,7 +281,7 @@ describe("blocksToOps table materialization", () => {
 		];
 
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 
 		editor.apply(blocksToOps(blocks));
@@ -313,7 +319,7 @@ describe("blocksToOps table materialization", () => {
 		];
 
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 
 		editor.apply(blocksToOps(blocks));
@@ -328,7 +334,7 @@ describe("blocksToOps table materialization", () => {
 
 	it("drops schema-unknown imported blocks before converting them to ops", () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 		const normalized = normalizePendingBlocksForImport(
 			[
@@ -352,7 +358,7 @@ describe("blocksToOps table materialization", () => {
 
 	it("emits a diagnostic when import normalization drops unknown block types", () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 		const diagnostics: unknown[] = [];
 

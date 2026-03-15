@@ -27,11 +27,12 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "pnpm --filter @pen/preset-default build && vitest run",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
     "@pen/ai": "workspace:*",
+    "@pen/ai-autocomplete": "workspace:*",
     "@pen/core": "workspace:*",
     "@pen/schema-default": "workspace:*",
     "@pen/shortcuts": "workspace:*",
@@ -52,6 +53,7 @@
     }
   },
   "devDependencies": {
+    "@pen/preset-default": "workspace:*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "jsdom": "^28.1.0",

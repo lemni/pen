@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { useEffect, useSyncExternalStore } from "react";
 import {
 	cancelQueuedPlaygroundAISessionSync,

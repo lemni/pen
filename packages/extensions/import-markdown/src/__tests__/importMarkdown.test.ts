@@ -1,9 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { blocksToOps, createEditor } from "@pen/core";
-import type { SchemaRegistry } from "@pen/core";
+import type { SchemaRegistry } from "@pen/types";
 import { markdownExporter } from "@pen/export-markdown";
 import { createDefaultSchema } from "@pen/schema-default";
 import { markdownImporter, parseMarkdownToBlocks } from "../importer";
+
+const noDefaultExtensionsPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
 
 const stubRegistry: SchemaRegistry = {
 	resolve: () => null,
@@ -27,7 +33,7 @@ function convert(md: string, registry: SchemaRegistry = stubRegistry) {
 function databaseEditor() {
 	const editor = createEditor({
 		schema: defaultRegistry,
-		without: ["document-ops", "delta-stream", "undo"],
+		preset: noDefaultExtensionsPreset,
 	});
 	editor.apply([{
 		type: "insert-block",
@@ -250,7 +256,7 @@ describe("@pen/import-markdown", () => {
 
 		const target = createEditor({
 			schema: defaultRegistry,
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 		const ops = blocksToOps(blocks);
 		target.apply(ops, { origin: "import", undoGroup: true });
@@ -304,7 +310,7 @@ describe("@pen/import-markdown", () => {
 
 		const target = createEditor({
 			schema: defaultRegistry,
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 		target.apply(blocksToOps(blocks), { origin: "import", undoGroup: true });
 
@@ -481,7 +487,7 @@ describe("@pen/import-markdown", () => {
 		const editor = createEditor({
 			schema: defaultRegistry,
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 
 		const blocks = parseMarkdownToBlocks(`${markdown}\n\n## Allowed`, editor);
@@ -498,7 +504,7 @@ describe("@pen/import-markdown", () => {
     const editor = createEditor({
       schema: defaultRegistry,
       documentProfile: "flow",
-      without: ["document-ops", "delta-stream", "undo"],
+      preset: noDefaultExtensionsPreset,
     });
     const diagnostics: unknown[] = [];
 
@@ -520,7 +526,7 @@ describe("@pen/import-markdown", () => {
 		const editor = createEditor({
 			schema: defaultRegistry,
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 
 		markdownImporter.import(`${markdown}\n\n## Allowed`, editor);
@@ -543,7 +549,7 @@ describe("@pen/import-markdown", () => {
     const editor = createEditor({
       schema: defaultRegistry,
       documentProfile: "flow",
-      without: ["document-ops", "delta-stream", "undo"],
+      preset: noDefaultExtensionsPreset,
     });
 
     const result = markdownImporter.import(`${markdown}\n\n## Allowed`, editor);

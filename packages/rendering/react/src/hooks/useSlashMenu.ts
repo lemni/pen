@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { generateId, type Editor, type BlockDisplay, type BlockSchema } from "@pen/core";
+import type { BlockDisplay, BlockSchema, Editor } from "@pen/types";
+import { generateId } from "@pen/types";
 import { getAttachedFieldEditor } from "../utils/fieldEditor";
 import { getConvertBlockOps } from "../field-editor/commands";
 import { getInsertSiblingBlockOp } from "../utils/parentIdTree";

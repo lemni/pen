@@ -1,4 +1,4 @@
-import type { Decoration, DecorationSet, Editor } from "@pen/core";
+import type { Decoration, DecorationSet, Editor } from "@pen/types";
 import { emptyDecorationSet } from "@pen/core";
 import { useSyncExternalStoreWithSelector } from "../utils/useSyncExternalStoreWithSelector";
 

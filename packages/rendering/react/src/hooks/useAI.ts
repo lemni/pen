@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { getAIController, type AIControllerState } from "@pen/ai";
 
 const EMPTY_AI_STATE: AIControllerState = {

@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { useSyncExternalStoreWithSelector } from "../utils/useSyncExternalStoreWithSelector";
 import { getExpandedBlockRole } from "../field-editor/crossBlock";
 import type { FieldEditorStore } from "../field-editor/store";

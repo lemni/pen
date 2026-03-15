@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   blocksToOps,
   createEditor,
-  type DocumentOp,
   type PendingBlock,
 } from "@pen/core";
+import type { DocumentOp } from "@pen/types";
 import { markdownExporter } from "../exporter";
 
 type InsertTableCellTextOp = Extract<DocumentOp, { type: "insert-table-cell-text" }>;
@@ -13,9 +13,15 @@ type UpdateTableColumnsOp = Extract<DocumentOp, { type: "update-table-columns" }
 type DatabaseInsertRowOp = Extract<DocumentOp, { type: "database-insert-row" }>;
 type InsertBlockOp = Extract<DocumentOp, { type: "insert-block" }>;
 
+const noDefaultExtensionsPreset = {
+  resolve() {
+    return { extensions: [] };
+  },
+};
+
 function editorWithBlocks(ops: Parameters<ReturnType<typeof createEditor>["apply"]>[0]) {
   const editor = createEditor({
-    without: ["document-ops", "delta-stream", "undo"],
+    preset: noDefaultExtensionsPreset,
   });
   editor.apply(ops);
   return editor;
@@ -26,7 +32,7 @@ function editorWithTable(
   cellOps: Parameters<ReturnType<typeof createEditor>["apply"]>[0],
 ) {
   const editor = createEditor({
-    without: ["document-ops", "delta-stream", "undo"],
+    preset: noDefaultExtensionsPreset,
   });
   editor.apply([insertOp]);
   if (cellOps.length > 0) {
@@ -39,7 +45,7 @@ function createFlowEditorFromSeededDocument(
   seed: (editor: ReturnType<typeof createEditor>) => void,
 ) {
   const seedEditor = createEditor({
-    without: ["document-ops", "delta-stream", "undo"],
+    preset: noDefaultExtensionsPreset,
   });
   seed(seedEditor);
 
@@ -48,7 +54,7 @@ function createFlowEditorFromSeededDocument(
 
   const editor = createEditor({
     document,
-    without: ["document-ops", "delta-stream", "undo"],
+    preset: noDefaultExtensionsPreset,
   });
   seedEditor.destroy();
   return editor;
@@ -442,7 +448,7 @@ describe("table markdown round-trip", () => {
 
     const ops = blocksToOps(inputBlocks);
     const editor = createEditor({
-      without: ["document-ops", "delta-stream", "undo"],
+      preset: noDefaultExtensionsPreset,
     });
     editor.apply(ops);
 
@@ -492,7 +498,7 @@ describe("table markdown round-trip", () => {
 
     const ops = blocksToOps(inputBlocks);
     const editor = createEditor({
-      without: ["document-ops", "delta-stream", "undo"],
+      preset: noDefaultExtensionsPreset,
     });
     editor.apply(ops);
 

@@ -2,7 +2,7 @@ import type {
 	BlockHandle,
 	Editor,
 	Position,
-} from "@pen/core";
+} from "@pen/types";
 import type {
 	BlockSuggestionMeta,
 	PersistentSuggestion,

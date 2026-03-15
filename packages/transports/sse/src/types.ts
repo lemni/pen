@@ -4,7 +4,7 @@ import type {
 	PenStreamRequest,
 	ToolServer,
 	ToolRuntime,
-} from "@pen/core";
+} from "@pen/types";
 
 export interface SSEEvent {
 	id?: string;

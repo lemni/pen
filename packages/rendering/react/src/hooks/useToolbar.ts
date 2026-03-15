@@ -1,5 +1,5 @@
 import { useRef, useSyncExternalStore } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor, FieldEditor } from "@pen/types";
 import {
 	EMPTY_TOOLBAR_STATE,
 	type ToolbarState,
@@ -8,7 +8,6 @@ import {
 	getAttachedFieldEditor,
 	getAttachedFieldEditorStore,
 } from "../utils/fieldEditor";
-import type { FieldEditor } from "@pen/core";
 import { getDefaultToolbarBlockTypeOptions } from "../utils/toolbarOptions";
 
 export function useToolbar(editor: Editor): ToolbarState {

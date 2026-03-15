@@ -1,5 +1,5 @@
 import React from "react";
-import type { BlockHandle, BlockRenderContext } from "@pen/core";
+import type { BlockHandle, BlockRenderContext } from "@pen/types";
 import { useNumberedListItemValue } from "../hooks/useNumberedListItemValue";
 import { ListItemLayout } from "../utils/listItemLayout";
 

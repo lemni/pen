@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Editor, DecorationSet } from "@pen/core";
+import type { DecorationSet, Editor } from "@pen/types";
 import { emptyDecorationSet } from "@pen/core";
 
 export function useDecorations(editor: Editor): DecorationSet {

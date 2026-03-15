@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 
 export interface DocumentInsertionAnchor {
 	blockId: string;

@@ -11,6 +11,7 @@ import type { TableColumnSchema } from "./handles";
 export type OpOrigin =
 	| "user"
 	| "ai"
+	| "ai-session"
 	| "suggestion-resolution"
 	| "collaborator"
 	| "extension"

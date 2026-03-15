@@ -1,4 +1,4 @@
-import type { BlockDecoration } from "@pen/core";
+import type { BlockDecoration } from "@pen/types";
 import type { GenerationState } from "../types";
 
 export function buildGenerationZoneDecorations(

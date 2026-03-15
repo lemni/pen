@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { useAISessionActions, useAISessions, useSuggestions } from "@pen/react";
 import {
 	useEffect,
@@ -8,6 +8,7 @@ import {
 	type FormEvent,
 } from "react";
 import { usePlaygroundAIState } from "../hooks/usePlaygroundAISession";
+import { collectNewlyResolvedTurnIds } from "../utils/chatTurnResolution";
 import { DebugPanel } from "./DebugPanel";
 import "./PlaygroundChatDock.css";
 
@@ -48,7 +49,8 @@ export function PlaygroundChatDock({
 	const [messages, setMessages] = useState<readonly PlaygroundChatMessage[]>(() => []);
 	const [lastError, setLastError] = useState<string | null>(null);
 	const [resolvingTurnIds, setResolvingTurnIds] = useState<readonly string[]>([]);
-	const [acceptedTurnIds, setAcceptedTurnIds] = useState<readonly string[]>([]);
+	const [resolvedTurnIds, setResolvedTurnIds] = useState<readonly string[]>([]);
+	const previousPendingChangeCountsRef = useRef<ReadonlyMap<string, number>>(new Map());
 
 	const bottomChatSession =
 		sessions.find((session) => session.id === bottomChatSessionIdRef.current) ?? null;
@@ -220,7 +222,7 @@ export function PlaygroundChatDock({
 			return;
 		}
 		setLastError(null);
-		setAcceptedTurnIds((currentTurnIds) =>
+		setResolvedTurnIds((currentTurnIds) =>
 			currentTurnIds.includes(turnId)
 				? currentTurnIds
 				: [...currentTurnIds, turnId],
@@ -245,6 +247,29 @@ export function PlaygroundChatDock({
 		bottomChatTurnPendingState,
 		resolvingTurnIds.length,
 	]);
+
+	useEffect(() => {
+		const nextPendingChangeCounts = new Map<string, number>();
+		for (const message of messages) {
+			if (message.role !== "assistant" || !message.turnId) {
+				continue;
+			}
+			const pendingState = bottomChatTurnPendingState.get(message.turnId);
+			const pendingChangeCount =
+				(pendingState?.suggestionIds.length ?? 0) +
+				(pendingState?.pendingReviewItemCount ?? 0);
+			nextPendingChangeCounts.set(message.turnId, pendingChangeCount);
+		}
+
+		setResolvedTurnIds((currentTurnIds) =>
+			collectNewlyResolvedTurnIds({
+				currentResolvedTurnIds: currentTurnIds,
+				previousPendingChangeCounts: previousPendingChangeCountsRef.current,
+				nextPendingChangeCounts,
+			}),
+		);
+		previousPendingChangeCountsRef.current = nextPendingChangeCounts;
+	}, [bottomChatTurnPendingState, messages]);
 
 	useEffect(() => {
 		const transcript = transcriptRef.current;
@@ -311,7 +336,7 @@ export function PlaygroundChatDock({
 		const shouldShowAcceptedState =
 			message.role === "assistant" &&
 			message.turnId != null &&
-			acceptedTurnIds.includes(message.turnId) &&
+			resolvedTurnIds.includes(message.turnId) &&
 			pendingChangeCount === 0;
 		return (
 			<article
@@ -347,7 +372,7 @@ export function PlaygroundChatDock({
 					</div>
 				) : shouldShowAcceptedState ? (
 					<div className="playground-chat-message-actions">
-						<div className="playground-chat-message-note">Changes accepted</div>
+						<div className="playground-chat-message-note">Changes resolved</div>
 					</div>
 				) : null}
 			</article>

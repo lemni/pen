@@ -103,6 +103,16 @@ describe("@pen/ai-tools", () => {
 				zoneId: "zone-1",
 				blockId: "block-1",
 			},
+			{
+				type: "gen-delta",
+				zoneId: "zone-1",
+				delta: "Hello",
+			},
+			{
+				type: "gen-end",
+				zoneId: "zone-1",
+				status: "complete",
+			},
 		]);
 	});
 });

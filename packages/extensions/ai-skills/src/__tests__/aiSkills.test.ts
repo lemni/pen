@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AIToolDescriptor } from "@pen/ai-tools";
+import type { AutocompleteProviderDescriptor } from "@pen/ai-autocomplete";
 import {
   AISkillRegistry,
+  createAutocompleteProviderSkill,
   createDocumentAgentSkill,
   listDefaultAISkills,
   renderSkillFiles,
@@ -21,12 +23,30 @@ const tools: readonly AIToolDescriptor[] = [
   },
 ];
 
+const providers: readonly AutocompleteProviderDescriptor[] = [
+  {
+    id: "route-hint",
+    description: "Adds the current route to autocomplete context.",
+    kind: "consumer",
+  },
+];
+
 describe("@pen/ai-skills", () => {
   it("creates a default document skill from ai-tools descriptors", () => {
     const [skill] = listDefaultAISkills(tools);
 
     expect(skill?.name).toBe("pen-document-agent");
     expect(skill?.tools).toEqual(tools);
+  });
+
+  it("includes an autocomplete provider skill when provider descriptors are supplied", () => {
+    const skills = listDefaultAISkills(tools, {
+      autocompleteProviders: providers,
+    });
+
+    expect(skills.map((skill) => skill.name)).toContain(
+      "pen-autocomplete-context",
+    );
   });
 
   it("renders a skill markdown artifact", () => {
@@ -47,6 +67,20 @@ describe("@pen/ai-skills", () => {
         "pen-document-agent/references/tools.json",
       ]),
     );
+  });
+
+  it("renders autocomplete provider references as skill artifacts", () => {
+    const files = renderSkillFiles(createAutocompleteProviderSkill(providers));
+
+    expect(files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        "pen-autocomplete-context/SKILL.md",
+        "pen-autocomplete-context/references/providers.json",
+      ]),
+    );
+    expect(
+      files.find((file) => file.path.endsWith("providers.json"))?.content,
+    ).toContain("route-hint");
   });
 
   it("registers and retrieves skills", () => {

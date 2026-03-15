@@ -3,10 +3,16 @@ import { createEditor } from "@pen/core";
 import { createDefaultSchema } from "@pen/schema-default";
 import { serializeEditorState } from "./editorState";
 
+const noDefaultExtensionsPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
+
 function createPlaygroundEditor() {
 	return createEditor({
 		schema: createDefaultSchema(),
-		without: ["document-ops", "delta-stream", "undo"],
+		preset: noDefaultExtensionsPreset,
 	});
 }
 
@@ -88,30 +94,13 @@ describe("playground editor state serialization", () => {
 				],
 			},
 			{
-				type: "insert-table-row",
+				type: "database-insert-row",
 				blockId: "db-1",
-				index: 0,
-			},
-			{
-				type: "insert-table-column",
-				blockId: "db-1",
-				index: 1,
-			},
-			{
-				type: "insert-table-cell-text",
-				blockId: "db-1",
-				row: 0,
-				col: 0,
-				offset: 0,
-				text: "Alice",
-			},
-			{
-				type: "insert-table-cell-text",
-				blockId: "db-1",
-				row: 0,
-				col: 1,
-				offset: 0,
-				text: "Active",
+				rowId: "row-1",
+				values: {
+					name: "Alice",
+					status: "Active",
+				},
 			},
 		]);
 

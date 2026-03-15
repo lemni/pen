@@ -59,6 +59,115 @@
   overflow-y: auto;
 }
 
+.inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 20px 0;
+}
+
+.inspector-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inspector-section-title,
+.inspector-subtitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.inspector-controls,
+.inspector-metrics,
+.inspector-provider-list-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inspector-toggle-row,
+.inspector-range-row,
+.inspector-metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.inspector-range-row {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.inspector-range-row input[type="range"] {
+  width: 100%;
+}
+
+.inspector-range-row select {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.inspector-text-input {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.inspector-metric-label {
+  font-weight: 500;
+}
+
+.inspector-metric-value {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.inspector-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inspector-provider-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--bg) 6%);
+}
+
+.inspector-provider-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.inspector-provider-description {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 .inspector-json {
   font-family: var(--font-mono);
   font-size: 13px;

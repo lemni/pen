@@ -1,9 +1,9 @@
-import {
-	type AssetProvider,
-	type DocumentOp,
-	type Editor,
-	type Position,
-} from "@pen/core";
+import type {
+	AssetProvider,
+	DocumentOp,
+	Editor,
+	Position,
+} from "@pen/types";
 import type { ResolvedDropTarget } from "./dropResolver";
 import { IMAGE_BLOCK_TYPE, type UploadedImage } from "./transferTypes";
 

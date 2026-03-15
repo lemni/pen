@@ -3,7 +3,9 @@
 import React, { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
-import { createEditor, type AssetProvider } from "@pen/core";
+import { createEditor } from "@pen/core";
+import type { AssetProvider } from "@pen/types";
+import { defaultPreset } from "@pen/preset-default";
 import { Pen } from "../primitives/index";
 
 (
@@ -59,7 +61,11 @@ function createDragEvent(
 describe("@pen/react image drag and drop", () => {
 	it("splits inline text when dropping an image at a caret position", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const paragraphId = editor.firstBlock()!.id;
 		const assetProvider: AssetProvider = {
@@ -199,7 +205,11 @@ describe("@pen/react image drag and drop", () => {
 
 	it("moves the drop target out of the focused block", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const firstParagraphId = editor.firstBlock()!.id;
 		const secondParagraphId = crypto.randomUUID();
@@ -362,7 +372,11 @@ describe("@pen/react image drag and drop", () => {
 
 	it("shows the insertion side on structural block drop targets", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const paragraphId = editor.firstBlock()!.id;
 		const dividerId = crypto.randomUUID();
@@ -480,7 +494,11 @@ describe("@pen/react image drag and drop", () => {
 
 	it("prevents native root-level drop navigation for image files", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const paragraphId = editor.firstBlock()!.id;
 		const assetProvider: AssetProvider = {

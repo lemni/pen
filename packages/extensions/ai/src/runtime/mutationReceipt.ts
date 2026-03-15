@@ -1,4 +1,4 @@
-import type { DocumentOp } from "@pen/core";
+import type { DocumentOp } from "@pen/types";
 import type {
 	AIMutationReceipt,
 	AIMutationReceiptEvidence,

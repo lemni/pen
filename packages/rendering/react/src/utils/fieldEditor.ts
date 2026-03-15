@@ -1,5 +1,5 @@
-import type { Editor, FieldEditor } from "@pen/core";
-import { FIELD_EDITOR_SLOT_KEY } from "@pen/core";
+import type { Editor, FieldEditor } from "@pen/types";
+import { FIELD_EDITOR_SLOT_KEY } from "@pen/types";
 import { FIELD_EDITOR_SLOT_KEY as REACT_FIELD_EDITOR_SLOT_KEY } from "../constants/fieldEditor";
 import type { FieldEditorStore } from "../field-editor/store";
 

@@ -1,10 +1,12 @@
-import type { DocumentOp, Editor } from "@pen/core";
+import type { DocumentOp, Editor } from "@pen/types";
 import { createSuggestionMark } from "./persistent";
 import type { BlockSuggestionMeta } from "../types";
 
 export const SUGGESTION_RESOLUTION_ORIGIN = "suggestion-resolution";
+export const AI_SESSION_SUGGESTION_ORIGIN = "ai-session";
 
 const BYPASS_ORIGINS = new Set([
+	AI_SESSION_SUGGESTION_ORIGIN,
 	"collaborator",
 	"history",
 	"import",

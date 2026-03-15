@@ -66,6 +66,8 @@ type RawPenDocumentLike = {
 	metadata?: CRDTMap<unknown>;
 };
 
+let hasWarnedAboutWithoutOption = false;
+
 function createGeneratedBlockId(): string {
 	return crypto.randomUUID();
 }
@@ -82,7 +84,7 @@ const NOOP_UNDO: UndoManager = {
 	canRedo: () => false,
 	stopCapturing: () => { },
 	setGroupTimeout: () => { },
-	setTrackedOrigins: () => { },
+	registerTrackedOrigins: () => () => { },
 	onStackChange: () => () => { },
 };
 
@@ -236,6 +238,9 @@ class EditorImpl implements Editor {
 				this._slots.get(key) as T | undefined,
 			setSlot: (key: string, value: unknown): void => {
 				this._slots.set(key, value);
+				if (key === "undo:manager") {
+					this._refreshUndoManager();
+				}
 			},
 			getBlockText: (blockId: string): unknown => {
 				const blockMap = this._getRawBlockMap(blockId);
@@ -726,12 +731,23 @@ class EditorImpl implements Editor {
 
 	private _resolveExtensions(options: CreateEditorOptions): Extension[] {
 		const without = new Set(options.without ?? []);
-		const defaults: Extension[] = [
-			documentOpsExtension(),
-			deltaStreamExtension(),
-			undoExtension(),
-			richTextShortcutsExtension(),
-		].filter((ext) => !without.has(ext.name));
+		if (without.size > 0 && !hasWarnedAboutWithoutOption) {
+			hasWarnedAboutWithoutOption = true;
+			console.warn(
+				'Pen: createEditor({ without }) is deprecated. Prefer createEditor({ preset: defaultPreset(...) }) for default feature composition.',
+			);
+		}
+		const defaultExtensions =
+			options.preset?.resolve({
+				schema: this._registry,
+				documentProfile: this._documentProfile,
+			}).extensions ?? [
+				documentOpsExtension(),
+				deltaStreamExtension(),
+				undoExtension(),
+				richTextShortcutsExtension(),
+			];
+		const defaults = defaultExtensions.filter((ext) => !without.has(ext.name));
 
 		const userExtensions = options.extensions ?? [];
 		return [...defaults, ...userExtensions];

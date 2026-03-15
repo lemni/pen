@@ -13,9 +13,8 @@ import {
   shouldForceBlockScopedSelectAll,
 } from "./editor/profilePolicy";
 
-// Re-export the entire @pen/types surface.
-// Prefer @pen/types for contracts and @pen/core for runtime entrypoints.
-export * from "@pen/types";
+// Contracts live in @pen/types.
+// Keep @pen/core focused on runtime entrypoints and advanced internals.
 
 // Schema engine runtime
 export {
@@ -49,6 +48,10 @@ export {
   emptyDecorationSet,
   mergeDecorationSets,
 } from "./editor/decorations";
+export {
+  ensureInlineCompletionController,
+  getInlineCompletionController,
+} from "./editor/inlineCompletion";
 export { DocumentStateImpl } from "./editor/documentState";
 export { DocumentRangeImpl } from "./editor/range";
 export { SelectionManagerImpl } from "./editor/selection";

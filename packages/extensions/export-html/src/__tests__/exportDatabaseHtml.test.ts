@@ -3,10 +3,16 @@ import { createEditor } from "@pen/core";
 import { createDefaultSchema } from "@pen/schema-default";
 import { htmlExporter } from "../exporter";
 
+const noDefaultExtensionsPreset = {
+  resolve() {
+    return { extensions: [] };
+  },
+};
+
 function databaseEditor() {
   const editor = createEditor({
     schema: createDefaultSchema(),
-    without: ["document-ops", "delta-stream", "undo"],
+    preset: noDefaultExtensionsPreset,
   });
   editor.apply([{
     type: "insert-block",

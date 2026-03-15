@@ -1,5 +1,5 @@
-import type { Editor } from "@pen/core";
-import { UNDO_HISTORY_RESTORE_SLOT_KEY } from "@pen/core";
+import type { Editor } from "@pen/types";
+import { UNDO_HISTORY_RESTORE_SLOT_KEY } from "@pen/types";
 
 export const HISTORY_RESTORING_SELECTION_SLOT_KEY =
 	UNDO_HISTORY_RESTORE_SLOT_KEY;

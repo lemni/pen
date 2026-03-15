@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import type { GenerationState } from "@pen/ai";
 import { useAI } from "./useAI";
 

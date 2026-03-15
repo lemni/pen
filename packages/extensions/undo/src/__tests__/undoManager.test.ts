@@ -10,6 +10,8 @@ describe("@pen/undo UndoManagerImpl", () => {
       canUndo: vi.fn(() => true),
       canRedo: vi.fn(() => false),
       stopCapturing: vi.fn(),
+      addTrackedOrigin: vi.fn(),
+      removeTrackedOrigin: vi.fn(),
     };
 
     const manager = new UndoManagerImpl(crdtUndo);
@@ -23,5 +25,55 @@ describe("@pen/undo UndoManagerImpl", () => {
     expect(crdtUndo.undo).toHaveBeenCalled();
     expect(crdtUndo.redo).toHaveBeenCalled();
     expect(crdtUndo.stopCapturing).toHaveBeenCalled();
+  });
+
+  it("registers tracked origins idempotently", () => {
+    const crdtUndo = {
+      undo: vi.fn(() => true),
+      redo: vi.fn(() => true),
+      canUndo: vi.fn(() => true),
+      canRedo: vi.fn(() => true),
+      stopCapturing: vi.fn(),
+      addTrackedOrigin: vi.fn(),
+      removeTrackedOrigin: vi.fn(),
+    };
+
+    const manager = new UndoManagerImpl(crdtUndo);
+    const unregister = manager.registerTrackedOrigins(["ai"]);
+
+    expect(manager.hasTrackedOrigin("ai")).toBe(true);
+    expect(crdtUndo.addTrackedOrigin).toHaveBeenCalledTimes(1);
+
+    unregister();
+    unregister();
+
+    expect(manager.hasTrackedOrigin("ai")).toBe(false);
+    expect(crdtUndo.removeTrackedOrigin).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps shared tracked origins registered until all owners release them", () => {
+    const crdtUndo = {
+      undo: vi.fn(() => true),
+      redo: vi.fn(() => true),
+      canUndo: vi.fn(() => true),
+      canRedo: vi.fn(() => true),
+      stopCapturing: vi.fn(),
+      addTrackedOrigin: vi.fn(),
+      removeTrackedOrigin: vi.fn(),
+    };
+
+    const manager = new UndoManagerImpl(crdtUndo);
+    const unregisterA = manager.registerTrackedOrigins(["ai"]);
+    const unregisterB = manager.registerTrackedOrigins(["ai"]);
+
+    expect(crdtUndo.addTrackedOrigin).toHaveBeenCalledTimes(1);
+
+    unregisterA();
+    expect(manager.hasTrackedOrigin("ai")).toBe(true);
+    expect(crdtUndo.removeTrackedOrigin).not.toHaveBeenCalled();
+
+    unregisterB();
+    expect(manager.hasTrackedOrigin("ai")).toBe(false);
+    expect(crdtUndo.removeTrackedOrigin).toHaveBeenCalledTimes(1);
   });
 });

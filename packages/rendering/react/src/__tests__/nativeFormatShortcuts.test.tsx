@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import type { FieldEditorImpl } from "../field-editor/fieldEditorImpl";
 import { FIELD_EDITOR_SLOT_KEY } from "../constants/fieldEditor";
 import { Pen } from "../primitives/index";
@@ -35,7 +36,11 @@ function getFieldEditor(
 describe("@pen/react native format shortcuts", () => {
 	it("stops bold expansion after native formatBold toggles bold off", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const blockId = editor.firstBlock()!.id;
 
@@ -115,7 +120,11 @@ describe("@pen/react native format shortcuts", () => {
 
 	it("still handles standalone native formatBold beforeinput", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const blockId = editor.firstBlock()!.id;
 

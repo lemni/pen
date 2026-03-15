@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { DATA_ATTRS } from "./dataAttributes";
 
 export function shouldIgnoreAIKeyboardEvent(

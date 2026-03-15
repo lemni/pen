@@ -1,4 +1,4 @@
-import type { DocumentOp, Editor } from "@pen/core";
+import type { DocumentOp, Editor } from "@pen/types";
 import { buildDocumentWriteOps } from "@pen/document-ops";
 import { generateId } from "@pen/types";
 import type {

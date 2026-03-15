@@ -1,13 +1,15 @@
 import React, { useRef, useEffect, useState } from "react";
-import { FIELD_EDITOR_SLOT_KEY as CORE_FIELD_EDITOR_SLOT_KEY } from "@pen/core";
+import { FIELD_EDITOR_SLOT_KEY as CORE_FIELD_EDITOR_SLOT_KEY } from "@pen/types";
 import {
 	generateId,
-	type AssetProvider,
-	type Editor,
-	type EditorViewMode,
-	type InteractionModel,
-	usesInlineTextSelection,
-} from "@pen/core";
+} from "@pen/types";
+import type {
+	AssetProvider,
+	Editor,
+	EditorViewMode,
+	InteractionModel,
+} from "@pen/types";
+import { usesInlineTextSelection } from "@pen/types";
 import {
 	EditorContext,
 	type BlockControlsRenderer,

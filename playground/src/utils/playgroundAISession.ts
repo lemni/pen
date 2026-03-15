@@ -1,10 +1,11 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import {
 	PLAYGROUND_AI_ENDPOINT,
 	PLAYGROUND_AI_SESSION_ENDPOINT,
 	PLAYGROUND_AI_SESSION_SYNC_ENDPOINT,
 	PLAYGROUND_AI_SYNC_DEBOUNCE_MS,
 } from "../constants/playgroundAI";
+import { logAutocompleteDebug } from "./autocompleteDebug";
 import { serializeEditorState } from "./editorState";
 
 export type PlaygroundAIPhase =
@@ -67,6 +68,11 @@ export interface PlaygroundStreamChunk {
 	contextEstimatedTokensJson?: unknown;
 }
 
+const PLAYGROUND_AI_ACTIVE_SYNC_CONFLICT =
+	"Cannot sync a playground session while an AI request is active.";
+const PLAYGROUND_AI_ACTIVE_REQUEST_CONFLICT =
+	"This playground session already has an active AI request.";
+
 const INITIAL_STATE: PlaygroundAIClientState = {
 	sessionId: null,
 	phase: "idle",
@@ -113,47 +119,9 @@ export async function ensurePlaygroundAISession(
 		return pendingSessionPromise;
 	}
 
-	pendingSessionPromise = (async () => {
-		updateState({
-			phase: "creating-session",
-			lastError: null,
-		});
-
-		const response = await fetch(PLAYGROUND_AI_SESSION_ENDPOINT, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-			},
-			signal,
-		});
-
-		if (!response.ok) {
-			const message = await readErrorMessage(response);
-			updateState({
-				phase: "error",
-				lastError: message,
-			});
-			throw new Error(message);
-		}
-
-		const payload = (await response.json()) as { sessionId?: unknown };
-		if (typeof payload.sessionId !== "string" || !payload.sessionId) {
-			const message = "The playground AI session response was missing a session ID.";
-			updateState({
-				phase: "error",
-				lastError: message,
-			});
-			throw new Error(message);
-		}
-
-		updateState({
-			sessionId: payload.sessionId,
-			phase: "idle",
-			lastError: null,
-		});
-
-		return payload.sessionId;
-	})().finally(() => {
+	pendingSessionPromise = createPlaygroundAISession(signal, {
+		persistToState: true,
+	}).finally(() => {
 		pendingSessionPromise = null;
 	});
 
@@ -226,33 +194,52 @@ export async function requestPlaygroundAIResponse(
 	editor: Editor,
 	prompt: string,
 	signal?: AbortSignal,
+	options?: {
+		isolatedSession?: boolean;
+	},
 ): Promise<Response> {
-	const sessionId = await ensurePlaygroundAISession(signal);
-	await flushPlaygroundAISessionSync(editor, "request", signal);
+	const updateClientState = options?.isolatedSession !== true;
+	const sessionId = options?.isolatedSession
+		? await createPlaygroundAISession(signal, { persistToState: false })
+		: await ensurePlaygroundAISession(signal);
+	if (options?.isolatedSession) {
+		await syncPlaygroundAISessionWithId(sessionId, editor, signal, {
+			updateClientState: false,
+		});
+	} else {
+		await flushPlaygroundAISessionSync(editor, "request", signal);
+	}
+	logAutocompleteDebug("ai request starting", {
+		sessionId,
+		promptLength: prompt.length,
+		isolatedSession: options?.isolatedSession ?? false,
+	});
 
 	activeRequestCount += 1;
 	latestRequestStartedAt = performance.now();
-	updateState({
-		phase: "thinking",
-		lastError: null,
-		lastRequest: {
-			requestId: null,
-			sessionId,
-			requestMode: null,
-			requestModel: null,
-			contextFormat: null,
-			firstToolStartMs: null,
-			firstToolResultMs: null,
-			firstTextDeltaServerMs: null,
-			firstTextDeltaBrowserMs: null,
-			totalServerMs: null,
-			totalBrowserMs: null,
-			toolCallCount: 0,
-			toolExecutionMs: null,
-			contextBytesJson: null,
-			contextEstimatedTokensJson: null,
-		},
-	});
+	if (updateClientState) {
+		updateState({
+			phase: "thinking",
+			lastError: null,
+			lastRequest: {
+				requestId: null,
+				sessionId,
+				requestMode: null,
+				requestModel: null,
+				contextFormat: null,
+				firstToolStartMs: null,
+				firstToolResultMs: null,
+				firstTextDeltaServerMs: null,
+				firstTextDeltaBrowserMs: null,
+				totalServerMs: null,
+				totalBrowserMs: null,
+				toolCallCount: 0,
+				toolExecutionMs: null,
+				contextBytesJson: null,
+				contextEstimatedTokensJson: null,
+			},
+		});
+	}
 
 	try {
 		const response = await fetch(PLAYGROUND_AI_ENDPOINT, {
@@ -266,18 +253,41 @@ export async function requestPlaygroundAIResponse(
 			}),
 			signal,
 		});
+		logAutocompleteDebug("ai request response received", {
+			ok: response.ok,
+			status: response.status,
+			statusText: response.statusText,
+		});
 
 		if (!response.ok) {
 			const message = await readErrorMessage(response);
+			logAutocompleteDebug("ai request failed before stream", {
+				status: response.status,
+				message,
+			});
+			if (
+				options?.isolatedSession &&
+				response.status === 409 &&
+				message === PLAYGROUND_AI_ACTIVE_REQUEST_CONFLICT
+			) {
+				throw new Error(
+					"Autocomplete isolated session unexpectedly had an active AI request.",
+				);
+			}
 			throw new Error(message);
 		}
 
 		return response;
 	} catch (error) {
-		finishActiveRequest("error");
-		updateState({
-			lastError: error instanceof Error ? error.message : String(error),
+		logAutocompleteDebug("ai request threw", {
+			error: error instanceof Error ? error.message : String(error),
 		});
+		finishActiveRequest("error", { updateClientState });
+		if (updateClientState) {
+			updateState({
+				lastError: error instanceof Error ? error.message : String(error),
+			});
+		}
 		throw error;
 	}
 }
@@ -286,17 +296,32 @@ export async function* streamPlaygroundAIResponse(
 	editor: Editor,
 	prompt: string,
 	signal?: AbortSignal,
+	options?: {
+		isolatedSession?: boolean;
+	},
 ): AsyncIterable<PlaygroundStreamChunk> {
-	const response = await requestPlaygroundAIResponse(editor, prompt, signal);
+	const updateClientState = options?.isolatedSession !== true;
+	const response = await requestPlaygroundAIResponse(
+		editor,
+		prompt,
+		signal,
+		options,
+	);
 	let finishedRequest = false;
+	logAutocompleteDebug("ai stream opened");
 
 	if (!response.body) {
 		const message = await readErrorMessage(response);
+		logAutocompleteDebug("ai stream missing response body", {
+			message,
+		});
 		const chunk = {
 			type: "error",
 			error: message,
 		} satisfies PlaygroundStreamChunk;
-		applyPlaygroundAIChunk(chunk);
+		if (updateClientState) {
+			applyPlaygroundAIChunk(chunk);
+		}
 		finishedRequest = true;
 		yield chunk;
 		return;
@@ -304,7 +329,12 @@ export async function* streamPlaygroundAIResponse(
 
 	try {
 		for await (const chunk of readPlaygroundAIStream(response.body)) {
-			applyPlaygroundAIChunk(chunk);
+			logAutocompleteDebug("ai stream chunk received", {
+				type: chunk.type ?? "unknown",
+			});
+			if (updateClientState) {
+				applyPlaygroundAIChunk(chunk);
+			}
 			if (chunk.type === "done" || chunk.type === "error") {
 				finishedRequest = true;
 			}
@@ -312,7 +342,12 @@ export async function* streamPlaygroundAIResponse(
 		}
 	} finally {
 		if (!finishedRequest) {
-			finishActiveRequest(signal?.aborted ? "complete" : "error");
+			logAutocompleteDebug("ai stream closed without terminal chunk", {
+				aborted: signal?.aborted ?? false,
+			});
+			finishActiveRequest(signal?.aborted ? "complete" : "error", {
+				updateClientState,
+			});
 		}
 	}
 }
@@ -475,14 +510,103 @@ async function syncPlaygroundAISession(
 	signal?: AbortSignal,
 ): Promise<void> {
 	const sessionId = await ensurePlaygroundAISession(signal);
+	try {
+		await syncPlaygroundAISessionWithId(sessionId, editor, signal, {
+			updateClientState: true,
+		});
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message === "Playground session not found."
+		) {
+			updateState({
+				sessionId: null,
+				hasPendingSync: true,
+				lastError: null,
+			});
+			const nextSessionId = await ensurePlaygroundAISession(signal);
+			await syncPlaygroundAISessionWithId(nextSessionId, editor, signal, {
+				updateClientState: true,
+			});
+			return;
+		}
+		throw error;
+	}
+}
+
+async function createPlaygroundAISession(
+	signal?: AbortSignal,
+	options?: {
+		persistToState?: boolean;
+	},
+): Promise<string> {
+	if (options?.persistToState) {
+		updateState({
+			phase: "creating-session",
+			lastError: null,
+		});
+	}
+
+	const response = await fetch(PLAYGROUND_AI_SESSION_ENDPOINT, {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+		},
+		signal,
+	});
+
+	if (!response.ok) {
+		const message = await readErrorMessage(response);
+		if (options?.persistToState) {
+			updateState({
+				phase: "error",
+				lastError: message,
+			});
+		}
+		throw new Error(message);
+	}
+
+	const payload = (await response.json()) as { sessionId?: unknown };
+	if (typeof payload.sessionId !== "string" || !payload.sessionId) {
+		const message = "The playground AI session response was missing a session ID.";
+		if (options?.persistToState) {
+			updateState({
+				phase: "error",
+				lastError: message,
+			});
+		}
+		throw new Error(message);
+	}
+
+	if (options?.persistToState) {
+		updateState({
+			sessionId: payload.sessionId,
+			phase: "idle",
+			lastError: null,
+		});
+	}
+
+	return payload.sessionId;
+}
+
+async function syncPlaygroundAISessionWithId(
+	sessionId: string,
+	editor: Editor,
+	signal?: AbortSignal,
+	options?: {
+		updateClientState?: boolean;
+	},
+): Promise<void> {
 	const startedAt = performance.now();
 	const syncState = getEditorSyncState(editor);
 
-	updateState({
-		syncStatus: "syncing",
-		phase: state.phase === "idle" ? "syncing" : state.phase,
-		lastError: null,
-	});
+	if (options?.updateClientState !== false) {
+		updateState({
+			syncStatus: "syncing",
+			phase: state.phase === "idle" ? "syncing" : state.phase,
+			lastError: null,
+		});
+	}
 
 	const response = await fetch(PLAYGROUND_AI_SESSION_SYNC_ENDPOINT, {
 		method: "POST",
@@ -498,27 +622,45 @@ async function syncPlaygroundAISession(
 
 	if (!response.ok) {
 		const message = await readErrorMessage(response);
-		updateState({
-			syncStatus: "error",
-			phase: "error",
-			lastError: message,
-		});
+		if (
+			response.status === 409 &&
+			message === PLAYGROUND_AI_ACTIVE_SYNC_CONFLICT
+		) {
+			if (options?.updateClientState !== false) {
+				updateState({
+					syncStatus: "idle",
+					phase: activeRequestCount > 0 ? state.phase : "idle",
+					hasPendingSync: true,
+					lastError: null,
+				});
+			}
+			return;
+		}
+		if (options?.updateClientState !== false) {
+			updateState({
+				syncStatus: "error",
+				phase: "error",
+				lastError: message,
+			});
+		}
 		throw new Error(message);
 	}
 
 	const payload = (await response.json()) as { sessionId?: unknown };
 	syncState.syncedRevision = syncState.revision;
 
-	updateState({
-		sessionId:
-			typeof payload.sessionId === "string" ? payload.sessionId : state.sessionId,
-		syncStatus: "idle",
-		phase: activeRequestCount > 0 ? state.phase : "idle",
-		lastSyncMs: performance.now() - startedAt,
-		lastSyncAt: Date.now(),
-		hasPendingSync: false,
-		lastError: null,
-	});
+	if (options?.updateClientState !== false) {
+		updateState({
+			sessionId:
+				typeof payload.sessionId === "string" ? payload.sessionId : state.sessionId,
+			syncStatus: "idle",
+			phase: activeRequestCount > 0 ? state.phase : "idle",
+			lastSyncMs: performance.now() - startedAt,
+			lastSyncAt: Date.now(),
+			hasPendingSync: false,
+			lastError: null,
+		});
+	}
 }
 
 function getEditorSyncState(editor: Editor): {
@@ -537,21 +679,28 @@ function getEditorSyncState(editor: Editor): {
 	return initial;
 }
 
-function finishActiveRequest(nextPhase: Extract<PlaygroundAIPhase, "complete" | "error">) {
+function finishActiveRequest(
+	nextPhase: Extract<PlaygroundAIPhase, "complete" | "error">,
+	options?: {
+		updateClientState?: boolean;
+	},
+) {
 	activeRequestCount = Math.max(0, activeRequestCount - 1);
-	updateState({
-		phase: activeRequestCount > 0 ? state.phase : "idle",
-		lastRequest: {
-			...getLastRequest(),
-			totalBrowserMs: performance.now() - latestRequestStartedAt,
-		},
-	});
+	if (options?.updateClientState !== false) {
+		updateState({
+			phase: activeRequestCount > 0 ? state.phase : "idle",
+			lastRequest: {
+				...getLastRequest(),
+				totalBrowserMs: performance.now() - latestRequestStartedAt,
+			},
+		});
+	}
 
 	if (activeRequestCount === 0 && state.hasPendingSync && pendingSyncEditor) {
 		queuePlaygroundAISessionSync(pendingSyncEditor, pendingSyncReason);
 	}
 
-	if (nextPhase === "error") {
+	if (nextPhase === "error" && options?.updateClientState !== false) {
 		updateState({ phase: "error" });
 	}
 }

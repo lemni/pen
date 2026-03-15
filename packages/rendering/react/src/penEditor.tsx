@@ -1,5 +1,5 @@
 import React from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { EditorRoot, type EditorRootProps } from "./primitives/editor/root";
 import { EditorContent, type EditorContentProps } from "./primitives/editor/content";
 

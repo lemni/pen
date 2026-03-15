@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import { PenEditor } from "../penEditor";
 import { resolveRenderer, SubdocumentRenderer } from "../index";
 
@@ -27,7 +28,11 @@ describe("@pen/react subdocument rendering", () => {
 
 	it("mounts nested editors without leaking parent selection handlers", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		editor.apply([
 			{

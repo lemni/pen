@@ -37,6 +37,12 @@ export function createYjsUndoManager(
   });
 
   return {
+    addTrackedOrigin(origin) {
+      undoManager.addTrackedOrigin(origin);
+    },
+    removeTrackedOrigin(origin) {
+      undoManager.removeTrackedOrigin(origin);
+    },
     undo() {
       if (undoManager.undoStack.length === 0) return false;
       undoManager.undo();

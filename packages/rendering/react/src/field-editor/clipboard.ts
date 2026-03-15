@@ -1,8 +1,7 @@
 import {
 	buildTableChildren,
-	type Editor,
-	type TextSelection,
 } from "@pen/core";
+import type { Editor, TextSelection } from "@pen/types";
 import type { FieldEditorTransferController } from "./controller";
 import type { PasteImporters } from "../context/editorContext";
 import { executeTransfer } from "./transfer";

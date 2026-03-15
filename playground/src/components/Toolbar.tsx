@@ -1,5 +1,5 @@
 import "./Toolbar.css";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { htmlExporter } from "@pen/export-html";
 import { markdownExporter } from "@pen/export-markdown";
 import { setInlineMark } from "@pen/shortcuts";
@@ -35,14 +35,18 @@ type ToolbarProps = {
 	editor: Editor;
 	linkToggleRef: RefObject<(() => void) | null>;
 	interactionModel?: "content-first" | "block-first";
+	autocompleteEnabled?: boolean;
 	onToggleInteractionModel?: () => void;
+	onAutocompleteEnabledChange?: (enabled: boolean) => void;
 };
 
 export function Toolbar({
 	editor,
 	linkToggleRef,
 	interactionModel = "content-first",
+	autocompleteEnabled = true,
 	onToggleInteractionModel,
+	onAutocompleteEnabledChange,
 }: ToolbarProps) {
 	const blockTypeOptions = getBlockTypeOptions(editor);
 	const interactionModeLabel =
@@ -72,6 +76,32 @@ export function Toolbar({
 					>
 						{interactionModeLabel}
 					</button>
+				) : null}
+				{onAutocompleteEnabledChange ? (
+					<label
+						className="toolbar-checkbox-toggle"
+						onMouseDown={preventEditorBlur}
+						title={
+							autocompleteEnabled
+								? "Disable autocomplete"
+								: "Enable autocomplete"
+						}
+						aria-label={
+							autocompleteEnabled
+								? "Disable autocomplete"
+								: "Enable autocomplete"
+						}
+					>
+						<input
+							className="toolbar-checkbox-input"
+							type="checkbox"
+							checked={autocompleteEnabled}
+							onChange={(event) =>
+								onAutocompleteEnabledChange(event.target.checked)
+							}
+						/>
+						<span>Autocomplete</span>
+					</label>
 				) : null}
 			</div>
 
@@ -398,6 +428,6 @@ function getBlockTypeOptions(editor: Editor) {
 	}));
 }
 
-function preventEditorBlur(event: MouseEvent<HTMLButtonElement>) {
+function preventEditorBlur(event: MouseEvent<HTMLElement>) {
 	event.preventDefault();
 }

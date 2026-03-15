@@ -1,5 +1,5 @@
 import { useRef, useSyncExternalStore } from "react";
-import type { Editor, OpOrigin } from "@pen/core";
+import type { Editor, OpOrigin } from "@pen/types";
 
 interface BlockCommitState {
 	revision: number;

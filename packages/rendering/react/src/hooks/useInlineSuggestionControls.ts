@@ -1,5 +1,5 @@
 import React from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { useActiveAISession } from "./useActiveAISession";
 import { useAIActions } from "./useAIActions";
 import { useSuggestions } from "./useSuggestions";
@@ -297,7 +297,6 @@ function scrollSuggestionIntoView(suggestionElements: readonly HTMLElement[]): v
 			firstVisibleElement.scrollIntoView({
 				block: "nearest",
 				inline: "nearest",
-				behavior: "smooth",
 			});
 		}
 		return;
@@ -312,13 +311,7 @@ function scrollSuggestionIntoView(suggestionElements: readonly HTMLElement[]): v
 		const nextTop =
 			scrollContainer.scrollTop -
 			(containerRect.top + topPadding - elementRect.top);
-		scrollContainer.scrollTop = nextTop;
-		if (typeof scrollContainer.scrollTo === "function") {
-			scrollContainer.scrollTo({
-				top: nextTop,
-				behavior: "smooth",
-			});
-		}
+		setScrollContainerTop(scrollContainer, nextTop);
 		return;
 	}
 
@@ -326,14 +319,15 @@ function scrollSuggestionIntoView(suggestionElements: readonly HTMLElement[]): v
 		const nextTop =
 			scrollContainer.scrollTop +
 			(elementRect.bottom - (containerRect.bottom - bottomPadding));
-		scrollContainer.scrollTop = nextTop;
-		if (typeof scrollContainer.scrollTo === "function") {
-			scrollContainer.scrollTo({
-				top: nextTop,
-				behavior: "smooth",
-			});
-		}
+		setScrollContainerTop(scrollContainer, nextTop);
 	}
+}
+
+function setScrollContainerTop(
+	scrollContainer: HTMLElement,
+	nextTop: number,
+): void {
+	scrollContainer.scrollTop = nextTop;
 }
 
 function findNearestScrollContainer(element: HTMLElement): HTMLElement | null {

@@ -1,4 +1,4 @@
-import type { DocumentOp, Editor } from "@pen/core";
+import type { DocumentOp, Editor } from "@pen/types";
 import {
 	readAllSuggestions,
 	readBlockSuggestionMeta,
@@ -7,164 +7,107 @@ import {
 import { SUGGESTION_RESOLUTION_ORIGIN } from "./suggestMode";
 
 const RESOLUTION_ORIGIN = SUGGESTION_RESOLUTION_ORIGIN;
+type SuggestionResolution = "accept" | "reject";
 
 export function acceptSuggestion(editor: Editor, suggestionId: string): boolean {
-	if (!isSuggestionPending(editor, suggestionId)) return false;
-	const ops = buildAcceptOps(editor, suggestionId);
-	if (ops.length === 0) return false;
-	editor.apply(ops, { origin: RESOLUTION_ORIGIN });
-	return true;
+	return acceptSuggestions(editor, [suggestionId]);
 }
 
 export function rejectSuggestion(editor: Editor, suggestionId: string): boolean {
-	if (!isSuggestionPending(editor, suggestionId)) return false;
-	const ops = buildRejectOps(editor, suggestionId);
-	if (ops.length === 0) return false;
-	editor.apply(ops, { origin: RESOLUTION_ORIGIN });
-	return true;
+	return rejectSuggestions(editor, [suggestionId]);
+}
+
+export function acceptSuggestions(
+	editor: Editor,
+	suggestionIds: readonly string[],
+): boolean {
+	return resolveSuggestions(editor, suggestionIds, "accept");
+}
+
+export function rejectSuggestions(
+	editor: Editor,
+	suggestionIds: readonly string[],
+): boolean {
+	return resolveSuggestions(editor, suggestionIds, "reject");
 }
 
 export function acceptAllSuggestions(editor: Editor): void {
-	for (const id of getAllSuggestionIds(editor)) {
-		acceptSuggestion(editor, id);
-	}
+	resolveSuggestions(editor, getAllSuggestionIds(editor), "accept");
 }
 
 export function rejectAllSuggestions(editor: Editor): void {
-	for (const id of getAllSuggestionIds(editor)) {
-		rejectSuggestion(editor, id);
-	}
+	resolveSuggestions(editor, getAllSuggestionIds(editor), "reject");
 }
 
-function isSuggestionPending(editor: Editor, suggestionId: string): boolean {
-	for (const block of editor.documentState.allBlocks()) {
-		const blockSuggestion = readBlockSuggestionMeta(block);
-		if (blockSuggestion?.id === suggestionId) {
-			return true;
-		}
-		if (readSuggestionsFromBlock(editor, block.id).some((item) => item.id === suggestionId)) {
-			return true;
-		}
+function resolveSuggestions(
+	editor: Editor,
+	suggestionIds: readonly string[],
+	resolution: SuggestionResolution,
+): boolean {
+	const ops = buildResolutionOps(editor, suggestionIds, resolution);
+	if (ops.length === 0) {
+		return false;
 	}
-	return false;
+	editor.apply(ops, { origin: RESOLUTION_ORIGIN, undoGroup: true });
+	return true;
 }
 
-function buildAcceptOps(editor: Editor, suggestionId: string): DocumentOp[] {
+function buildResolutionOps(
+	editor: Editor,
+	suggestionIds: readonly string[],
+	resolution: SuggestionResolution,
+): DocumentOp[] {
+	const remainingIds = new Set(suggestionIds);
+	if (remainingIds.size === 0) {
+		return [];
+	}
+
+	const ops: DocumentOp[] = [];
 	for (const block of editor.documentState.allBlocks()) {
 		const blockSuggestion = readBlockSuggestionMeta(block);
-		if (blockSuggestion?.id === suggestionId) {
-			switch (blockSuggestion.action) {
-				case "insert-block":
-				case "move-block":
-				case "convert-block":
-					return [{
-						type: "set-meta",
-						blockId: block.id,
-						namespace: "suggestion",
-						data: null,
-					}];
-				case "delete-block":
-					return [{ type: "delete-block", blockId: block.id }];
-			}
+		const blockOps = buildBlockSuggestionResolutionOps(
+			block.id,
+			blockSuggestion,
+			remainingIds,
+			resolution,
+		);
+		if (blockOps.length > 0) {
+			ops.push(...blockOps);
+		}
+		const deletesBlock = blockOps.some((op) => op.type === "delete-block");
+		if (deletesBlock) {
+			continue;
 		}
 
 		const matches = readSuggestionsFromBlock(editor, block.id)
-			.filter((item) => item.id === suggestionId)
+			.filter((item) => remainingIds.has(item.id))
 			.sort((left, right) => right.offset - left.offset);
-		if (matches.length === 0) continue;
+		if (matches.length === 0) {
+			continue;
+		}
 
-		const ops: DocumentOp[] = [];
 		for (const suggestion of matches) {
-			if (suggestion.action === "insert") {
+			remainingIds.delete(suggestion.id);
+			if (resolution === "accept") {
+				if (suggestion.action === "insert") {
+					ops.push({
+						type: "format-text",
+						blockId: block.id,
+						offset: suggestion.offset,
+						length: suggestion.length,
+						marks: { suggestion: null },
+					});
+					continue;
+				}
 				ops.push({
-					type: "format-text",
+					type: "delete-text",
 					blockId: block.id,
 					offset: suggestion.offset,
 					length: suggestion.length,
-					marks: { suggestion: null },
 				});
 				continue;
 			}
-			ops.push({
-				type: "delete-text",
-				blockId: block.id,
-				offset: suggestion.offset,
-				length: suggestion.length,
-			});
-		}
-		return ops;
-	}
 
-	return [];
-}
-
-function buildRejectOps(editor: Editor, suggestionId: string): DocumentOp[] {
-	for (const block of editor.documentState.allBlocks()) {
-		const blockSuggestion = readBlockSuggestionMeta(block);
-		if (blockSuggestion?.id === suggestionId) {
-			switch (blockSuggestion.action) {
-				case "insert-block":
-					return [{ type: "delete-block", blockId: block.id }];
-				case "delete-block":
-					return [{
-						type: "set-meta",
-						blockId: block.id,
-						namespace: "suggestion",
-						data: null,
-					}];
-				case "move-block":
-					return blockSuggestion.previousState?.position
-						? [
-								{
-									type: "move-block",
-									blockId: block.id,
-									position: blockSuggestion.previousState.position,
-								},
-								{
-									type: "set-meta",
-									blockId: block.id,
-									namespace: "suggestion",
-									data: null,
-								},
-						  ]
-						: [{
-								type: "set-meta",
-								blockId: block.id,
-								namespace: "suggestion",
-								data: null,
-						  }];
-				case "convert-block":
-					return blockSuggestion.previousState?.type
-						? [
-								{
-									type: "convert-block",
-									blockId: block.id,
-									newType: blockSuggestion.previousState.type,
-									newProps: blockSuggestion.previousState.props ?? {},
-								},
-								{
-									type: "set-meta",
-									blockId: block.id,
-									namespace: "suggestion",
-									data: null,
-								},
-						  ]
-						: [{
-								type: "set-meta",
-								blockId: block.id,
-								namespace: "suggestion",
-								data: null,
-						  }];
-			}
-		}
-
-		const matches = readSuggestionsFromBlock(editor, block.id)
-			.filter((item) => item.id === suggestionId)
-			.sort((left, right) => right.offset - left.offset);
-		if (matches.length === 0) continue;
-
-		const ops: DocumentOp[] = [];
-		for (const suggestion of matches) {
 			if (suggestion.action === "insert") {
 				ops.push({
 					type: "delete-text",
@@ -182,10 +125,92 @@ function buildRejectOps(editor: Editor, suggestionId: string): DocumentOp[] {
 				marks: { suggestion: null },
 			});
 		}
-		return ops;
 	}
 
-	return [];
+	return ops;
+}
+
+function buildBlockSuggestionResolutionOps(
+	blockId: string,
+	blockSuggestion: ReturnType<typeof readBlockSuggestionMeta>,
+	remainingIds: Set<string>,
+	resolution: SuggestionResolution,
+): DocumentOp[] {
+	if (!blockSuggestion || !remainingIds.has(blockSuggestion.id)) {
+		return [];
+	}
+	remainingIds.delete(blockSuggestion.id);
+
+	if (resolution === "accept") {
+		switch (blockSuggestion.action) {
+			case "insert-block":
+			case "move-block":
+			case "convert-block":
+				return [{
+					type: "set-meta",
+					blockId,
+					namespace: "suggestion",
+					data: null,
+				}];
+			case "delete-block":
+				return [{ type: "delete-block", blockId }];
+		}
+	}
+
+	switch (blockSuggestion.action) {
+		case "insert-block":
+			return [{ type: "delete-block", blockId }];
+		case "delete-block":
+			return [{
+				type: "set-meta",
+				blockId,
+				namespace: "suggestion",
+				data: null,
+			}];
+		case "move-block":
+			return blockSuggestion.previousState?.position
+				? [
+						{
+							type: "move-block",
+							blockId,
+							position: blockSuggestion.previousState.position,
+						},
+						{
+							type: "set-meta",
+							blockId,
+							namespace: "suggestion",
+							data: null,
+						},
+				  ]
+				: [{
+						type: "set-meta",
+						blockId,
+						namespace: "suggestion",
+						data: null,
+				  }];
+		case "convert-block":
+			return blockSuggestion.previousState?.type
+				? [
+						{
+							type: "convert-block",
+							blockId,
+							newType: blockSuggestion.previousState.type,
+							newProps: blockSuggestion.previousState.props ?? {},
+						},
+						{
+							type: "set-meta",
+							blockId,
+							namespace: "suggestion",
+							data: null,
+						},
+				  ]
+				: [{
+						type: "set-meta",
+						blockId,
+						namespace: "suggestion",
+						data: null,
+				  }];
+	}
 }
 
 function getAllSuggestionIds(editor: Editor): string[] {

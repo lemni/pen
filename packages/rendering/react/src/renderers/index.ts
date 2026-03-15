@@ -1,4 +1,4 @@
-import type { BlockHandle, BlockRenderContext, BlockRenderer } from "@pen/core";
+import type { BlockHandle, BlockRenderContext, BlockRenderer } from "@pen/types";
 import { ParagraphRenderer } from "./paragraph";
 import { HeadingRenderer } from "./heading";
 import { BulletListItemRenderer } from "./bulletListItem";

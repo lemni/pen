@@ -1,4 +1,4 @@
-import type { DocumentOp, Editor } from "@pen/core";
+import type { DocumentOp, Editor } from "@pen/types";
 
 const PARENT_ID_CONTAINER_TYPES = new Set(["toggle", "callout", "blockquote"]);
 

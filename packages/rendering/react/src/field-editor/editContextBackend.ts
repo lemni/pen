@@ -1,10 +1,6 @@
-import {
-	INPUT_RULES_ENGINE_SLOT_KEY,
-	type DocumentOp,
-	type InputBackend,
-	type Editor,
-	supportsInlineInputRules,
-} from "@pen/core";
+import { INPUT_RULES_ENGINE_SLOT_KEY } from "@pen/types";
+import type { DocumentOp, Editor, InlineDecoration, InputBackend } from "@pen/types";
+import { supportsInlineInputRules } from "@pen/types";
 import type { FieldEditorInputController } from "./controller";
 import { fullReconcileToDOM, applyDeltaToDOM } from "./reconciler";
 import {
@@ -132,7 +128,9 @@ export class EditContextBackend implements InputBackend {
 		this.observer = (event) => this.handleYTextChange(event);
 		this.ytext.observe(this.observer);
 
-		fullReconcileToDOM(this.ytext, element, this.editor.schema);
+		fullReconcileToDOM(this.ytext, element, this.editor.schema, {
+			inlineDecorations: this.getInlineDecorationsForBlock(),
+		});
 		this.isApplyingSelection++;
 		this.updateSelection(null);
 		element.focus({ preventScroll: true });
@@ -587,6 +585,7 @@ export class EditContextBackend implements InputBackend {
 		if (!applied) {
 			fullReconcileToDOM(this.ytext, this.element, this.editor.schema, {
 				preserveSelection: true,
+				inlineDecorations: this.getInlineDecorationsForBlock(),
 			});
 		}
 
@@ -647,6 +646,19 @@ export class EditContextBackend implements InputBackend {
 		range.setStart(anchorPoint.node, anchorPoint.offset);
 		range.setEnd(focusPoint.node, focusPoint.offset);
 		sel.addRange(range);
+	}
+
+	private getInlineDecorationsForBlock(): readonly InlineDecoration[] {
+		const blockId = this.fieldEditor.focusBlockId;
+		if (!blockId) {
+			return [];
+		}
+		return this.editor
+			.getDecorations()
+			.forBlock(blockId)
+			.filter(
+				(decoration): decoration is InlineDecoration => decoration.type === "inline",
+			);
 	}
 
 	private handleKeyDown = (event: KeyboardEvent): void => {

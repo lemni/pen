@@ -1,11 +1,13 @@
 import type {
 	Editor,
+	InlineCompletionController as CoreInlineCompletionController,
+	InlineCompletionState as CoreInlineCompletionState,
 	ModelAdapter,
 	ModelMessage,
 	SelectionState,
 	TextSelection,
 	ToolRuntime,
-} from "@pen/core";
+} from "@pen/types";
 import type {
 	AIApplyStrategy,
 	AIMutationMode,
@@ -188,7 +190,7 @@ export interface AIInlineHistorySnapshot {
 	sessions: readonly AISession[];
 	activeSessionId: string | null;
 	documentVersion: number;
-	restoreWithoutDocumentUndo?: boolean;
+	kind: "document-coupled" | "ui-local";
 }
 
 export interface AgenticStep {
@@ -336,6 +338,9 @@ export interface EphemeralSuggestion {
 	props?: Record<string, unknown>;
 }
 
+export type AIInlineCompletionState = CoreInlineCompletionState;
+export type AIInlineCompletionController = CoreInlineCompletionController;
+
 export interface PersistentSuggestion {
 	id: string;
 	action: "insert" | "delete";
@@ -359,7 +364,7 @@ export interface BlockSuggestionMeta {
 	sessionId?: string;
 	previousState?: {
 		type?: string;
-		position?: import("@pen/core").Position;
+		position?: import("@pen/types").Position;
 		props?: Record<string, unknown>;
 	};
 }
@@ -407,6 +412,24 @@ export interface AIControllerState {
 
 export type AIPromptTarget = "auto" | "selection" | "block" | "document";
 export type AISessionResolution = "accept" | "reject";
+export type AIInlineHistoryDirection = "undo" | "redo";
+
+export interface AIInlineHistoryController {
+	canUndoInlineHistory(): boolean;
+	canRedoInlineHistory(): boolean;
+	canHandleShortcut(direction: AIInlineHistoryDirection): boolean;
+	handleShortcut(direction: AIInlineHistoryDirection): boolean;
+	undoInlineHistory(): boolean;
+	redoInlineHistory(): boolean;
+}
+
+export interface AIReviewController {
+	getSuggestions(): readonly PersistentSuggestion[];
+	acceptSuggestion(id: string): boolean;
+	rejectSuggestion(id: string): boolean;
+	acceptAllSuggestions(): void;
+	rejectAllSuggestions(): void;
+}
 
 export interface AICommandExecutionOptions {
 	blockId?: string | null;

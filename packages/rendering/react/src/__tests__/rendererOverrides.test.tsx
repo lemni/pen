@@ -8,8 +8,9 @@ import {
 } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
-import type { AssetProvider, BlockHandle, BlockRenderContext } from "@pen/core";
 import { createEditor } from "@pen/core";
+import type { AssetProvider, BlockHandle, BlockRenderContext } from "@pen/types";
+import { defaultPreset } from "@pen/preset-default";
 import { Pen } from "../primitives/index";
 import { useEditorContext } from "../context/editorContext";
 import { DATA_ATTRS } from "../utils/dataAttributes";
@@ -137,7 +138,11 @@ function UploadCard(props: {
 
 function createImageEditor() {
 	const editor = createEditor({
-		without: ["document-ops", "delta-stream", "undo"],
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
 	});
 	const blockId = editor.firstBlock()!.id;
 

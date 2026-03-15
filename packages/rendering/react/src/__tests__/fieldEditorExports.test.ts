@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import {
 	expandFieldEditorRange,
 	contractFieldEditorRange,
@@ -16,6 +17,16 @@ import {
 	Pen,
 	richTextShortcutsExtension,
 } from "../index";
+
+function createFieldEditorExportsEditor() {
+	return createEditor({
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
+	});
+}
 
 describe("@pen/react field-editor exports", () => {
 	it("loads the field-editor helper barrel on all platforms", () => {
@@ -54,9 +65,7 @@ describe("@pen/react field-editor exports", () => {
 	});
 
 	it("exposes a stable field-editor snapshot store", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createFieldEditorExportsEditor();
 		const fieldEditor = new FieldEditorImpl(editor);
 		const blockId = editor.firstBlock()!.id;
 		const snapshots = [fieldEditor.getSnapshot()];
@@ -121,9 +130,7 @@ describe("@pen/react field-editor exports", () => {
 	});
 
 	it("derives expanded surface state from canonical multi-block selection", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createFieldEditorExportsEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 
@@ -168,9 +175,7 @@ describe("@pen/react field-editor exports", () => {
 	});
 
 	it("switches large cross-block selections to block mode after 50 blocks", () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createFieldEditorExportsEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const additionalBlockIds = Array.from({ length: 50 }, () =>
 			crypto.randomUUID(),

@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import type { AISession } from "@pen/ai";
 import { getAIController } from "@pen/ai";
 import { useSyncExternalStoreWithSelector } from "../utils/useSyncExternalStoreWithSelector";

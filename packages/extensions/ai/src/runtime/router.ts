@@ -1,4 +1,4 @@
-import type { SelectionState } from "@pen/core";
+import type { SelectionState } from "@pen/types";
 import type { AISurface } from "../types";
 import type {
 	AIApplyStrategy,

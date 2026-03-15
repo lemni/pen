@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createEditor } from "../index";
 import type { DocumentOp } from "@pen/types";
 
+const noDefaultExtensionsPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
+
 type RawDatabaseBlockMap = {
 	get(key: string): unknown;
 };
@@ -12,7 +18,7 @@ type LengthLike = {
 
 function databaseEditor() {
 	const editor = createEditor({
-		without: ["document-ops", "delta-stream", "undo"],
+		preset: noDefaultExtensionsPreset,
 	});
 	editor.apply([
 		{
@@ -54,7 +60,7 @@ describe("database core operations", () => {
 
 	it("convert-block from table to database derives columns titles and stable row ids", () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: noDefaultExtensionsPreset,
 		});
 
 		editor.apply([

@@ -11,7 +11,7 @@ import type {
 	DocumentProfile,
 } from "./crdt";
 import type { DocumentOp, OpOrigin, ApplyOptions } from "./ops";
-import type { DecorationSet } from "./decorations";
+import type { Decoration, DecorationSet } from "./decorations";
 import type { Extension } from "./extension";
 import type { BlockHandle, AppHandle } from "./handles";
 import type { Unsubscribe } from "./utility";
@@ -48,7 +48,7 @@ export interface UndoManager {
 	stopCapturing(): void;
 	setGroupTimeout(ms: number): void;
 
-	setTrackedOrigins(origins: OpOrigin[]): void;
+	registerTrackedOrigins(origins: OpOrigin[]): Unsubscribe;
 
 	onStackChange(callback: () => void): Unsubscribe;
 }
@@ -132,9 +132,24 @@ export const HOOK_PRIORITY_DEFAULT = 500;
 
 // ── Editor Options ──────────────────────────────────────────
 
+export interface EditorPresetContext {
+	schema: SchemaRegistry;
+	documentProfile: DocumentProfile;
+}
+
+export interface EditorPresetResult {
+	extensions?: Extension[];
+}
+
+export interface EditorPreset {
+	resolve(context: EditorPresetContext): EditorPresetResult;
+}
+
 export interface CreateEditorOptions {
 	schema?: SchemaRegistry;
+	preset?: EditorPreset;
 	extensions?: Extension[];
+	/** @deprecated Prefer `preset` for default feature composition. */
 	without?: string[];
 	crdt?: CRDTAdapter;
 	assets?: AssetProvider;
@@ -151,6 +166,39 @@ export interface CommandContext {
 	editor: Editor;
 	selection: SelectionState;
 	activeBlock: BlockHandle | null;
+}
+
+export interface InlineCompletionSuggestion {
+	id: string;
+	blockId: string;
+	offset: number;
+	text: string;
+	type: "inline" | "block";
+	blockType?: string;
+	props?: Record<string, unknown>;
+	previewBlocks?: readonly InlineCompletionPreviewBlock[];
+}
+
+export interface InlineCompletionPreviewBlock {
+	id: string;
+	text: string;
+	blockType?: string;
+	props?: Record<string, unknown>;
+}
+
+export interface InlineCompletionState {
+	visibleSuggestion: InlineCompletionSuggestion | null;
+}
+
+export interface InlineCompletionController {
+	getState(): InlineCompletionState;
+	subscribe(listener: () => void): () => void;
+	showSuggestion(suggestion: InlineCompletionSuggestion): void;
+	dismissSuggestion(): void;
+	acceptSuggestion(): boolean;
+	hasVisibleSuggestion(): boolean;
+	buildDecorations(): readonly Decoration[];
+	destroy(): void;
 }
 
 // ── Editor Interface ────────────────────────────────────────

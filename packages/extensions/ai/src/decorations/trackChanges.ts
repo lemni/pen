@@ -3,7 +3,7 @@ import type {
 	Decoration,
 	Editor,
 	InlineDecoration,
-} from "@pen/core";
+} from "@pen/types";
 import { readBlockSuggestionMeta } from "../suggestions/persistent";
 
 interface YTextLike {

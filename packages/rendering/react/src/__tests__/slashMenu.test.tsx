@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import { Pen } from "../primitives/index";
 import { useSlashMenu } from "../hooks/useSlashMenu";
 import { getAttachedFieldEditor } from "../utils/fieldEditor";
@@ -20,11 +21,22 @@ async function flushAnimationFrames(count = 1): Promise<void> {
 	}
 }
 
+function createSlashMenuEditor(
+	options: Parameters<typeof createEditor>[0] = {},
+) {
+	return createEditor({
+		...options,
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
+	});
+}
+
 describe("@pen/react slash menu", () => {
 	it("opens after selection sync when slash text commits before a text selection exists", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createSlashMenuEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		const slashMenuRef: {
@@ -74,9 +86,7 @@ describe("@pen/react slash menu", () => {
 	});
 
 	it("activates the first starter table cell after inserting a table", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createSlashMenuEditor();
 		const blockId = editor.firstBlock()!.id;
 		editor.selectText(blockId, 0, 0);
 
@@ -129,9 +139,7 @@ describe("@pen/react slash menu", () => {
 	});
 
 	it("allows typing into the starter cell after slash-menu insertion", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createSlashMenuEditor();
 		const blockId = editor.firstBlock()!.id;
 		editor.selectText(blockId, 0, 0);
 
@@ -215,9 +223,7 @@ describe("@pen/react slash menu", () => {
 	});
 
 	it("hides subdocument from the slash menu", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createSlashMenuEditor();
 		const blockId = editor.firstBlock()!.id;
 		editor.selectText(blockId, 0, 0);
 
@@ -264,9 +270,7 @@ describe("@pen/react slash menu", () => {
 	});
 
 	it("inserts a non-empty nested block after its visible subtree", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createSlashMenuEditor();
 		const toggleBlockId = editor.firstBlock()!.id;
 		const nestedToggleId = crypto.randomUUID();
 		const nestedChildId = crypto.randomUUID();
@@ -367,9 +371,8 @@ describe("@pen/react slash menu", () => {
 	});
 
 	it("hides flow-disallowed blocks from the slash menu in flow documents", async () => {
-		const editor = createEditor({
+		const editor = createSlashMenuEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const blockId = editor.firstBlock()!.id;
 		editor.selectText(blockId, 0, 0);

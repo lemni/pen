@@ -1,4 +1,4 @@
-import type { InlineDecoration } from "@pen/core";
+import type { InlineDecoration } from "@pen/types";
 
 const INLINE_DECORATION_ATTRIBUTE_KEY = "__penInlineDecoration";
 

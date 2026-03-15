@@ -1,4 +1,5 @@
 import type { AIToolDescriptor } from "@pen/ai-tools";
+import type { AutocompleteProviderDescriptor } from "@pen/ai-autocomplete";
 import type { AISkillDefinition } from "../types";
 
 const DEFAULT_USAGE = [
@@ -41,8 +42,44 @@ export function createDocumentAgentSkill(
   };
 }
 
+export function createAutocompleteProviderSkill(
+  providers: readonly AutocompleteProviderDescriptor[],
+): AISkillDefinition {
+  return {
+    name: "pen-autocomplete-context",
+    title: "Pen Autocomplete Context",
+    description:
+      "Use when an agent needs to understand or document the runtime autocomplete context that Pen injects through @pen/ai-autocomplete providers.",
+    tools: [],
+    usage: [
+      "Use this skill when you need to inspect which runtime context providers participate in Pen autocomplete prompts.",
+      "Treat these descriptors as packaging and documentation artifacts; they do not execute in the hot path.",
+    ].join("\n"),
+    instructions: [
+      "Read provider descriptors before proposing autocomplete prompt changes so you understand the existing context surface.",
+      "Keep runtime autocomplete context bounded, read-only, and cheap; provider descriptors document that boundary for agents.",
+      "When suggesting new providers, explain why they belong on the autocomplete hot path and what their latency or size budget should be.",
+    ],
+    references: [
+      {
+        path: "references/providers.json",
+        content: JSON.stringify({ providers }, null, 2),
+      },
+    ],
+  };
+}
+
 export function listDefaultAISkills(
   tools: readonly AIToolDescriptor[],
+  options: {
+    autocompleteProviders?: readonly AutocompleteProviderDescriptor[];
+  } = {},
 ): readonly AISkillDefinition[] {
-  return [createDocumentAgentSkill(tools)];
+  const skills: AISkillDefinition[] = [createDocumentAgentSkill(tools)];
+  if ((options.autocompleteProviders?.length ?? 0) > 0) {
+    skills.push(
+      createAutocompleteProviderSkill(options.autocompleteProviders ?? []),
+    );
+  }
+  return skills;
 }

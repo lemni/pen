@@ -3,8 +3,10 @@
 import React, { act, type Ref } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
-import type { BlockHandle, BlockRenderContext, Editor } from "@pen/core";
-import { createEditor, generateId } from "@pen/core";
+import { createEditor } from "@pen/core";
+import type { BlockHandle, BlockRenderContext, Editor } from "@pen/types";
+import { generateId } from "@pen/types";
+import { defaultPreset } from "@pen/preset-default";
 import { Pen } from "../primitives/index";
 import type { BlockControlsProps } from "../context/editorContext";
 import { useBlockDragHandle } from "../hooks/useBlockDragHandle";
@@ -125,6 +127,19 @@ async function renderEditor(element: React.ReactElement): Promise<TestRenderResu
 	};
 }
 
+function createBlockDragEditor(
+	options: Parameters<typeof createEditor>[0] = {},
+) {
+	return createEditor({
+		...options,
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
+	});
+}
+
 function setBlockRect(
 	container: HTMLElement,
 	blockId: string,
@@ -197,9 +212,7 @@ function GlobalHandle(props: BlockControlsProps): React.ReactElement {
 
 describe("@pen/react block drag and drop", () => {
 	it("enables custom block handles in structured mode and disables them in flow mode by default", async () => {
-		const structuredEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const structuredEditor = createBlockDragEditor();
 		seedBlocks(structuredEditor, 3);
 
 		const structuredView = await renderEditor(
@@ -219,8 +232,7 @@ describe("@pen/react block drag and drop", () => {
 
 		await structuredView.unmount();
 
-		const flowEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+		const flowEditor = createBlockDragEditor({
 			editorViewMode: "flow",
 		});
 		seedBlocks(flowEditor, 3);
@@ -244,9 +256,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("renders block controls for every block from a single root prop", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA, blockB, blockC] = seedBlocks(editor, 3);
 
 		const view = await renderEditor(
@@ -286,9 +296,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("resolves drops from the content surface instead of requiring block hover", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA, blockB, blockC] = seedBlocks(editor, 3);
 
 		const view = await renderEditor(
@@ -329,9 +337,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("falls back to the drag session when dragover cannot read custom MIME payload data", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA, blockB, blockC] = seedBlocks(editor, 3);
 
 		const view = await renderEditor(
@@ -389,9 +395,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("does not render a drag overlay when no DragOverlay is mounted", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA] = seedBlocks(editor, 1);
 
 		const view = await renderEditor(
@@ -426,9 +430,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("uses a block preview element as the native drag image", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA] = seedBlocks(editor, 1);
 
 		const view = await renderEditor(
@@ -473,9 +475,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("drags the full selected block set when dragging from a selected block", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA, blockB, blockC, blockD] = seedBlocks(editor, 4);
 		editor.selectBlocks([blockB, blockC]);
 
@@ -512,9 +512,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("drags only the initiating block when dragging from an unselected block", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA, blockB, blockC, blockD] = seedBlocks(editor, 4);
 		editor.selectBlocks([blockA, blockB]);
 
@@ -551,9 +549,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("supports custom handles when block drag and drop is enabled", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA, blockB, blockC] = seedBlocks(editor, 3);
 
 		const view = await renderEditor(
@@ -599,14 +595,10 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("ignores cross-root drag payloads", async () => {
-		const leftEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const leftEditor = createBlockDragEditor();
 		const [leftA, leftB] = seedBlocks(leftEditor, 2);
 
-		const rightEditor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const rightEditor = createBlockDragEditor();
 		const [rightA, rightB] = seedBlocks(rightEditor, 2);
 
 		const view = await renderEditor(
@@ -652,9 +644,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("does not make blocks draggable from the body in block-first mode", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [, blockB] = seedBlocks(editor, 3);
 		editor.selectBlock(blockB);
 
@@ -672,8 +662,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("does not auto-enable handle drag in flow mode when block-first interaction is enabled", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+		const editor = createBlockDragEditor({
 			editorViewMode: "flow",
 		});
 		const [blockA] = seedBlocks(editor, 1);
@@ -698,9 +687,7 @@ describe("@pen/react block drag and drop", () => {
 	});
 
 	it("disables drag behavior when block drag and drop is disabled", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockDragEditor();
 		const [blockA, blockB] = seedBlocks(editor, 2);
 
 		const view = await renderEditor(

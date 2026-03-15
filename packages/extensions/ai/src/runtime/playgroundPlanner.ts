@@ -1,4 +1,4 @@
-import type { Editor, SelectionState } from "@pen/core";
+import type { Editor, SelectionState } from "@pen/types";
 import { parseStructuredIntentRequestPrompt } from "./structuredIntent";
 
 export interface PlaygroundPromptContextEnvelope {
@@ -10,7 +10,8 @@ export interface PlaygroundPromptContextEnvelope {
 export type PlaygroundRequestMode =
 	| "document-agent"
 	| "structured-planner"
-	| "selection-fast";
+	| "selection-fast"
+	| "inline-autocomplete";
 export type PlaygroundResolvedContextFormat = "json" | "none";
 
 export interface PlaygroundRequestPlan {
@@ -33,9 +34,11 @@ export interface PlaygroundPlannerConfig {
 	documentSystemPrompt: string;
 	structuredPlannerSystemPrompt: string;
 	selectionFastPathSystemPrompt: string;
+	autocompleteSystemPrompt: string;
 	selectionSourceCharLimit: number;
 	selectionStopSentinel: string;
 	selectionOutputTokenCap: number;
+	autocompleteOutputTokenCap: number;
 	selectionDefaultOutputTokens: number;
 	selectionExpandOutputTokens: number;
 	selectionSummarizeOutputTokens: number;
@@ -64,6 +67,11 @@ export function buildPlaygroundRequestPlan(
 			promptContext: null,
 			selectedTextLength: null,
 		};
+	}
+
+	const inlineAutocompletePlan = buildInlineAutocompletePlan(prompt, config);
+	if (inlineAutocompletePlan) {
+		return inlineAutocompletePlan;
 	}
 
 	const selectionPlan = buildSelectionFastPathPlan(editor, prompt, config);
@@ -197,26 +205,75 @@ function buildPromptEnvelope(
 	].join("\n");
 }
 
+function buildInlineAutocompletePlan(
+	prompt: string,
+	config: PlaygroundPlannerConfig,
+): PlaygroundRequestPlan | null {
+	if (!isInlineAutocompletePrompt(prompt)) {
+		return null;
+	}
+
+	return {
+		mode: "inline-autocomplete",
+		modelId: config.selectionModel,
+		contextFormat: "none",
+		systemPrompt: config.autocompleteSystemPrompt,
+		prompt,
+		maxOutputTokens: resolveAutocompleteOutputTokenCap(prompt, config),
+		temperature: 0,
+		stopSequences: undefined,
+		useTools: false,
+		promptContext: null,
+		selectedTextLength: null,
+	};
+}
+
+function resolveAutocompleteOutputTokenCap(
+	prompt: string,
+	config: PlaygroundPlannerConfig,
+): number {
+	const targetScope = extractAutocompleteContinuationTargetScope(prompt);
+	if (targetScope === "continue-across-paragraphs") {
+		return Math.max(config.autocompleteOutputTokenCap * 8, 640);
+	}
+	if (targetScope === "finish-paragraph") {
+		return Math.max(config.autocompleteOutputTokenCap * 4, 256);
+	}
+	return config.autocompleteOutputTokenCap;
+}
+
+function extractAutocompleteContinuationTargetScope(
+	prompt: string,
+): "finish-paragraph" | "continue-across-paragraphs" | null {
+	const match = prompt.match(/^target_scope=(.+)$/m);
+	if (!match) {
+		return null;
+	}
+	if (match[1] === "finish-paragraph") {
+		return "finish-paragraph";
+	}
+	if (match[1] === "continue-across-paragraphs") {
+		return "continue-across-paragraphs";
+	}
+	return null;
+}
+
 function buildSelectionFastPathPlan(
 	editor: Editor,
 	prompt: string,
 	config: PlaygroundPlannerConfig,
 ): PlaygroundRequestPlan | null {
-	const selection = editor.selection;
-	if (!selection || selection.type !== "text" || selection.isCollapsed) {
+	const parsedPromptSelection = parsePinnedSelectionPrompt(prompt);
+	const selectedText = (
+		parsedPromptSelection?.selectedText ?? resolveLiveSelectedText(editor)
+	).trim();
+	if (!selectedText || selectedText.length > config.selectionSourceCharLimit) {
 		return null;
 	}
 
-	const selectedText = editor.getSelectedText().trim();
-	if (!selectedText) {
-		return null;
-	}
-
-	if (selectedText.length > config.selectionSourceCharLimit) {
-		return null;
-	}
-
-	const instruction = extractSelectionInstruction(prompt, selectedText);
+	const instruction =
+		parsedPromptSelection?.instruction ??
+		extractSelectionInstruction(prompt, selectedText);
 	const promptKind = classifySelectionPrompt(instruction);
 
 	return {
@@ -242,6 +299,24 @@ function buildSelectionFastPathPlan(
 	};
 }
 
+function resolveLiveSelectedText(editor: Editor): string {
+	const selection = editor.selection;
+	if (!selection || selection.type !== "text" || selection.isCollapsed) {
+		return "";
+	}
+	return editor.getSelectedText();
+}
+
+function isInlineAutocompletePrompt(prompt: string): boolean {
+	const normalizedPrompt = prompt.trim();
+	const promptLines = normalizedPrompt.split("\n");
+	return (
+		promptLines[0]?.startsWith("prefix=") === true &&
+		promptLines[1] === "cursor_here=true" &&
+		promptLines[2]?.startsWith("suffix=") === true
+	);
+}
+
 function buildSelectionPromptEnvelope(
 	instruction: string,
 	selectedText: string,
@@ -256,6 +331,36 @@ function buildSelectionPromptEnvelope(
 		"",
 		`Return only the final replacement text. When finished, output ${stopSentinel}.`,
 	].join("\n");
+}
+
+function parsePinnedSelectionPrompt(
+	prompt: string,
+): { instruction: string; selectedText: string } | null {
+	const normalizedPrompt = prompt.replace(/\r\n?/g, "\n");
+	const selectionMarker =
+		"Context summary:\nSource: selection\nSelected text:\n";
+	const requestMarker = "\n\nUser request:\n";
+	const selectionStart = normalizedPrompt.indexOf(selectionMarker);
+	if (selectionStart < 0) {
+		return null;
+	}
+	const requestStart = normalizedPrompt.lastIndexOf(requestMarker);
+	if (requestStart <= selectionStart + selectionMarker.length) {
+		return null;
+	}
+	const selectedText = normalizedPrompt
+		.slice(selectionStart + selectionMarker.length, requestStart)
+		.trim();
+	const instruction = normalizedPrompt
+		.slice(requestStart + requestMarker.length)
+		.trim();
+	if (!selectedText || !instruction) {
+		return null;
+	}
+	return {
+		instruction,
+		selectedText,
+	};
 }
 
 function extractSelectionInstruction(prompt: string, selectedText: string): string {

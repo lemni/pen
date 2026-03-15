@@ -3,8 +3,8 @@
 import React, { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
-import { createEditor } from "@pen/core";
-import type { DatabaseViewState, TableColumnSchema } from "@pen/core";
+import { createEditor as createCoreEditor } from "@pen/core";
+import type { DatabaseViewState, TableColumnSchema } from "@pen/types";
 import { Pen, getAttachedFieldEditor, handleCopy } from "@pen/react";
 import { DatabaseRenderer } from "../renderer";
 import { ColumnMenu } from "../rendererPanels";
@@ -13,6 +13,22 @@ import { useDatabaseController } from "../useDatabaseController";
 (
 	globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+const noDefaultExtensionsPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
+
+function createEditor(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+) {
+	const { without: _without, ...restOptions } = options;
+	return createCoreEditor({
+		...restOptions,
+		preset: noDefaultExtensionsPreset,
+	});
+}
 
 function createMouseEvent(
 	type: string,
@@ -114,14 +130,12 @@ function createFlowEditorFromSeededDocument(
 	seed: (editor: ReturnType<typeof createEditor>) => void,
 ): ReturnType<typeof createEditor> {
 	const bootstrapEditor = createEditor({
-		without: ["document-ops", "delta-stream", "undo"],
 	});
 	const document = bootstrapEditor.internals.adapter.createDocument();
 	bootstrapEditor.destroy();
 
 	const seedEditor = createEditor({
 		document,
-		without: ["document-ops", "delta-stream", "undo"],
 	});
 	seed(seedEditor);
 	seedEditor.internals.adapter.setDocumentProfile?.(document, "flow");
@@ -129,7 +143,6 @@ function createFlowEditorFromSeededDocument(
 
 	return createEditor({
 		document,
-		without: ["document-ops", "delta-stream", "undo"],
 	});
 }
 
@@ -188,7 +201,6 @@ function getButtonByText(container: HTMLElement, text: string): HTMLButtonElemen
 describe("@pen/database renderer", () => {
 	it("promotes a repeated click on the same database cell to block selection", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		seedDatabase(
@@ -251,7 +263,6 @@ describe("@pen/database renderer", () => {
 
 	it("keeps column widths stable when adding a new column", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		editor.apply([
@@ -332,7 +343,6 @@ describe("@pen/database renderer", () => {
 
 	it("keeps local database chrome editable for hybrid provider-backed views", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const fetch = vi.fn().mockResolvedValue({
 			rows: [{ id: "remote-1", crdtRowIndex: 0, cells: { name: "Remote row" } }],
@@ -369,7 +379,6 @@ describe("@pen/database renderer", () => {
 
 	it("does not move the grid selection while a widget trigger has focus", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		seedDatabase(
@@ -423,7 +432,6 @@ describe("@pen/database renderer", () => {
 
 	it("uses the block default column width for implicit and newly added columns", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		editor.apply([
@@ -474,7 +482,6 @@ describe("@pen/database renderer", () => {
 
 	it("deletes selected rows when delete is pressed from a row checkbox", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		editor.apply([
 			{
@@ -558,7 +565,6 @@ describe("@pen/database renderer", () => {
 
 	it("navigates visible sorted rows instead of storage order", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -618,7 +624,6 @@ describe("@pen/database renderer", () => {
 
 	it("skips hidden columns and respects pinned column order when tabbing", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -670,7 +675,6 @@ describe("@pen/database renderer", () => {
 
 	it("moves through pinned and grouped rows in rendered order", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -733,7 +737,6 @@ describe("@pen/database renderer", () => {
 
 	it("re-normalizes cell selection to the current page", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -933,7 +936,6 @@ describe("@pen/database renderer", () => {
 
 	it("falls back to block selection when dragging from a database into text in structured documents", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 
@@ -1069,7 +1071,6 @@ describe("@pen/database renderer", () => {
 
 	it("falls back to block selection when shift-clicking from a database into text in structured documents", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 
@@ -1128,7 +1129,6 @@ describe("@pen/database renderer", () => {
 
 	it("keeps block-first cmd+a copy scoped to the selected database when block-first interaction is enabled", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 		const clipboardData = createClipboardData();
@@ -1254,7 +1254,6 @@ describe("@pen/database renderer", () => {
 
 	it("promotes beforeinput backspace into a selected database that can be deleted", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 
@@ -1334,7 +1333,6 @@ describe("@pen/database renderer", () => {
 
 	it("supports multi-sort via shift-click on column headers", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -1395,7 +1393,6 @@ describe("@pen/database renderer", () => {
 
 	it("keeps column header controls out of editor selection gestures", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -1456,7 +1453,6 @@ describe("@pen/database renderer", () => {
 
 	it("applies sticky left and right pin styles to pinned columns", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -1495,7 +1491,6 @@ describe("@pen/database renderer", () => {
 
 	it("shows facet-backed autocomplete options in the filter panel", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -1542,7 +1537,6 @@ describe("@pen/database renderer", () => {
 
 	it("manages the multi-sort stack from the sort panel", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -1622,7 +1616,6 @@ describe("@pen/database renderer", () => {
 
 	it("supports nested filter groups from the filter panel", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -1692,7 +1685,6 @@ describe("@pen/database renderer", () => {
 		const recentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2, 9, 0, 0);
 		const oldDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 12, 9, 0, 0);
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		editor.apply([
 			{
@@ -1795,7 +1787,6 @@ describe("@pen/database renderer", () => {
 
 	it("pins selected rows to the top and bottom through the toolbar", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		editor.apply([
 			{
@@ -1896,7 +1887,6 @@ describe("@pen/database renderer", () => {
 
 	it("refreshes the open column menu after adding a select option", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 
 		function OptionMutationHarness() {
@@ -1970,7 +1960,6 @@ describe("@pen/database renderer", () => {
 
 	it("renders grouped sections from the group panel", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		editor.apply([
 			{
@@ -2046,7 +2035,6 @@ describe("@pen/database renderer", () => {
 
 	it("adds switches and removes database views from the title bar", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		seedDatabase(
 			editor,
@@ -2120,7 +2108,6 @@ describe("@pen/database renderer", () => {
 
 	it("renders list views as stacked row cards", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		editor.apply([
 			{
@@ -2180,7 +2167,6 @@ describe("@pen/database renderer", () => {
 
 	it("renders board views as grouped kanban lanes", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		editor.apply([
 			{
@@ -2262,7 +2248,6 @@ describe("@pen/database renderer", () => {
 
 	it("renders gallery views as row cards", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		editor.apply([
 			{
@@ -2320,7 +2305,6 @@ describe("@pen/database renderer", () => {
 
 	it("renders calendar views from the first date column", async () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		editor.apply([
 			{

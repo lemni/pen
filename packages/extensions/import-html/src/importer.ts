@@ -1,10 +1,12 @@
 import type {
+  PendingBlock,
+} from "@pen/core";
+import type {
+  Editor,
   ImportResult,
   Importer,
   ImportOptions,
-  Editor,
-  PendingBlock,
-} from "@pen/core";
+} from "@pen/types";
 import {
   blocksToOps,
   createImportResult,

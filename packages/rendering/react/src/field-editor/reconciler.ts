@@ -1,7 +1,10 @@
-import type { SchemaRegistry } from "@pen/core";
+import type { InlineDecoration, SchemaRegistry } from "@pen/types";
 import { sortDeltaAttributes } from "@pen/core";
 import type { FieldEditorDelta, FieldEditorTextLike } from "./crdt";
-import { INLINE_DECORATION_ATTRIBUTE_KEY } from "../utils/inlineDecorations";
+import {
+	applyInlineDecorationsToDeltas,
+	INLINE_DECORATION_ATTRIBUTE_KEY,
+} from "../utils/inlineDecorations";
 
 // ── Fast path: event-driven delta application ──────────────
 
@@ -114,9 +117,22 @@ export function fullReconcileToDOM(
 	ytext: FieldEditorTextLike,
 	element: HTMLElement,
 	registry: SchemaRegistry,
-	options?: { preserveSelection?: boolean },
+	options?: {
+		preserveSelection?: boolean;
+		inlineDecorations?: readonly InlineDecoration[];
+	},
 ): void {
-	fullReconcileDeltasToDOM(ytext.toDelta(), element, registry, options);
+	const textDeltas = ytext
+		.toDelta()
+		.filter(
+			(delta): delta is FieldEditorDelta & { insert: string } =>
+				typeof delta.insert === "string",
+		);
+	const renderedDeltas =
+		options?.inlineDecorations && options.inlineDecorations.length > 0
+			? applyInlineDecorationsToDeltas(textDeltas, options.inlineDecorations)
+			: textDeltas;
+	fullReconcileDeltasToDOM(renderedDeltas, element, registry, options);
 }
 
 export function fullReconcileDeltasToDOM(

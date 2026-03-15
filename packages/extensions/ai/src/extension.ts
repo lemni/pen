@@ -3,22 +3,33 @@ import type {
 	DocumentOp,
 	Editor,
 	Extension,
+	KeyBinding,
 	ModelAdapter,
 	SelectionState,
 	StreamingTarget,
 	TextSelection,
 	ToolDefinition,
 	ToolRuntime,
+} from "@pen/types";
+import {
+	createDecorationSet,
+	ensureInlineCompletionController,
+	getInlineCompletionController as getInlineCompletionControllerFromCore,
 } from "@pen/core";
-import { createDecorationSet, defineExtension } from "@pen/core";
 import { buildDocumentWriteOps, getDocumentToolRuntime } from "@pen/document-ops";
 import type { HistoryAppliedEvent } from "@pen/types";
-import { shouldExposeBlockInTooling } from "@pen/types";
+import {
+	AI_CONTROLLER_SLOT as CORE_AI_CONTROLLER_SLOT,
+	INLINE_COMPLETION_SLOT as CORE_INLINE_COMPLETION_SLOT,
+	AI_INLINE_HISTORY_SLOT as CORE_AI_INLINE_HISTORY_SLOT,
+	AI_REVIEW_CONTROLLER_SLOT as CORE_AI_REVIEW_CONTROLLER_SLOT,
+	defineExtension,
+	shouldExposeBlockInTooling,
+} from "@pen/types";
 import { runAgenticLoop } from "./agentic/loop";
 import { defaultAICommands } from "./commands/defaultCommands";
 import { AICommandRegistry } from "./commands/registry";
 import { buildAffectedRangeDecorations } from "./decorations/affectedRange";
-import { buildEphemeralDecorations } from "./decorations/ephemeralRender";
 import { buildGenerationZoneDecorations } from "./decorations/generationZone";
 import { buildTrackChangesDecorations } from "./decorations/trackChanges";
 import { getBlockAdapter } from "./runtime/blockAdapters";
@@ -62,10 +73,21 @@ import {
 	buildGenerationStructuredPreviewState,
 	buildStructuredPreviewPatchOperations,
 } from "./runtime/structuredPreview";
-import { acceptAllSuggestions, acceptSuggestion, rejectAllSuggestions, rejectSuggestion } from "./suggestions/acceptReject";
-import { EphemeralSuggestionManager } from "./suggestions/ephemeral";
+import {
+	acceptAllSuggestions,
+	acceptSuggestion,
+	acceptSuggestions,
+	rejectAllSuggestions,
+	rejectSuggestion,
+	rejectSuggestions,
+} from "./suggestions/acceptReject";
 import { readAllSuggestions } from "./suggestions/persistent";
-import { interceptApplyForSuggestMode, shouldBypassSuggestMode } from "./suggestions/suggestMode";
+import {
+	AI_SESSION_SUGGESTION_ORIGIN,
+	interceptApplyForSuggestMode,
+	SUGGESTION_RESOLUTION_ORIGIN,
+	shouldBypassSuggestMode,
+} from "./suggestions/suggestMode";
 import type {
 	AICommandBinding,
 	AICommandContext,
@@ -74,7 +96,11 @@ import type {
 	AIController,
 	AIControllerState,
 	AIExtensionConfig,
+	AIInlineCompletionController,
+	AIInlineHistoryController,
+	AIInlineHistoryDirection,
 	AIInlineHistorySnapshot,
+	AIReviewController,
 	AIMutationReceipt,
 	AISession,
 	FastApplyDebugState,
@@ -92,7 +118,50 @@ import type {
 } from "./types";
 
 export const AI_EXTENSION_NAME = "ai";
-export const AI_CONTROLLER_SLOT = "ai:controller";
+export const AI_CONTROLLER_SLOT = CORE_AI_CONTROLLER_SLOT;
+export const INLINE_COMPLETION_SLOT = CORE_INLINE_COMPLETION_SLOT;
+export const AI_INLINE_COMPLETION_SLOT = INLINE_COMPLETION_SLOT;
+export const AI_INLINE_HISTORY_SLOT = CORE_AI_INLINE_HISTORY_SLOT;
+export const AI_REVIEW_CONTROLLER_SLOT = CORE_AI_REVIEW_CONTROLLER_SLOT;
+
+const AI_SHORTCUT_KEY_BINDINGS: readonly KeyBinding[] = [
+	{
+		key: "Mod-z",
+		priority: 1000,
+		description: "Undo AI inline turn",
+		handler: (editor) => {
+			const inlineHistory = getAIInlineHistoryController(editor);
+			if (!inlineHistory?.canHandleShortcut("undo")) {
+				return false;
+			}
+			return inlineHistory.handleShortcut("undo");
+		},
+	},
+	{
+		key: "Mod-Shift-z",
+		priority: 1000,
+		description: "Redo AI inline turn",
+		handler: (editor) => {
+			const inlineHistory = getAIInlineHistoryController(editor);
+			if (!inlineHistory?.canHandleShortcut("redo")) {
+				return false;
+			}
+			return inlineHistory.handleShortcut("redo");
+		},
+	},
+	{
+		key: "Ctrl-y",
+		priority: 1000,
+		description: "Redo AI inline turn",
+		handler: (editor) => {
+			const inlineHistory = getAIInlineHistoryController(editor);
+			if (!inlineHistory?.canHandleShortcut("redo")) {
+				return false;
+			}
+			return inlineHistory.handleShortcut("redo");
+		},
+	},
+];
 
 type GenerationTarget =
 	| {
@@ -126,17 +195,85 @@ const EMPTY_TOOL_RUNTIME: ToolRuntime = {
 
 const MAX_STREAM_EVENTS = 200;
 
-type AIInlineHistoryDirection = "undo" | "redo";
-
 interface AIInlineHistoryRestoreRequest {
 	direction: AIInlineHistoryDirection;
 	targetSnapshotId: string;
 }
 
+class AIInlineHistoryService implements AIInlineHistoryController {
+	constructor(
+		private readonly _handlers: {
+			canUndoInlineHistory: () => boolean;
+			canRedoInlineHistory: () => boolean;
+			canHandleShortcut: (direction: AIInlineHistoryDirection) => boolean;
+			handleShortcut: (direction: AIInlineHistoryDirection) => boolean;
+			undoInlineHistory: () => boolean;
+			redoInlineHistory: () => boolean;
+		},
+	) { }
+
+	canUndoInlineHistory(): boolean {
+		return this._handlers.canUndoInlineHistory();
+	}
+
+	canRedoInlineHistory(): boolean {
+		return this._handlers.canRedoInlineHistory();
+	}
+
+	canHandleShortcut(direction: AIInlineHistoryDirection): boolean {
+		return this._handlers.canHandleShortcut(direction);
+	}
+
+	handleShortcut(direction: AIInlineHistoryDirection): boolean {
+		return this._handlers.handleShortcut(direction);
+	}
+
+	undoInlineHistory(): boolean {
+		return this._handlers.undoInlineHistory();
+	}
+
+	redoInlineHistory(): boolean {
+		return this._handlers.redoInlineHistory();
+	}
+}
+
+class AIReviewService implements AIReviewController {
+	constructor(
+		private readonly _handlers: {
+			getSuggestions: () => readonly PersistentSuggestion[];
+			acceptSuggestion: (id: string) => boolean;
+			rejectSuggestion: (id: string) => boolean;
+			acceptAllSuggestions: () => void;
+			rejectAllSuggestions: () => void;
+		},
+	) { }
+
+	getSuggestions(): readonly PersistentSuggestion[] {
+		return this._handlers.getSuggestions();
+	}
+
+	acceptSuggestion(id: string): boolean {
+		return this._handlers.acceptSuggestion(id);
+	}
+
+	rejectSuggestion(id: string): boolean {
+		return this._handlers.rejectSuggestion(id);
+	}
+
+	acceptAllSuggestions(): void {
+		this._handlers.acceptAllSuggestions();
+	}
+
+	rejectAllSuggestions(): void {
+		this._handlers.rejectAllSuggestions();
+	}
+}
+
 class AIControllerImpl implements AIController {
 	private readonly _editor: Editor;
 	private readonly _registry = new AICommandRegistry();
-	private readonly _ephemeral = new EphemeralSuggestionManager();
+	private readonly _inlineCompletion: AIInlineCompletionController;
+	private readonly _renderInlineCompletionDecorations: boolean;
 	private readonly _listeners = new Set<() => void>();
 	private readonly _sessionListeners = new Set<() => void>();
 	private readonly _streamEventListeners = new Set<() => void>();
@@ -160,8 +297,18 @@ class AIControllerImpl implements AIController {
 	private _pendingInlineHistoryRestore: AIInlineHistoryRestoreRequest | null = null;
 	private _isRestoringInlineHistory = false;
 
-	constructor(editor: Editor, config: AIExtensionConfig) {
+	constructor(
+		editor: Editor,
+		config: AIExtensionConfig,
+		services: {
+			inlineCompletion: AIInlineCompletionController;
+			renderInlineCompletionDecorations: boolean;
+		},
+	) {
 		this._editor = editor;
+		this._inlineCompletion = services.inlineCompletion;
+		this._renderInlineCompletionDecorations =
+			services.renderInlineCompletionDecorations;
 		this._model = config.model;
 		this._author = config.author ?? "assistant";
 		this._maxAgenticSteps = config.maxAgenticSteps ?? 10;
@@ -188,8 +335,10 @@ class AIControllerImpl implements AIController {
 
 		this._syncSuggestionsFromDocument();
 
-		this._ephemeral.subscribe(() => {
-			this._setState({ ephemeralSuggestion: this._ephemeral.current });
+		this._inlineCompletion.subscribe(() => {
+			this._setState({
+				ephemeralSuggestion: this._inlineCompletion.getState().visibleSuggestion,
+			});
 		});
 		this._unsubscribeHistoryApplied = this._editor.onHistoryApplied((event) => {
 			this._handleHistoryApplied(event);
@@ -535,6 +684,18 @@ class AIControllerImpl implements AIController {
 		return this._navigateInlineHistory("redo");
 	}
 
+	canHandleInlineHistoryShortcut(
+		direction: AIInlineHistoryDirection,
+	): boolean {
+		return this._canHandleInlineHistoryShortcut(direction, { shortcutOnly: true });
+	}
+
+	handleInlineHistoryShortcut(
+		direction: AIInlineHistoryDirection,
+	): boolean {
+		return this._navigateInlineHistory(direction, { shortcutOnly: true });
+	}
+
 	async runCommand(
 		commandId: string,
 		options?: AICommandExecutionOptions,
@@ -640,10 +801,7 @@ class AIControllerImpl implements AIController {
 		}
 
 		if (generation.suggestionIds && generation.suggestionIds.length > 0) {
-			let accepted = false;
-			for (const id of generation.suggestionIds) {
-				accepted = this.acceptSuggestion(id) || accepted;
-			}
+			const accepted = acceptSuggestions(this._editor, generation.suggestionIds);
 			if (accepted) {
 				this._resolveActiveGeneration({
 					suggestionIds: [],
@@ -707,10 +865,7 @@ class AIControllerImpl implements AIController {
 		if (!generation) return false;
 
 		if (generation.suggestionIds && generation.suggestionIds.length > 0) {
-			let rejected = false;
-			for (const id of generation.suggestionIds) {
-				rejected = rejectSuggestion(this._editor, id) || rejected;
-			}
+			const rejected = rejectSuggestions(this._editor, generation.suggestionIds);
 			if (rejected) {
 				this._resolveActiveGeneration({
 					suggestionIds: [],
@@ -899,7 +1054,7 @@ class AIControllerImpl implements AIController {
 				});
 			}
 		}
-		this._ephemeral.dismiss();
+		this._inlineCompletion.dismissSuggestion();
 	}
 
 	openCommandMenu(): void {
@@ -914,16 +1069,18 @@ class AIControllerImpl implements AIController {
 		this._setState({ suggestMode: enabled });
 	}
 
-	showEphemeralSuggestion(suggestion: Parameters<EphemeralSuggestionManager["show"]>[0]): void {
-		this._ephemeral.show(suggestion);
+	showEphemeralSuggestion(
+		suggestion: Parameters<AIInlineCompletionController["showSuggestion"]>[0],
+	): void {
+		this._inlineCompletion.showSuggestion(suggestion);
 	}
 
 	dismissEphemeralSuggestion(): void {
-		this._ephemeral.dismiss();
+		this._inlineCompletion.dismissSuggestion();
 	}
 
 	acceptEphemeralSuggestion(): void {
-		this._ephemeral.accept(this._editor);
+		this._inlineCompletion.acceptSuggestion();
 	}
 
 	getSuggestions() {
@@ -971,7 +1128,9 @@ class AIControllerImpl implements AIController {
 				this._state.activeSessionId,
 			),
 			...buildGenerationZoneDecorations(this._state.activeGeneration),
-			...buildEphemeralDecorations(this._ephemeral),
+			...(this._renderInlineCompletionDecorations
+				? this._inlineCompletion.buildDecorations()
+				: []),
 		];
 		return decorations;
 	}
@@ -988,6 +1147,7 @@ class AIControllerImpl implements AIController {
 		}
 		const touched = events.some((event) =>
 			event.origin !== "ai" &&
+			event.origin !== AI_SESSION_SUGGESTION_ORIGIN &&
 			event.origin !== "system" &&
 			event.origin !== "extension" &&
 			event.affectedBlocks.includes(active.blockId),
@@ -1434,7 +1594,7 @@ class AIControllerImpl implements AIController {
 						streamedMarkdownSuggestionIds = previewRefresh.suggestionIds;
 						lastStreamedMarkdownPreviewText = previewRefresh.normalizedText;
 					} else if (target.type === "selection") {
-						this._ephemeral.show({
+						this._inlineCompletion.showSuggestion({
 							id: seedGeneration.id,
 							blockId: blockId,
 							offset: target.selection.toRange().start.offset,
@@ -1635,7 +1795,7 @@ class AIControllerImpl implements AIController {
 					route.mutationMode,
 					context?.sessionId,
 				);
-				this._ephemeral.dismiss();
+				this._inlineCompletion.dismissSuggestion();
 			} else if (
 				target.type === "selection" &&
 				currentText.length > 0 &&
@@ -1669,7 +1829,7 @@ class AIControllerImpl implements AIController {
 						replaceTargetBlock: shouldReplaceMarkdownTarget,
 					},
 				);
-				this._ephemeral.dismiss();
+				this._inlineCompletion.dismissSuggestion();
 			}
 
 			const suggestionIds = this.getSuggestions()
@@ -1892,7 +2052,7 @@ class AIControllerImpl implements AIController {
 				targetKind: route.targetKind,
 			};
 			this._abortController = null;
-			this._ephemeral.dismiss();
+			this._inlineCompletion.dismissSuggestion();
 			if (target.type === "block" && blockStreamingStarted) {
 				streamingTarget?.endStreaming(
 					abortController.signal.aborted ? "cancelled" : "error",
@@ -3198,7 +3358,8 @@ class AIControllerImpl implements AIController {
 			readModelId(this._model),
 			sessionId,
 		);
-		this._editor.apply(intercepted, { origin: "extension", undoGroup: true });
+		const origin = sessionId ? AI_SESSION_SUGGESTION_ORIGIN : "extension";
+		this._editor.apply(intercepted, { origin, undoGroup: true });
 	}
 
 	private _captureBlockRevisions(blockIds: string[]): Record<string, number> {
@@ -3354,18 +3515,19 @@ class AIControllerImpl implements AIController {
 		if (!session || !turn) {
 			return false;
 		}
-		const resolveSuggestion =
+		const resolveSuggestionsForTurn =
 			resolution === "accept"
-				? (suggestionId: string) => this.acceptSuggestion(suggestionId)
-				: (suggestionId: string) => this.rejectSuggestion(suggestionId);
+				? (suggestionIds: readonly string[]) =>
+						acceptSuggestions(this._editor, suggestionIds)
+				: (suggestionIds: readonly string[]) =>
+						rejectSuggestions(this._editor, suggestionIds);
 		const resolveReviewItems =
 			resolution === "accept"
 				? (reviewItemIds: readonly string[]) => this.acceptReviewItems(reviewItemIds)
 				: (reviewItemIds: readonly string[]) => this.rejectReviewItems(reviewItemIds);
 		let resolved = false;
-		for (const suggestionId of turn.suggestionIds) {
-			resolved = resolveSuggestion(suggestionId) || resolved;
-		}
+		resolved =
+			resolveSuggestionsForTurn(turn.suggestionIds) || resolved;
 		if (
 			this._state.activeGeneration?.sessionId === sessionId &&
 			this._state.activeGeneration.turnId === turnId &&
@@ -3628,16 +3790,7 @@ class AIControllerImpl implements AIController {
 		) {
 			return;
 		}
-		const snapshot = createInlineHistorySnapshot(
-			this._editor,
-			nextState.sessions,
-			nextState.activeSessionId ?? null,
-			this._documentVersion,
-		);
 		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex];
-		if (currentSnapshot && areInlineHistorySnapshotsEqual(currentSnapshot, snapshot)) {
-			return;
-		}
 		const nextHistory = this._inlineHistory.slice(0, this._inlineHistoryIndex + 1);
 		if (nextHistory.length === 0) {
 			const baselineSnapshot = createInlineHistorySnapshot(
@@ -3646,9 +3799,23 @@ class AIControllerImpl implements AIController {
 				previousState.activeSessionId ?? null,
 				this._documentVersion,
 			);
-			if (!areInlineHistorySnapshotsEqual(baselineSnapshot, snapshot)) {
-				nextHistory.push(baselineSnapshot);
-			}
+			nextHistory.push(baselineSnapshot);
+		}
+		const previousSnapshot = nextHistory[nextHistory.length - 1] ?? currentSnapshot ?? null;
+		const snapshot = createInlineHistorySnapshot(
+			this._editor,
+			nextState.sessions,
+			nextState.activeSessionId ?? null,
+			this._documentVersion,
+			{
+				kind:
+					previousSnapshot?.documentVersion === this._documentVersion
+						? "ui-local"
+						: "document-coupled",
+			},
+		);
+		if (currentSnapshot && areInlineHistorySnapshotsEqual(currentSnapshot, snapshot)) {
+			return;
 		}
 		nextHistory.push(snapshot);
 		this._inlineHistory = nextHistory;
@@ -3692,7 +3859,7 @@ class AIControllerImpl implements AIController {
 			checkpointState.sessions,
 			checkpointState.activeSessionId ?? null,
 			this._documentVersion,
-			{ restoreWithoutDocumentUndo: true },
+			{ kind: "ui-local" },
 		);
 		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex];
 		if (currentSnapshot && areInlineHistorySnapshotsEqual(currentSnapshot, snapshot)) {
@@ -3704,15 +3871,102 @@ class AIControllerImpl implements AIController {
 		this._inlineHistoryIndex = nextHistory.length - 1;
 	}
 
-	private _navigateInlineHistory(direction: AIInlineHistoryDirection): boolean {
+	private _resolveInlineHistoryTargetIndex(
+		direction: AIInlineHistoryDirection,
+		options?: { shortcutOnly?: boolean },
+	): number {
 		const step = direction === "undo" ? -1 : 1;
-		const targetIndex = this._inlineHistoryIndex + step;
+		if (!options?.shortcutOnly) {
+			return this._inlineHistoryIndex + step;
+		}
+		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex] ?? null;
+		const scopedSessionId = this._resolveShortcutInlineHistorySessionId(
+			currentSnapshot,
+		);
+		const currentSettledTurnCount = currentSnapshot
+			? countSettledInlineTurns(currentSnapshot, scopedSessionId)
+			: 0;
+		let targetIndex = this._inlineHistoryIndex + step;
+		while (targetIndex >= 0 && targetIndex < this._inlineHistory.length) {
+			const targetSnapshot = this._inlineHistory[targetIndex];
+			if (
+				targetSnapshot &&
+				targetSnapshot.kind !== "ui-local" &&
+				countSettledInlineTurns(targetSnapshot, scopedSessionId) !== currentSettledTurnCount
+			) {
+				return targetIndex;
+			}
+			targetIndex += step;
+		}
+		return -1;
+	}
+
+	private _resolveShortcutInlineHistorySessionId(
+		currentSnapshot: AIInlineHistorySnapshot | null,
+	): string | null {
+		const activeSession = this.getActiveSession();
+		if (activeSession?.surface === "inline-edit") {
+			return activeSession.id;
+		}
+		const selection = this._editor.selection;
+		if (currentSnapshot && selection?.type === "text" && !selection.isCollapsed) {
+			const matchingSession = [...currentSnapshot.sessions]
+				.reverse()
+				.find(
+					(session) =>
+						session.surface === "inline-edit" &&
+						sessionSelectionMatches(session, selection),
+				);
+			if (matchingSession) {
+				return matchingSession.id;
+			}
+		}
+		if (
+			currentSnapshot?.activeSessionId &&
+			currentSnapshot.sessions.some(
+				(session) =>
+					session.id === currentSnapshot.activeSessionId &&
+					session.surface === "inline-edit",
+			)
+		) {
+			return currentSnapshot.activeSessionId;
+		}
+		return (
+			[...(currentSnapshot?.sessions ?? [])]
+				.reverse()
+				.find((session) => session.surface === "inline-edit")
+				?.id ?? null
+		);
+	}
+
+	private _canHandleInlineHistoryShortcut(
+		direction: AIInlineHistoryDirection,
+		options?: { shortcutOnly?: boolean },
+	): boolean {
+		const targetIndex = this._resolveInlineHistoryTargetIndex(direction, options);
+		const targetSnapshot = this._inlineHistory[targetIndex];
+		if (!targetSnapshot) {
+			return false;
+		}
+		if (targetSnapshot.kind !== "ui-local") {
+			return true;
+		}
+		return direction === "undo"
+			? !this._editor.undoManager.canUndo()
+			: !this._editor.undoManager.canRedo();
+	}
+
+	private _navigateInlineHistory(
+		direction: AIInlineHistoryDirection,
+		options?: { shortcutOnly?: boolean },
+	): boolean {
+		const targetIndex = this._resolveInlineHistoryTargetIndex(direction, options);
 		const targetSnapshot = this._inlineHistory[targetIndex];
 		if (!targetSnapshot) {
 			return false;
 		}
 		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex] ?? null;
-		if (targetSnapshot.restoreWithoutDocumentUndo) {
+		if (targetSnapshot.kind === "ui-local") {
 			this._applyInlineHistorySnapshot(targetSnapshot);
 			this._inlineHistoryIndex = targetIndex;
 			return true;
@@ -3829,17 +4083,60 @@ class AIControllerImpl implements AIController {
 
 export function aiExtension(config: AIExtensionConfig = {}): Extension {
 	let unsubscribeBeforeApply: (() => void) | null = null;
+	let unsubscribeTrackedOrigins: (() => void) | null = null;
 	let controller: AIControllerImpl | null = null;
+	let inlineCompletion: AIInlineCompletionController | null = null;
+	let ownsInlineCompletion = false;
+	let inlineHistory: AIInlineHistoryService | null = null;
+	let reviewController: AIReviewService | null = null;
 	let activeEditor: Editor | null = null;
 
 	return defineExtension({
 		name: AI_EXTENSION_NAME,
-		dependencies: ["document-ops", "delta-stream"],
+		dependencies: ["document-ops", "delta-stream", "undo"],
+		keyBindings: AI_SHORTCUT_KEY_BINDINGS,
 
 		activateClient: async ({ editor }) => {
 			activeEditor = editor;
-			controller = new AIControllerImpl(editor, config);
+			const inlineCompletionRegistration = ensureInlineCompletionController(editor);
+			inlineCompletion = inlineCompletionRegistration.controller;
+			ownsInlineCompletion = inlineCompletionRegistration.isOwner;
+			controller = new AIControllerImpl(editor, config, {
+				inlineCompletion,
+				renderInlineCompletionDecorations: ownsInlineCompletion,
+			});
+			inlineHistory = new AIInlineHistoryService({
+				canUndoInlineHistory: () =>
+					controller ? controller.canUndoInlineHistory() : false,
+				canRedoInlineHistory: () =>
+					controller ? controller.canRedoInlineHistory() : false,
+				canHandleShortcut: (direction) =>
+					controller
+						? controller.canHandleInlineHistoryShortcut(direction)
+						: false,
+				handleShortcut: (direction) =>
+					controller
+						? controller.handleInlineHistoryShortcut(direction)
+						: false,
+				undoInlineHistory: () =>
+					controller ? controller.undoInlineHistory() : false,
+				redoInlineHistory: () =>
+					controller ? controller.redoInlineHistory() : false,
+			});
+			reviewController = new AIReviewService({
+				getSuggestions: () => controller?.getSuggestions() ?? [],
+				acceptSuggestion: (id) => controller?.acceptSuggestion(id) ?? false,
+				rejectSuggestion: (id) => controller?.rejectSuggestion(id) ?? false,
+				acceptAllSuggestions: () => controller?.acceptAllSuggestions(),
+				rejectAllSuggestions: () => controller?.rejectAllSuggestions(),
+			});
 			editor.internals.setSlot(AI_CONTROLLER_SLOT, controller);
+			editor.internals.setSlot(AI_INLINE_HISTORY_SLOT, inlineHistory);
+			editor.internals.setSlot(AI_REVIEW_CONTROLLER_SLOT, reviewController);
+			unsubscribeTrackedOrigins = editor.undoManager.registerTrackedOrigins([
+				AI_SESSION_SUGGESTION_ORIGIN,
+				SUGGESTION_RESOLUTION_ORIGIN,
+			]);
 
 			unsubscribeBeforeApply = editor.onBeforeApply(
 				(ops, options) => {
@@ -3861,9 +4158,21 @@ export function aiExtension(config: AIExtensionConfig = {}): Extension {
 			controller?.cancelActiveGeneration();
 			controller?.destroy();
 			activeEditor?.internals.setSlot(AI_CONTROLLER_SLOT, null);
+			activeEditor?.internals.setSlot(AI_INLINE_HISTORY_SLOT, null);
+			activeEditor?.internals.setSlot(AI_REVIEW_CONTROLLER_SLOT, null);
+			if (ownsInlineCompletion) {
+				inlineCompletion?.destroy();
+				activeEditor?.internals.setSlot(INLINE_COMPLETION_SLOT, null);
+			}
+			unsubscribeTrackedOrigins?.();
+			unsubscribeTrackedOrigins = null;
 			unsubscribeBeforeApply?.();
 			unsubscribeBeforeApply = null;
 			controller = null;
+			inlineCompletion = null;
+			ownsInlineCompletion = false;
+			inlineHistory = null;
+			reviewController = null;
 			activeEditor = null;
 		},
 
@@ -3884,6 +4193,32 @@ export function aiExtension(config: AIExtensionConfig = {}): Extension {
 
 export function getAIController(editor: Editor): AIController | null {
 	return editor.internals.getSlot<AIController>(AI_CONTROLLER_SLOT) ?? null;
+}
+
+export function getInlineCompletionController(
+	editor: Editor,
+): AIInlineCompletionController | null {
+	return getInlineCompletionControllerFromCore(editor);
+}
+
+export function getAIInlineCompletionController(
+	editor: Editor,
+): AIInlineCompletionController | null {
+	return getInlineCompletionController(editor);
+}
+
+export function getAIInlineHistoryController(
+	editor: Editor,
+): AIInlineHistoryController | null {
+	return editor.internals.getSlot<AIInlineHistoryController>(
+		AI_INLINE_HISTORY_SLOT,
+	) ?? null;
+}
+
+export function getAIReviewController(editor: Editor): AIReviewController | null {
+	return editor.internals.getSlot<AIReviewController>(
+		AI_REVIEW_CONTROLLER_SLOT,
+	) ?? null;
 }
 
 function resolveOrderedReviewItems(
@@ -4138,7 +4473,7 @@ function createInlineHistorySnapshot(
 	activeSessionId: string | null,
 	documentVersion: number,
 	options?: {
-		restoreWithoutDocumentUndo?: boolean;
+		kind?: AIInlineHistorySnapshot["kind"];
 	},
 ): AIInlineHistorySnapshot {
 	return {
@@ -4147,7 +4482,7 @@ function createInlineHistorySnapshot(
 		sessions: cloneInlineHistorySessions(editor, sessions),
 		activeSessionId,
 		documentVersion,
-		restoreWithoutDocumentUndo: options?.restoreWithoutDocumentUndo,
+		kind: options?.kind ?? "document-coupled",
 	};
 }
 
@@ -4780,6 +5115,7 @@ function areInlineHistorySnapshotsEqual(
 	return (
 		previous.activeSessionId === next.activeSessionId &&
 		previous.documentVersion === next.documentVersion &&
+		previous.kind === next.kind &&
 		areSessionsEqual(previous.sessions, next.sessions)
 	);
 }
@@ -4839,6 +5175,28 @@ function buildInlineHistoryCheckpoint(
 			};
 		}),
 	};
+}
+
+function countSettledInlineTurns(
+	snapshot: AIInlineHistorySnapshot,
+	sessionId?: string | null,
+): number {
+	if (sessionId) {
+		const session = snapshot.sessions.find(
+			(item) => item.id === sessionId && item.surface === "inline-edit",
+		);
+		if (!session) {
+			return 0;
+		}
+		return session.turns.filter((turn) => turn.status !== "streaming").length;
+	}
+	return snapshot.sessions
+		.filter((session) => session.surface === "inline-edit")
+		.reduce(
+			(count, session) =>
+				count + session.turns.filter((turn) => turn.status !== "streaming").length,
+			0,
+		);
 }
 
 function areEphemeralSuggestionsEqual(

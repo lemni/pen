@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import type { AIContextualPromptAnchor, AISession } from "@pen/ai";
 import { getAIController } from "@pen/ai";
 import React from "react";

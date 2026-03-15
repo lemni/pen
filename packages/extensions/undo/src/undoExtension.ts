@@ -84,7 +84,9 @@ export function undoExtension(options?: UndoExtensionOptions): Extension {
 	let unsubscribeStackItemUpdated: (() => void) | null = null;
 	let unsubscribeStackItemPopped: (() => void) | null = null;
 	let historyRestoreRequestId = 0;
-	const trackedOrigins = options?.trackedOrigins ?? DEFAULT_TRACKED_ORIGINS;
+	const trackedOrigins = new Set<OpOrigin>(
+		options?.trackedOrigins ?? DEFAULT_TRACKED_ORIGINS,
+	);
 
 	return defineExtension({
 		name: "undo",
@@ -93,7 +95,7 @@ export function undoExtension(options?: UndoExtensionOptions): Extension {
 			const { adapter, crdtDoc } = ctx.editor.internals;
 
 			const crdtUndo = adapter.createUndoManager(crdtDoc, {
-				trackedOrigins,
+				trackedOrigins: [...trackedOrigins],
 				captureTimeout: options?.groupTimeout ?? 400,
 			});
 
@@ -172,7 +174,7 @@ export function undoExtension(options?: UndoExtensionOptions): Extension {
 					}
 				}) ?? null;
 
-			manager = new UndoManagerImpl(crdtUndo);
+			manager = new UndoManagerImpl(crdtUndo, trackedOrigins);
 			if (options?.groupTimeout !== undefined) {
 				manager.setGroupTimeout(options.groupTimeout);
 			}
@@ -195,7 +197,7 @@ export function undoExtension(options?: UndoExtensionOptions): Extension {
 			if (!manager) return;
 
 			for (const event of events) {
-				if (trackedOrigins.includes(event.origin)) {
+				if (manager.hasTrackedOrigin(event.origin)) {
 					manager.resetIdleTimer();
 				}
 			}
@@ -207,7 +209,11 @@ export function undoExtension(options?: UndoExtensionOptions): Extension {
 
 // ── Constants ────────────────────────────────────────────────
 
-const DEFAULT_TRACKED_ORIGINS: OpOrigin[] = ["user", "ai", "import"];
+const DEFAULT_TRACKED_ORIGINS: OpOrigin[] = [
+	"user",
+	"ai",
+	"import",
+];
 const CURSOR_BEFORE_KEY = "pen:cursor-before";
 const CURSOR_AFTER_KEY = "pen:cursor-after";
 

@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import { getInsertSiblingBlockOp } from "../utils/parentIdTree";
 
 describe("@pen/react parentIdTree", () => {
 	it("inserts sibling blocks after the full nested subtree and inherits parentId", () => {
 		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
 		});
 		const parentToggleId = editor.firstBlock()!.id;
 		const nestedToggleId = crypto.randomUUID();

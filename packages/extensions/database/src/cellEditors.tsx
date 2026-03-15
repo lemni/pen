@@ -1,10 +1,10 @@
 import React, { useRef, useLayoutEffect, useState } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import {
 	normalizeStoredMultiSelectValue,
 	normalizeStoredSelectValue,
 	resolveStoredSelectOption,
-} from "@pen/core";
+} from "@pen/types";
 import {
 	useEditorContext,
 	useFieldEditorContext,

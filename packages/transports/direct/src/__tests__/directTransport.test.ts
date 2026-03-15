@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { directTransport } from "../directTransport";
-import type { PenStreamPart, PenStreamRequest, ToolRuntime } from "@pen/core";
+import type { PenStreamPart, PenStreamRequest, ToolRuntime } from "@pen/types";
 
 type ToolExecutionContext = Parameters<ToolRuntime["executeTool"]>[2];
 

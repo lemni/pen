@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import { Pen } from "../primitives/index";
 import { getAttachedFieldEditor } from "../utils/fieldEditor";
 
@@ -33,11 +34,23 @@ function numberedListMarkers(container: HTMLElement): string[] {
 	).map((marker) => marker.textContent ?? "");
 }
 
+function createBlockTypeEditor(
+	options: Parameters<typeof createEditor>[0] = {},
+) {
+	return createEditor({
+		...options,
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
+	});
+}
+
 describe("@pen/react block type rendering", () => {
 	it("derives flow-aware default block type options from schema metadata", async () => {
-		const editor = createEditor({
+		const editor = createBlockTypeEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const blockId = editor.firstBlock()!.id;
 		editor.selectText(blockId, 0, 0);
@@ -76,9 +89,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("keeps structured-only block types in default toolbar options", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 		editor.selectText(blockId, 0, 0);
 
@@ -111,9 +122,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("updates the rendered block immediately when the toolbar converts block type", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -173,9 +182,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("rerenders rendered block text after a text-only document commit", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		const container = document.createElement("div");
@@ -208,9 +215,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("converts a rendered paragraph to a toggle without violating hook order", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -255,9 +260,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("preserves block text and focuses the next starter cell when converting to table", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -315,9 +318,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("keeps toggle expansion on a dedicated trigger instead of the editable title", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -392,9 +393,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("renders parentId child blocks inside an open toggle and hides them from the root flow", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const toggleBlockId = editor.firstBlock()!.id;
 		const childBlockId = crypto.randomUUID();
 
@@ -482,9 +481,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("creates the first nested child block from an empty open toggle", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const toggleBlockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -553,9 +550,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("renders numbered list items with a shared marker and content row", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -594,9 +589,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("renumbers numbered list markers when the sequence changes", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const firstBlockId = editor.firstBlock()!.id;
 		const secondBlockId = crypto.randomUUID();
 		const insertedBlockId = crypto.randomUUID();
@@ -656,9 +649,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("renders bullet list items with a shared marker and content row", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -697,9 +688,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("renders check list items with the checkbox and content in one layout", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
@@ -738,9 +727,7 @@ describe("@pen/react block type rendering", () => {
 	});
 
 	it("updates inactive inline content when CRDT text changes", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createBlockTypeEditor();
 		const blockId = editor.firstBlock()!.id;
 
 		const container = document.createElement("div");

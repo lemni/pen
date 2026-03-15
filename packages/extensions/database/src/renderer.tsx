@@ -1,4 +1,4 @@
-import type { BlockHandle, BlockRenderContext } from "@pen/core";
+import type { BlockHandle, BlockRenderContext } from "@pen/types";
 import {
 	DATA_ATTRS,
 	useEditorContext,

@@ -5,13 +5,11 @@ import type {
   DatabaseViewState,
   HTMLImportElement,
   HTMLImportNode,
-  PendingBlock,
   SchemaRegistry,
   TableColumnSchema,
-} from "@pen/core";
-import {
-  normalizeStoredSelectValue,
-} from "@pen/core";
+} from "@pen/types";
+import type { PendingBlock } from "@pen/core";
+import { normalizeStoredSelectValue } from "@pen/types";
 
 const BLOCK_ELEMENT_MAP: Record<string, (node: DOMNode) => PendingBlock> = {
   h1: (node) => blockWithInline("heading", { level: 1 }, node),

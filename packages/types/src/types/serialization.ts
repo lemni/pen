@@ -41,7 +41,10 @@ export interface XMLElement {
   textContent?: string;
 }
 
-export interface Exporter<Output = string> {
+export interface Exporter<
+  Output = string,
+  Extra extends Record<string, unknown> = Record<string, never>,
+> {
   name: string;
   mimeType: string;
   fileExtension: string;
@@ -53,8 +56,11 @@ export interface Exporter<Output = string> {
    * block types are hidden from menus or disallowed as new insertions in the
    * active documentProfile.
    */
-  export(editor: Editor, options?: ExportOptions): Output | Promise<Output>;
-  exportFragment?(blocks: BlockHandle[], options?: ExportOptions): Output;
+  export(
+    editor: Editor,
+    options?: ExportOptions<Extra>,
+  ): Output | Promise<Output>;
+  exportFragment?(blocks: BlockHandle[], options?: ExportOptions<Extra>): Output;
 }
 
 export interface ExportOptions<

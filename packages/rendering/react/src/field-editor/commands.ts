@@ -1,9 +1,8 @@
 import {
 	INPUT_RULES_ENGINE_SLOT_KEY,
 	generateId,
-	type DocumentOp,
-	type Editor,
-} from "@pen/core";
+} from "@pen/types";
+import type { DocumentOp, Editor } from "@pen/types";
 import {
 	toggleInlineMark as toggleInlineMarkCommand,
 	setInlineMark as setInlineMarkCommand,

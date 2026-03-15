@@ -136,6 +136,40 @@ export const AI_FLOW_PATCH_SCOPED_REPLACEMENT_BENCH: BenchMetadata = {
 	name: "ai flow patch scoped replacement metrics",
 };
 
+export const AI_AUTOCOMPLETE_CANCEL_CHURN_BENCH: BenchMetadata = {
+	id: "ai.autocomplete-cancel-churn",
+	name: "ai autocomplete cancel churn",
+	targetMs: 10,
+	critical: true,
+};
+
+export const AI_AUTOCOMPLETE_REQUESTING_CANCEL_CHURN_BENCH: BenchMetadata = {
+	id: "ai.autocomplete-requesting-cancel-churn",
+	name: "ai autocomplete requesting cancel churn",
+	targetMs: 20,
+};
+
+export const AI_AUTOCOMPLETE_PROVIDER_BUDGET_BENCH: BenchMetadata = {
+	id: "ai.autocomplete-provider-budget",
+	name: "ai autocomplete provider budget",
+	targetMs: 25,
+	critical: true,
+};
+
+export const AI_AUTOCOMPLETE_PARTIAL_ACCEPT_BENCH: BenchMetadata = {
+	id: "ai.autocomplete-partial-accept",
+	name: "ai autocomplete partial accept",
+	targetMs: 20,
+	critical: true,
+};
+
+export const AI_AUTOCOMPLETE_PREFETCH_AFTER_ACCEPT_BENCH: BenchMetadata = {
+	id: "ai.autocomplete-prefetch-after-accept",
+	name: "ai autocomplete prefetch after accept",
+	targetMs: 30,
+	critical: true,
+};
+
 export const BENCHMARK_METADATA: BenchMetadata[] = [
 	CRDT_INSERT_1000_BLOCKS_BENCH,
 	CRDT_ENCODE_STATE_500_BENCH,
@@ -161,6 +195,11 @@ export const BENCHMARK_METADATA: BenchMetadata[] = [
 	AI_FLOW_PATCH_TEXT_EDIT_BENCH,
 	AI_FLOW_PATCH_ALIGNMENT_BENCH,
 	AI_FLOW_PATCH_SCOPED_REPLACEMENT_BENCH,
+	AI_AUTOCOMPLETE_CANCEL_CHURN_BENCH,
+	AI_AUTOCOMPLETE_REQUESTING_CANCEL_CHURN_BENCH,
+	AI_AUTOCOMPLETE_PROVIDER_BUDGET_BENCH,
+	AI_AUTOCOMPLETE_PARTIAL_ACCEPT_BENCH,
+	AI_AUTOCOMPLETE_PREFETCH_AFTER_ACCEPT_BENCH,
 ];
 
 export function findBenchMetadataById(id: string): BenchMetadata | undefined {

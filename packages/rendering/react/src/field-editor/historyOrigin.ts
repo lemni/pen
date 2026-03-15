@@ -1,4 +1,4 @@
-import { HISTORY_ORIGIN_TAG } from "@pen/core";
+import { HISTORY_ORIGIN_TAG } from "@pen/types";
 
 /**
  * Detects whether a raw CRDT transaction origin is from the undo manager.

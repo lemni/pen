@@ -1,9 +1,12 @@
 import {
-	COLLECT_KEY_BINDINGS_SLOT_KEY,
-	type Editor,
-	type KeyBindingContext,
-	usesInlineTextSelection,
+	getInlineCompletionController,
 } from "@pen/core";
+import type { Editor, KeyBindingContext } from "@pen/types";
+import {
+	COLLECT_KEY_BINDINGS_SLOT_KEY,
+	usesInlineTextSelection,
+} from "@pen/types";
+import { getAutocompleteController } from "@pen/ai-autocomplete";
 import type { FieldEditorKeyboardController } from "./controller";
 import {
 	applyDeleteBehavior,
@@ -29,6 +32,11 @@ export function handleFieldEditorKeyDown(options: {
 	const { event, editor, fieldEditor, ytext, range } = options;
 	const blockId = fieldEditor.focusBlockId;
 	if (!blockId) return false;
+	const autocomplete = getAutocompleteController(editor);
+
+	if (shouldDismissAutocompleteOnKeyDown(event, autocomplete)) {
+		autocomplete?.dismiss("typing");
+	}
 
 	if (
 		!event.defaultPrevented &&
@@ -137,6 +145,22 @@ export function handleFieldEditorKeyDown(options: {
 			);
 			return true;
 		}
+
+		const inlineCompletion = getInlineCompletionController(editor);
+		if (inlineCompletion?.hasVisibleSuggestion()) {
+			event.preventDefault();
+			if (autocomplete?.hasVisibleSuggestion()) {
+				return autocomplete.acceptVisibleSuggestion();
+			}
+			return inlineCompletion.acceptSuggestion();
+		}
+
+		if (!event.shiftKey) {
+			if (autocomplete?.request({ explicit: true })) {
+				event.preventDefault();
+				return true;
+			}
+		}
 	}
 
 	if (
@@ -243,6 +267,24 @@ export function handleFieldEditorKeyDown(options: {
 	return handleEditorKeyBindings(editor, event, { includeSelectAll: false });
 }
 
+function shouldDismissAutocompleteOnKeyDown(
+	event: KeyboardEvent,
+	autocomplete: ReturnType<typeof getAutocompleteController>,
+): boolean {
+	if (!autocomplete?.hasVisibleSuggestion()) {
+		return false;
+	}
+	if (event.metaKey || event.ctrlKey || event.altKey) {
+		return false;
+	}
+	return (
+		event.key.length === 1 ||
+		event.key === "Backspace" ||
+		event.key === "Delete" ||
+		event.key === "Enter"
+	);
+}
+
 export function handleEditorKeyBindings(
 	editor: Editor,
 	event: KeyboardEvent,
@@ -301,6 +343,10 @@ export function handleHistoryShortcut(
 	editor: Editor,
 	event: KeyboardEvent,
 ): boolean {
+	if (tryHandleHistoryOverrideBinding(editor, event)) {
+		return true;
+	}
+
 	if (isUndoShortcut(event)) {
 		editor.undoManager.undo();
 		return true;
@@ -309,6 +355,28 @@ export function handleHistoryShortcut(
 	if (isRedoShortcut(event)) {
 		editor.undoManager.redo();
 		return true;
+	}
+
+	return false;
+}
+
+function tryHandleHistoryOverrideBinding(
+	editor: Editor,
+	event: KeyboardEvent,
+): boolean {
+	if (!isUndoShortcut(event) && !isRedoShortcut(event)) {
+		return false;
+	}
+
+	const bindings = collectKeyBindings(editor);
+	for (const binding of bindings) {
+		if (
+			matchesBindingContext(editor, binding.context) &&
+			matchesKey(binding.key, event) &&
+			binding.handler(editor, event)
+		) {
+			return true;
+		}
 	}
 
 	return false;

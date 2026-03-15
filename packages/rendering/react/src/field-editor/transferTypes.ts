@@ -1,4 +1,4 @@
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import type { FieldEditorTransferController } from "./controller";
 import type { PasteImporters } from "../context/editorContext";
 import type { ResolvedDropTarget } from "./dropResolver";

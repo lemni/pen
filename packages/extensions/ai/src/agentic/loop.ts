@@ -1,8 +1,8 @@
 import type {
 	ModelAdapter,
 	StreamingTarget
-} from "@pen/core";
-import { collectToolExecutionOutput } from "@pen/core";
+} from "@pen/types";
+import { collectToolExecutionOutput } from "@pen/types";
 import {
 	buildAgentMessages,
 	buildAssistantToolCallParts,

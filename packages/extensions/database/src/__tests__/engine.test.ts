@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { DatabaseEngine } from "../engine";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import {
 	isContentEditableColumnType,
 	DEFAULT_COLUMNS,

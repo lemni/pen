@@ -14,7 +14,7 @@ type MarkdownExporterExtraOptions = Record<string, unknown> & {
   viewMode?: MarkdownExportViewMode;
 };
 
-export const markdownExporter: Exporter<string> = {
+export const markdownExporter: Exporter<string, MarkdownExporterExtraOptions> = {
   name: "markdown",
   mimeType: "text/markdown",
   fileExtension: ".md",

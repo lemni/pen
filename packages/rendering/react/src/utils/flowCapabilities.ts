@@ -1,4 +1,4 @@
-import type { DocumentProfile, Editor } from "@pen/core";
+import type { DocumentProfile, Editor } from "@pen/types";
 import {
 	getFlowCapabilityFromSchema as getSharedFlowCapabilityFromSchema,
 	getFlowCapabilityFromType as getSharedFlowCapabilityFromType,

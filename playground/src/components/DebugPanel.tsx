@@ -1,5 +1,5 @@
 import "./DebugPanel.css";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 import { useAIDebugLog } from "@pen/react";
 import { useEffect, useRef } from "react";
 import { PLAYGROUND_AI_SESSION_ID_PREVIEW_LENGTH } from "../constants/playgroundAI";

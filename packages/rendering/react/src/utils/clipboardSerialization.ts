@@ -1,8 +1,8 @@
 import {
 	buildTableChildren,
 	sortDeltaAttributes,
-	type Editor,
 } from "@pen/core";
+import type { Editor } from "@pen/types";
 import {
 	encodePenBlocksForHtml,
 	type Delta,

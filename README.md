@@ -12,7 +12,7 @@
 
 
 ```bash
-npm install @pen/core @pen/react
+npm install @pen/core @pen/preset-default @pen/react
 ```
 
 ## Table of Contents
@@ -31,12 +31,12 @@ npm install @pen/core @pen/react
 
 - **Headless:** Behavior and state separated from rendering.
 - **AI-native:** Document model, operation format, and extension architecture designed around how LLMs generate and how humans collaborate with them.
-- **Extension-first:** Core is tiny. Everything -- blocks, formatting, AI, multiplayer, execution, apps -- is an extension.
+- **Extension-first:** Core is tiny. Blocks, formatting, AI, execution, undo, import/export, and document tools are all packaged as extensions.
 - **Shared field editor:** One content-editing engine powers blocks, table cells, database surfaces, and other structured text contexts.
-- **Schema-driven:** Block types, layout rules, and content as declarative schemas. Compile to React, Vue, Svelte, HTML, or SSR without changing the definition.
+- **Schema-driven:** Block types, layout rules, and content as declarative schemas. Render with React today, while keeping the core headless enough for future framework and server-rendered adapters.
 - **CRDT-first:** Documents stored and transmitted as binary CRDT state. Yjs default, with future portability to Loro or Automerge.
 - **Model-agnostic:** A minimal `ModelAdapter` interface works with any LLM client, including the Vercel AI SDK and its 25+ providers. Native tool execution is package-first through `@pen/ai-tools`, and agent-facing skill artifacts can be surfaced through `@pen/ai-skills`.
-- **Zero-config to start:** createEditor() with zero args gives you a working editor.
+- **Explicit defaults:** `defaultPreset()` gives you the standard Pen runtime stack, while `createEditor()` still supports low-level setups when you need to compose your own defaults.
 
 ```
 ProseMirror / Lexical       Pen                      TipTap / Plate
@@ -54,9 +54,12 @@ The minimum viable Pen editor:
 
 ```tsx
 import { createEditor } from '@pen/core'
+import { defaultPreset } from '@pen/preset-default'
 import { PenEditor } from '@pen/react'
 
-const editor = createEditor()
+const editor = createEditor({
+  preset: defaultPreset(),
+})
 
 function App() {
   return <PenEditor editor={editor} />
@@ -67,9 +70,12 @@ Add a formatting toolbar:
 
 ```tsx
 import { createEditor } from '@pen/core'
-import * as Pen from '@pen/react'
+import { defaultPreset } from '@pen/preset-default'
+import { Pen } from '@pen/react'
 
-const editor = createEditor()
+const editor = createEditor({
+  preset: defaultPreset(),
+})
 
 function App() {
   return (
@@ -81,7 +87,13 @@ function App() {
           <Pen.Toolbar.Toggle format="underline">U</Pen.Toolbar.Toggle>
         </Pen.Toolbar.Group>
         <Pen.Toolbar.Separator />
-        <Pen.Toolbar.Select format="blockType" options={['paragraph', 'heading']} />
+        <Pen.Toolbar.Select
+          format="blockType"
+          options={[
+            { value: 'paragraph', label: 'Paragraph' },
+            { value: 'heading', label: 'Heading' },
+          ]}
+        />
       </Pen.Toolbar.Root>
       <Pen.Editor.Content />
     </Pen.Editor.Root>
@@ -98,9 +110,12 @@ Selection behavior defaults:
 
 ```tsx
 import { createEditor } from '@pen/core'
+import { defaultPreset } from '@pen/preset-default'
 import { PenEditor } from '@pen/react'
 
-const editor = createEditor()
+const editor = createEditor({
+  preset: defaultPreset(),
+})
 
 function App() {
   return (
@@ -116,10 +131,13 @@ Constrain marquee block selection to a custom surface:
 
 ```tsx
 import { createEditor } from '@pen/core'
-import * as Pen from '@pen/react'
+import { defaultPreset } from '@pen/preset-default'
+import { Pen } from '@pen/react'
 import { useRef } from 'react'
 
-const editor = createEditor()
+const editor = createEditor({
+  preset: defaultPreset(),
+})
 
 function App() {
   const surfaceRef = useRef<HTMLDivElement | null>(null)
@@ -146,9 +164,11 @@ Enable markdown-style autoformat as an extension:
 
 ```tsx
 import { createEditor } from '@pen/core'
+import { defaultPreset } from '@pen/preset-default'
 import { inputRulesExtension } from '@pen/input-rules'
 
 const editor = createEditor({
+  preset: defaultPreset(),
   extensions: [inputRulesExtension()],
 })
 ```
@@ -156,69 +176,88 @@ const editor = createEditor({
 Leave the extension out to keep markdown autoformat disabled:
 
 ```tsx
-const editor = createEditor()
+const editor = createEditor({
+  preset: defaultPreset(),
+})
 ```
 
 Add AI streaming with any model provider:
 
 ```tsx
 import { createEditor } from '@pen/core'
+import type { ModelAdapter, ModelMessage } from '@pen/types'
+import { defaultPreset } from '@pen/preset-default'
+import { aiExtension } from '@pen/ai'
 import { streamText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
-import * as Pen from '@pen/react'
+import { Pen } from '@pen/react'
 
-const editor = createEditor()
+function flattenMessageContent(content: ModelMessage['content']): string {
+  if (typeof content === 'string') {
+    return content
+  }
 
-const modelAdapter: Pen.ModelAdapter = {
-  stream: (options) => streamText({
-    model: anthropic('claude-sonnet-4-6'),
-    messages: options.messages,
-    tools: Pen.penToolSchemas(options.tools),
-    abortSignal: options.signal,
-  }),
+  return content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
 }
+
+const model: ModelAdapter = {
+  async *stream(options) {
+    const result = streamText({
+      model: anthropic('your-model-id'),
+      messages: options.messages.map((message) => ({
+        role: message.role,
+        content: flattenMessageContent(message.content),
+      })),
+      abortSignal: options.signal,
+    })
+
+    for await (const delta of result.textStream) {
+      yield { type: 'text-delta', delta }
+    }
+
+    yield { type: 'done' }
+  },
+}
+
+const editor = createEditor({
+  preset: defaultPreset(),
+  extensions: [
+    aiExtension({
+      model,
+      contentFormat: {
+        blockGeneration: 'markdown',
+        selectionRewrite: 'text',
+      },
+    }),
+  ],
+})
 
 function App() {
   return (
     <Pen.Editor.Root editor={editor}>
-      <Pen.Toolbar.Root>
-        <Pen.Toolbar.Group>
-          <Pen.Toolbar.Toggle format="bold">B</Pen.Toolbar.Toggle>
-          <Pen.Toolbar.Toggle format="italic">I</Pen.Toolbar.Toggle>
-        </Pen.Toolbar.Group>
-      </Pen.Toolbar.Root>
-      <Pen.Editor.Content />
-      <Pen.AI.Root model={modelAdapter}>
-        <Pen.AI.Trigger>Ask AI</Pen.AI.Trigger>
-        <Pen.AI.CommandMenu>
-          <Pen.AI.CommandInput placeholder="Ask AI to write, edit, or explain..." />
-          <Pen.AI.CommandList>
-            <Pen.AI.CommandItem command="continue">Continue writing</Pen.AI.CommandItem>
-            <Pen.AI.CommandItem command="summarize">Summarize</Pen.AI.CommandItem>
-            <Pen.AI.CommandItem command="fix-grammar">Fix grammar</Pen.AI.CommandItem>
-          </Pen.AI.CommandList>
-        </Pen.AI.CommandMenu>
-        <Pen.AI.GenerationZone>
-          <Pen.AI.StreamingText />
-          <Pen.AI.ActionBar>
-            <Pen.AI.ActionBar.Accept>Keep</Pen.AI.ActionBar.Accept>
-            <Pen.AI.ActionBar.Reject>Discard</Pen.AI.ActionBar.Reject>
-            <Pen.AI.ActionBar.Retry>Retry</Pen.AI.ActionBar.Retry>
-          </Pen.AI.ActionBar>
-        </Pen.AI.GenerationZone>
+      <Pen.AI.Root editor={editor}>
+        <Pen.Editor.Content />
       </Pen.AI.Root>
     </Pen.Editor.Root>
   )
 }
 ```
 
+`Pen.AI.Root` consumes the AI controller installed by `aiExtension(...)`. Add the React AI primitives you need around that context.
+
 Style inline suggestion keep/undo controls your way:
 
 ```tsx
 import { createEditor } from '@pen/core'
-import * as Pen from '@pen/react'
+import { defaultPreset } from '@pen/preset-default'
+import { Pen } from '@pen/react'
 
-const editor = createEditor()
+const editor = createEditor({
+  preset: defaultPreset(),
+})
 
 function App() {
   return (
@@ -259,36 +298,38 @@ Progressive capability -- same engine, different surface:
 
 ```tsx
 import { createEditor } from '@pen/core'
+import { defaultPreset } from '@pen/preset-default'
 import { defaultSchema } from '@pen/schema-default'
 
-// M0: custom schema, M0 extensions auto-included
+// M0: custom schema plus the standard Pen runtime preset
 const editor = createEditor({
+  preset: defaultPreset(),
   schema: defaultSchema.extend([myCustomBlock]),
 })
 
-// After M1: add search and collaboration
-// import { search } from '@pen/search'
-// import { collaboration } from '@pen/collaboration'
-//
+// Layer on more extensions without changing the editor shell:
 // const editor = createEditor({
+//   preset: defaultPreset(),
 //   schema: defaultSchema.extend([myCustomBlock]),
-//   extensions: [Ø
-//     search(),
-//     collaboration({ room: 'doc-123' }),
+//   extensions: [
+//     myCustomExtension(),
 //   ],
 // })
 ```
 
 ## Tool API
 
-Pen's agent/tool surface is package-first. `createEditor()` installs `@pen/document-ops` by default, `@pen/ai-tools` gives you the canonical agent-facing tool runtime, and `@pen/ai-skills` packages those tools into agent skill artifacts.
+Pen's agent/tool surface is package-first. The standard `defaultPreset()` includes `@pen/document-ops`, `@pen/ai-tools` gives you the canonical agent-facing tool runtime, and `@pen/ai-skills` packages those tools into agent skill artifacts.
 
 ```ts
 import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import { getAIToolRuntime } from "@pen/ai-tools";
 import { directTransport } from "@pen/transport-direct";
 
-const editor = createEditor();
+const editor = createEditor({
+  preset: defaultPreset(),
+});
 const toolRuntime = getAIToolRuntime(editor);
 
 if (!toolRuntime) {
@@ -302,6 +343,7 @@ Recommended package entrypoints:
 
 - `@pen/types`: contracts such as `ToolRegistry`, `ToolRuntime`, `ToolDefinition`, `ToolContext`, and `PenTransport`
 - `@pen/core`: runtime entrypoints such as `createEditor()` and `createDocumentSession()`
+- `@pen/preset-default`: the standard document tools, streaming, undo, and shortcut stack for most apps
 - `@pen/document-ops`: document semantics and advanced low-level tool internals
 - `@pen/ai-tools`: canonical agent/tool package, tool descriptors, execution helpers, and tool runtime accessors
 - `@pen/ai-skills`: agent-facing skill registry and generated skill artifacts
@@ -322,7 +364,7 @@ Three layers: **Schema** (data), **Headless** (behavior), **Rendering** (UI). Ea
 │                                                           │
 │  ┌──────────────────────────────────────────────────────┐ │
 │  │ Rendering Layer                                      │ │
-│  │ (styled components — React, Vue, Svelte, HTML)       │ │
+│  │ (unstyled React primitives today; more adapters later)│ │
 │  └────────────────────────┬─────────────────────────────┘ │
 │                           │ consumes                      │
 │  ┌────────────────────────┴─────────────────────────────┐ │
@@ -390,6 +432,12 @@ In practice:
 | `@pen/crdt-yjs` | Yjs CRDT adapter (default) |
 | `@pen/schema-default` | Default block schemas (paragraph, heading, list, code, image, table, divider, callout, toggle, blockquote) |
 
+### Presets
+
+| Package | Description |
+|---|---|
+| `@pen/preset-default` | Standard Pen runtime preset: document tools, delta stream, undo, and rich-text shortcuts |
+
 ### Rendering
 
 | Package | Description |
@@ -401,8 +449,11 @@ In practice:
 | Package | Description |
 |---|---|
 | `@pen/document-ops` | Default document tool suite, `getDocumentToolRuntime()`, advanced `ToolContextImpl`/`ToolRuntimeImpl` APIs |
+| `@pen/ai` | Core AI extension: streaming, structured previews, suggestions, track changes, and AI session orchestration |
+| `@pen/ai-autocomplete` | Inline autocomplete extension and controller |
 | `@pen/ai-tools` | Canonical public AI tool surface for agents, transports, and direct editor-attached tool execution |
 | `@pen/ai-skills` | Agent skill registry and generated skill artifacts built on top of `@pen/ai-tools` |
+| `@pen/database` | Database block schemas, controller, renderer, and cell editors |
 | `@pen/delta-stream` | Streaming protocol, processing pipeline |
 | `@pen/input-rules` | Opt-in markdown autoformat extension |
 | `@pen/undo` | Undo groups, origin tagging, field editor integration |
@@ -448,7 +499,7 @@ The fastest way to a working editor:
 2. **Build.** `pnpm build` — all packages build with zero errors.
 3. **Run tests.** `pnpm test` — headless test suite passes (no browser required).
 4. **Typecheck.** `pnpm typecheck` — monorepo-wide type safety.
-5. **Scaffold an app.** Once M0 packages are published: `npx @pen/cli create my-editor` scaffolds a React + Vite app with the default editor. The bootstrap scaffold is an M0 requirement (see DX Sequencing in `spec/v01.md` Section 21); full CLI features ship in Wave 9.
+5. **Start from a small app shell.** Create a React + Vite app, install `@pen/core`, `@pen/preset-default`, and `@pen/react`, then drop in the Quick Start example above.
 6. **Explore the spec.** Start with `spec/v01.md` for architecture and design principles, then dive into wave specs (`spec/wave00FoundationTypes.md` onward) for implementation details.
 
 ### Spec Navigation
@@ -474,9 +525,9 @@ The fastest way to a working editor:
 ## Milestones
 
 - **M0 -- Core Steel Thread.** Working editor with schema engine, field editor, AI streaming, undo, decorations, and React rendering.
-- **M1 -- AI Primitives + Collaboration.** Track changes, version history, search, multiplayer, `pen create` CLI.
+- **M1 -- AI Primitives + Collaboration.** Track changes, version history, search, multiplayer, and app bootstrap tooling.
 - **M2 -- Layout + Apps + Execution.** Structured layout, interactive apps, Docker sandboxing, document branching.
-- **M3 -- Production + Ecosystem.** Auth, rate limiting, exporters, Vue/Svelte, Loro adapter, documentation site.
+- **M3 -- Production + Ecosystem.** Auth, rate limiting, exporters, additional framework adapters, Loro adapter, documentation site.
 
 For detailed milestone scope, exit criteria, and decision locks, see `spec/v01.md` Section 21.
 

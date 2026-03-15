@@ -1,5 +1,5 @@
 import { useRef, useSyncExternalStore } from "react";
-import type { Editor, TableCellHandle } from "@pen/core";
+import type { Editor, TableCellHandle } from "@pen/types";
 
 interface CellTextDelta {
 	insert: string;

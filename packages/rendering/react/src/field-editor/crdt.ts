@@ -1,4 +1,4 @@
-import type { DocumentOp, Editor } from "@pen/core";
+import type { DocumentOp, Editor } from "@pen/types";
 
 export type FieldEditorDelta = {
 	retain?: number;

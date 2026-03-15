@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { parseSSELine, parseSSEStream } from "../parser";
 import { createSSEHandler } from "../server";
 import { sseTransport } from "../client";
-import type { PenStreamPart, PenStreamRequest } from "@pen/core";
+import type { PenStreamPart, PenStreamRequest } from "@pen/types";
 import type { SSEEvent } from "../types";
 
 type FetchCall = [input: string | URL | globalThis.Request, init?: RequestInit];

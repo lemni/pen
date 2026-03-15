@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
 	createEditor,
-	FIELD_EDITOR_SLOT_KEY as CORE_FIELD_EDITOR_SLOT_KEY,
-	INPUT_RULES_ENGINE_SLOT_KEY,
 	getNumberedListItemValue,
 } from "@pen/core";
+import {
+	FIELD_EDITOR_SLOT_KEY as CORE_FIELD_EDITOR_SLOT_KEY,
+	INPUT_RULES_ENGINE_SLOT_KEY,
+} from "@pen/types";
+import { defaultPreset } from "@pen/preset-default";
 import {
 	applyDeleteBehavior,
 	applyListInputRule,
@@ -52,7 +55,13 @@ function getYText(
 }
 
 function editorOpts() {
-	return { without: ["document-ops", "delta-stream", "undo"] };
+	return {
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
+	};
 }
 
 describe("@pen/react field-editor commands", () => {

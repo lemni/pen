@@ -1,11 +1,11 @@
-import { isAsyncIterable, resolveToolExecution } from "@pen/core";
 import type {
 	Editor,
 	PenStreamPart,
 	PenStreamRequest,
 	Position,
 	ToolContext,
-} from "@pen/core";
+} from "@pen/types";
+import { isAsyncIterable, resolveToolExecution } from "@pen/types";
 import type { SSEServerOptions } from "./types";
 
 export function createSSEHandler(

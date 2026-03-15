@@ -1,4 +1,4 @@
-import type { Editor, SelectionState } from "@pen/core";
+import type { Editor, SelectionState } from "@pen/types";
 import { pointToEditorSelectionPoint } from "../field-editor/selectionBridge";
 import { getEditorBlockSelectionRole } from "../utils/blockSelectionSemantics";
 import {

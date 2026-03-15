@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 
 export function useExtensionState<T>(editor: Editor, name: string): T | undefined {
   return useSyncExternalStore(

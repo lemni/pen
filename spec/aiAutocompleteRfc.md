@@ -6,7 +6,7 @@
 
 **Related packages:** `@pen/ai`, `@pen/react`, `@pen/ai-skills`, `@pen/bench`
 
-**Depends on:** Wave 3, Wave 5, Wave 6, Wave 7, Wave 9
+**Depends on:** Wave 3, Wave 5, Wave 6, Wave 7
 
 ---
 
@@ -47,8 +47,7 @@ Pen already has useful pieces:
 
 - `@pen/react` owns the field editor, DOM backends, and text key handling
 - `@pen/ai` already has local-only ephemeral suggestion state and accept/dismiss behavior
-- `@pen/ai-skills` already packages Pen-native AI behavior for agent ecosystems
-
+- `@pen/ai-skills` already packages Pen-native AI behavior for external agent ecosystems
 Those pieces are not enough by themselves because typing autocomplete has a different operating envelope than prompt-driven AI:
 
 - requests must be cheap to start and cheap to cancel
@@ -85,7 +84,7 @@ This RFC intentionally tightens the architecture:
 
 ---
 
-## Core Product Behavior
+## Core Behavior
 
 ### Visible Completion
 
@@ -458,7 +457,7 @@ Even though `provide()` may return a promise, the package should treat slow prov
 
 ---
 
-## Tools And Skills
+## Runtime Tooling Boundary
 
 ### Runtime Tooling
 
@@ -505,7 +504,7 @@ This is better than requiring sequence-shaped model output because:
 
 - the prompt stays simpler
 - segmentation can evolve without changing the model contract
-- product tuning is local
+- consumer tuning is local
 - acceptance boundaries can be specialized by block type
 
 ### Default Segmentation Rules
@@ -609,6 +608,17 @@ editor.apply(ops, { origin: "ai", undoGroup: true })
 - no special acceptance pipeline outside `editor.apply()`
 
 This keeps autocomplete aligned with undo, diagnostics, observers, and future instrumentation.
+
+### Undo and redo requirement
+
+Autocomplete acceptance must remain a normal document history action.
+
+That means:
+
+- accepted text must be replayable through the normal undo manager
+- partial sequence accepts should remain coherent under repeated undo and redo
+- autocomplete must not introduce a second acceptance history outside document history
+- local ghost-text state and any ephemeral UI affordances must never intercept undo or redo ahead of normal document history
 
 ---
 
@@ -919,6 +929,8 @@ The playground should expose:
 - `@pen/react` owns `Tab` precedence for accept and explicit trigger
 - visible autocomplete is local-only ghost text
 - accepted completions write through `editor.apply(..., { origin: "ai" })`
+- accepted completions remain coherent under normal undo and redo replay
+- autocomplete does not create a competing undo or redo shortcut path for local UI-only state
 - sequence acceptance works through client-side segmentation
 - partial accept can prefetch fresh continuation
 - runtime custom context uses providers, not generic tools
@@ -1003,6 +1015,156 @@ Exit criteria:
 
 - local inline suggestion state is no longer effectively owned by `AIControllerImpl`
 - existing `@pen/ai` tests still pass
+
+#### Phase 1 Contract
+
+Phase 1 should introduce explicit service seams before changing any user-visible behavior.
+
+##### New slot keys
+
+Add these slot keys alongside the existing field-editor and undo slot keys:
+
+```ts
+export const AI_CONTROLLER_SLOT = "ai:controller";
+export const INLINE_COMPLETION_SLOT = "ai:inline-completion";
+export const AI_INLINE_COMPLETION_SLOT = INLINE_COMPLETION_SLOT;
+export const AI_INLINE_HISTORY_SLOT = "ai:inline-history";
+export const AI_REVIEW_CONTROLLER_SLOT = "ai:review";
+```
+
+Design rules:
+
+- `AI_CONTROLLER_SLOT` remains for compatibility during the refactor
+- `INLINE_COMPLETION_SLOT` is the generic shared slot for ghost-text state
+- `AI_INLINE_COMPLETION_SLOT` remains as a compatibility alias
+- new code should prefer the more specific or generic shared slots
+- slot ownership should map to one coherent concern per service
+
+##### New service interfaces
+
+Add narrow interfaces in `packages/extensions/ai/src/types.ts`.
+
+```ts
+export interface AIInlineCompletionState {
+  visibleSuggestion: EphemeralSuggestion | null;
+}
+
+export interface AIInlineCompletionController {
+  getState(): AIInlineCompletionState;
+  subscribe(listener: () => void): () => void;
+  showSuggestion(suggestion: EphemeralSuggestion): void;
+  dismissSuggestion(): void;
+  acceptSuggestion(): boolean;
+  hasVisibleSuggestion(): boolean;
+}
+
+export type AIInlineHistoryDirection = "undo" | "redo";
+
+export interface AIInlineHistoryController {
+  canUndoInlineHistory(): boolean;
+  canRedoInlineHistory(): boolean;
+  canHandleShortcut(direction: AIInlineHistoryDirection): boolean;
+  undoInlineHistory(): boolean;
+  redoInlineHistory(): boolean;
+}
+
+export interface AIReviewController {
+  getSuggestions(): readonly PersistentSuggestion[];
+  acceptSuggestion(id: string): boolean;
+  rejectSuggestion(id: string): boolean;
+  acceptAllSuggestions(): void;
+  rejectAllSuggestions(): void;
+}
+```
+
+Phase 1 intentionally keeps these interfaces small:
+
+- inline completion owns local ghost state only
+- inline history owns inline-history replay semantics only
+- review controller owns suggestion resolution only
+
+Do not move session/prompt APIs into these smaller interfaces.
+
+##### Compatibility facade
+
+`AIController` remains public during the transition, but becomes a facade over smaller services.
+
+Compatibility rules:
+
+- `getAIController(editor)` continues to work
+- `AIController.showEphemeralSuggestion()` delegates to `AIInlineCompletionController.showSuggestion()`
+- `AIController.dismissEphemeralSuggestion()` delegates to `AIInlineCompletionController.dismissSuggestion()`
+- `AIController.acceptEphemeralSuggestion()` delegates to `AIInlineCompletionController.acceptSuggestion()`
+- `AIController.canUndoInlineHistory()` and related methods delegate to `AIInlineHistoryController`
+- suggestion resolution methods delegate to `AIReviewController`
+
+The facade should shrink over time. Phase 1 does not remove it.
+
+##### Implementation shape
+
+Create three concrete service objects inside `packages/extensions/ai/src/extension.ts`:
+
+- `AIInlineCompletionService`
+- `AIInlineHistoryService`
+- `AIReviewService`
+
+They may remain file-local in Phase 1 if that keeps the refactor small, but they must no longer be implicit behavior hidden inside one large controller object.
+
+##### File-by-file Phase 1 checklist
+
+`packages/types/src/constants/slots.ts`
+
+- add the new AI slot keys
+
+`packages/extensions/ai/src/types.ts`
+
+- add the three narrow service interfaces
+- keep `AIController` for compatibility
+- do not break existing public type exports
+
+`packages/extensions/ai/src/suggestions/ephemeral.ts`
+
+- evolve `EphemeralSuggestionManager` into the backing primitive for `AIInlineCompletionController`
+- keep it local-only and decoration-oriented
+- do not add autocomplete request logic yet
+
+`packages/extensions/ai/src/extension.ts`
+
+- instantiate the three services explicitly
+- register them into their dedicated slots
+- keep `AIControllerImpl` only as a facade or compatibility shell
+- stop making ephemeral state a private concern owned only by the main controller
+
+`packages/extensions/ai/src/index.ts`
+
+- export:
+  - `getInlineCompletionController(editor)`
+  - `getAIInlineCompletionController(editor)`
+  - `getAIInlineHistoryController(editor)`
+  - `getAIReviewController(editor)`
+- keep `getAIController(editor)` for compatibility
+
+`packages/rendering/react/src/primitives/ai/root.tsx`
+
+- no behavior changes required in Phase 1
+- it may continue to read through the compatibility controller until Phase 2
+
+##### Explicit non-goals for Phase 1
+
+- no new package yet
+- no `Tab` precedence changes yet
+- no prompt-building changes
+- no provider system yet
+- no sequence segmentation changes yet
+
+##### Phase 1 success criteria
+
+- a dedicated inline-completion service exists behind its own slot
+- a dedicated inline-history service exists behind its own slot
+- a dedicated review service exists behind its own slot
+- the compatibility `AIController` delegates to those services
+- existing runtime behavior remains unchanged
+- existing tests continue to describe the same user-visible behavior
 
 ### Phase 2: Move `Tab` Ownership Into `@pen/react`
 
@@ -1214,7 +1376,7 @@ If the team wants fast iteration without overbuilding, ship these slices in orde
 - repeated `Tab`
 - partial-accept prefetch
 
-### Slice 5: Provider Ecosystem
+### Slice 5: Optional Provider Descriptor Layer
 
 - provider registration
 - provider descriptors
@@ -1272,4 +1434,3 @@ Mitigation:
 3. Should the shared inline-completion primitive remain in `@pen/ai` or move into a smaller shared internal package after extraction?
 4. Should prefetch-after-accept be enabled by default for all surfaces or only desktop-first surfaces?
 5. Should provider descriptors become a first-class `@pen/ai-skills` registry concept, or remain optional metadata?
-

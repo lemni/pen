@@ -38,9 +38,53 @@ function createDatabaseMarkdown(): string {
 	].join("\n");
 }
 
+function createMockBlockHandle(input: {
+	id: string;
+	type: string;
+	props?: Record<string, unknown>;
+	children?: unknown[];
+	textContent: (options?: { resolved?: boolean }) => string;
+	textDeltas: () => Array<{ insert: string; attributes?: Record<string, unknown> }>;
+	prev?: unknown;
+	next?: unknown;
+}): {
+	id: string;
+	type: string;
+	props: Record<string, unknown>;
+	children: unknown[];
+	textContent: (options?: { resolved?: boolean }) => string;
+	textDeltas: () => Array<{ insert: string; attributes?: Record<string, unknown> }>;
+	tableRowCount: () => number;
+	tableColumnCount: () => number;
+	tableCell: () => null;
+	tableRow: () => null;
+	tableColumns: () => never[];
+	databaseViews: () => never[];
+	databasePrimaryViewId: () => null;
+	databaseActiveView: () => null;
+	prev?: unknown;
+	next?: unknown;
+} {
+	return {
+		props: {},
+		children: [],
+		prev: null,
+		next: null,
+		...input,
+		tableRowCount: () => 0,
+		tableColumnCount: () => 0,
+		tableCell: () => null,
+		tableRow: () => null,
+		tableColumns: () => [],
+		databaseViews: () => [],
+		databasePrimaryViewId: () => null,
+		databaseActiveView: () => null,
+	};
+}
+
 function createReadDocumentEditor(): Editor {
 	const blocks = [
-		{
+		createMockBlockHandle({
 			id: "block-1",
 			type: "paragraph",
 			props: {},
@@ -48,8 +92,8 @@ function createReadDocumentEditor(): Editor {
 			textContent: (options?: { resolved?: boolean }) =>
 				options?.resolved ? "First accepted" : "First accepted",
 			textDeltas: () => [{ insert: "First accepted" }],
-		},
-		{
+		}),
+		createMockBlockHandle({
 			id: "block-2",
 			type: "paragraph",
 			props: {},
@@ -60,8 +104,8 @@ function createReadDocumentEditor(): Editor {
 				{ insert: "Second" },
 				{ insert: " draft", attributes: { suggestion: { action: "delete" } } },
 			],
-		},
-		{
+		}),
+		createMockBlockHandle({
 			id: "block-3",
 			type: "heading",
 			props: {},
@@ -69,8 +113,12 @@ function createReadDocumentEditor(): Editor {
 			textContent: (options?: { resolved?: boolean }) =>
 				options?.resolved ? "Third" : "Third",
 			textDeltas: () => [{ insert: "Third" }],
-		},
+		}),
 	] as const;
+	for (const block of blocks) {
+		delete (block as { prev?: unknown }).prev;
+		delete (block as { next?: unknown }).next;
+	}
 
 	return {
 		documentProfile: "structured",
@@ -185,34 +233,34 @@ function createStructuredTargetEditor(
 
 function createNestedDocumentEditor(): Editor {
 	const topLevelBlocks = [
-		{
+		createMockBlockHandle({
 			id: "heading-1",
 			type: "heading",
 			props: { level: 1 },
 			children: [],
 			textContent: () => "Architecture",
 			textDeltas: () => [{ insert: "Architecture" }],
-		},
-		{
+		}),
+		createMockBlockHandle({
 			id: "layout-1",
 			type: "columns",
 			props: {},
 			children: [],
 			textContent: () => "",
 			textDeltas: () => [],
-		},
+		}),
 	];
 	const nestedBlocks = [
 		topLevelBlocks[0],
 		topLevelBlocks[1],
-		{
+		createMockBlockHandle({
 			id: "paragraph-1",
 			type: "paragraph",
 			props: {},
 			children: [],
 			textContent: () => "Fast apply preserves stable block identity.",
 			textDeltas: () => [{ insert: "Fast apply preserves stable block identity." }],
-		},
+		}),
 	];
 
 	return {
@@ -541,10 +589,18 @@ describe("@pen/document-ops tools", () => {
 			children: unknown[];
 			textContent: () => string;
 			textDeltas: () => Array<{ insert: string }>;
-			prev: unknown;
-			next: unknown;
+			tableRowCount: () => number;
+			tableColumnCount: () => number;
+			tableCell: () => null;
+			tableRow: () => null;
+			tableColumns: () => never[];
+			databaseViews: () => never[];
+			databasePrimaryViewId: () => null;
+			databaseActiveView: () => null;
+			prev?: unknown;
+			next?: unknown;
 		}> = [
-				{
+				createMockBlockHandle({
 					id: "block-1",
 					type: "paragraph",
 					props: {},
@@ -553,8 +609,8 @@ describe("@pen/document-ops tools", () => {
 					textDeltas: () => [{ insert: "First" }],
 					prev: null,
 					next: null,
-				},
-				{
+				}),
+				createMockBlockHandle({
 					id: "block-2",
 					type: "paragraph",
 					props: {},
@@ -563,8 +619,8 @@ describe("@pen/document-ops tools", () => {
 					textDeltas: () => [{ insert: "Second" }],
 					prev: null,
 					next: null,
-				},
-				{
+				}),
+				createMockBlockHandle({
 					id: "block-3",
 					type: "paragraph",
 					props: {},
@@ -573,7 +629,7 @@ describe("@pen/document-ops tools", () => {
 					textDeltas: () => [{ insert: "Third" }],
 					prev: null,
 					next: null,
-				},
+				}),
 			];
 		blocks[0].next = blocks[1];
 		blocks[1].prev = blocks[0];

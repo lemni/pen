@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { databaseExtension, DATABASE_CELL_KEYDOWN_SLOT } from "../extension";
-import type { Editor } from "@pen/core";
+import type { Editor } from "@pen/types";
 
 type DatabaseExtensionTestEditor = {
 	getBlock(blockId: string): {

@@ -2,7 +2,15 @@ export {
 	aiExtension,
 	AI_EXTENSION_NAME,
 	AI_CONTROLLER_SLOT,
+	INLINE_COMPLETION_SLOT,
+	AI_INLINE_COMPLETION_SLOT,
+	AI_INLINE_HISTORY_SLOT,
+	AI_REVIEW_CONTROLLER_SLOT,
+	getInlineCompletionController,
 	getAIController,
+	getAIInlineCompletionController,
+	getAIInlineHistoryController,
+	getAIReviewController,
 } from "./extension";
 
 export { runAgenticLoop } from "./agentic/loop";
@@ -78,6 +86,7 @@ export {
 	createSuggestionMark,
 } from "./suggestions/persistent";
 export {
+	AI_SESSION_SUGGESTION_ORIGIN,
 	interceptApplyForSuggestMode,
 	SUGGESTION_RESOLUTION_ORIGIN,
 	shouldBypassSuggestMode,
@@ -113,6 +122,11 @@ export type {
 	AICommandExecutionOptions,
 	AIControllerState,
 	AIController,
+	AIInlineCompletionState,
+	AIInlineCompletionController,
+	AIInlineHistoryDirection,
+	AIInlineHistoryController,
+	AIReviewController,
 	AIPromptTarget,
 	AISessionResolution,
 	AIContentFormatOptions,

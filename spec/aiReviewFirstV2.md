@@ -1,6 +1,6 @@
-# AI V2 — Review-First Product Direction
+# AI Architecture — Reviewable Mutation Infrastructure
 
-**Status:** Proposed
+**Status:** Proposed reset
 
 **Related packages:** `@pen/ai`, `@pen/react`, `@pen/ai-tools`, `@pen/bench`
 
@@ -10,236 +10,223 @@
 
 ## Goal
 
-Refocus Pen's next AI product layer around **reviewable, document-native collaboration**.
+Define Pen's AI architecture around reviewable mutation infrastructure rather than chat-product scope.
 
-After this direction lock:
+After this reset:
 
-- Pen defaults to inspectable changes over opaque mutation
-- staged review becomes the primary AI product surface
-- route quality and trust metrics are treated as first-class product concerns
-- planning is introduced narrowly as a preparation flow
-- tool-backed AI remains an escalation path, not the default Pen experience
-
-This document does not replace Wave 7. It clarifies the product direction for the next AI wave built on top of Wave 7's technical substrate.
+- Pen AI is centered on safe document mutation
+- reviewability, receipts, provenance, and grouped undo are first-class
+- tool use remains an escalation path, not the default authored experience
+- performance and developer experience remain part of the architecture contract
+- `/web` and `/api` own workflow chrome, orchestration, and product analytics
 
 ---
 
-## Why This Direction Exists
+## Core Principle
 
-Pen already has unusually strong foundations for AI editing:
+**The canonical output of Pen AI is a document mutation result that can be applied directly or resolved through review.**
 
-- CRDT-native persistent suggestions
-- accept/reject semantics that work across sessions and collaborators
-- staged review artifacts
-- structured mutation planning
-- mutation receipts and route metadata
-- session and turn state for inline and chat flows
+That result may include:
 
-Those strengths are more strategically important than adding a broad agent shell.
+- direct-apply mutations
+- staged suggestions
+- structured review items
+- mutation receipts
+- step metadata and provenance
+- grouped undo and redo metadata
 
-The next product step should therefore make this sentence obviously true:
-
-**Pen is the best place to collaborate with AI on reviewable document changes.**
+Pen should not center its AI architecture on sessions, chat surfaces, or visible modes.
 
 ---
 
-## Core Product Principle
+## Why This Direction
 
-Pen's primary AI experience is **review-first document collaboration**, not general-purpose tool orchestration.
+Pen already has the right raw ingredients:
 
-This means:
+- CRDT-native mutation
+- `DocumentOp[]` as a stable write contract
+- structured target inspection
+- extension-owned suggest mode
+- reviewable suggestions
+- structured mutation plans
+- tool runtime integration
 
-1. AI output should be inspectable before commitment whenever confidence is not high.
-2. The default mental model is "review and resolve changes", not "run an agent and hope".
-3. Tool-backed flows are allowed, but are secondary to document-native mutation paths.
-4. Planning is valuable when it improves reviewability and execution quality, not as a generic chat persona system.
-5. Branch-backed AI remains experimental until staged review is proven insufficient for target workflows.
+The previous spec direction became too broad because it mixed those foundations with product-layer ideas such as:
 
----
+- chat shells
+- mode systems
+- planning products
+- orchestration UX
+- broader agent-platform ambitions
 
-## Product Hierarchy
-
-### Primary surfaces
-
-- inline edit review
-- chat-driven review
-- structured preview
-- unified change list
-- accept/reject lifecycle
-- mutation evidence and receipts
-
-### Secondary surfaces
-
-- narrow planning mode
-- tool escalation UI
-- debug and metrics views
-
-### Deferred surfaces
-
-- broad public multi-mode chat shell
-- org-wide agent customization
-- branch-first AI workflows
-- terminal-first general coding agent behavior
+The reset keeps the valuable foundations and removes the product gravity.
 
 ---
 
-## What Changes From The Earlier AI Direction
+## Selective Foundations To Borrow
 
-The earlier AI direction correctly invested in a broad technical substrate:
+Pen should selectively borrow strong foundations from `vscode-copilot-chat` where they strengthen infrastructure:
 
-- generation zones
-- sessions and turns
-- command menu
-- track changes
-- tool loop
-- structured plans
+- predictable undo and redo grouping around AI turns
+- explicit step metadata
+- clear execution provenance
+- diagnostics vocabulary that developers can inspect quickly
 
-The next direction tightens product focus:
+Pen should not copy wholesale:
 
-- review clarity beats breadth of AI surface area
-- route correctness beats more visible modes
-- acceptance outcomes beat generic "agent capability"
-- mutation evidence beats opaque streaming
-- planning is introduced narrowly, not as a full mode matrix
+- the chat shell
+- a mode-heavy UX model
+- product workflow chrome
+- agent personas as a core architecture concern
+
+---
+
+## Boundary
+
+### Pen core and extension scope
+
+Pen should own:
+
+- document-aware AI routing
+- mutation planning and execution bridges
+- direct apply vs staged review decisions
+- suggestion and structured-review infrastructure
+- review entry derivation
+- receipts, provenance, and grouped undo metadata
+- tool escalation hooks
+- headless review-oriented primitives where they are truly infrastructural
+- route, validity, and performance diagnostics
+
+### Consumer and ecosystem scope
+
+Consumers and higher-level packages should own:
+
+- chat shells
+- prompt composers
+- visible mode systems
+- planning UX
+- workflow orchestration
+- product analytics and funnels
+- opinionated task or agent experiences
+
+---
+
+## Canonical AI Model
+
+### 1. Request
+
+A consumer issues an AI-assisted edit request against a document, selection, block, or other structured target.
+
+### 2. Route
+
+Pen selects the lightest correct path:
+
+- direct mutation
+- staged suggestions
+- staged structured review
+- tool-backed escalation when document-native mutation is insufficient
+
+### 3. Execute
+
+Pen executes through the existing editor and tool seams:
+
+- `StructuredTargetDescriptor`
+- `DocumentMutationPlan`
+- `ToolRuntime`
+- `PenTransport`
+- `editor.apply()`
+
+### 4. Record
+
+Every turn should produce enough evidence to understand what happened:
+
+- receipt
+- provenance
+- undo group
+- validation issues
+- review entry when review is required
+
+### 5. Resolve
+
+Consumers then choose how to surface:
+
+- direct success
+- accept or reject review
+- retry
+- deeper workflow UX outside Pen core
+
+---
+
+## Architecture Priorities
+
+### Priority 1: Reviewable mutation
+
+Pen should make reviewable document change a first-class infrastructure concept.
+
+### Priority 2: Trust and evidence
+
+Receipts, provenance, and validation signals should be easy to inspect and easy to use in downstream tooling.
+
+### Priority 3: Undo and redo integrity
+
+AI turns should behave like coherent logical edits, not as a stream of unrelated low-level changes.
+
+### Priority 4: Performance and DX
+
+Review derivation, preview derivation, routing, and instrumentation must stay cheap enough for everyday development use.
+
+### Priority 5: Controlled escalation
+
+Tool use is valuable, but Pen should not default to a tool-first architecture when document-native paths are sufficient.
 
 ---
 
 ## Non-Goals
 
-- This direction does not try to make Pen a full VS Code-style coding agent.
-- This direction does not prioritize org-level instruction systems.
-- This direction does not move branch-backed AI into the main product flow.
-- This direction does not replace Wave 7 suggestion semantics with a new review model.
-- This direction does not require all AI output to be staged; direct apply remains valid when confidence and target suitability are high.
+- Pen does not need to ship a chat product.
+- Pen does not need public `Ask`, `Plan`, or `Agent` modes as architecture drivers.
+- Pen does not need a standalone planning workflow architecture unless core runtime needs clearly justify it.
+- Pen does not need product analytics in core packages.
+- Pen does not need branch-first AI workflows in the main path.
 
 ---
 
-## Product Priorities
+## Relationship To Wave 7
 
-### Priority 1: Review-first UX
+Wave 7 should be interpreted as the implementation wave for AI mutation infrastructure:
 
-Pen should unify the user experience of:
+- routing
+- suggestions
+- structured review
+- receipts
+- provenance
+- grouped undo and redo behavior
+- review primitives
 
-- persistent suggestions
-- structured review items
-- validated mutation plans
-- turn-level accept/reject resolution
-
-### Priority 2: Route quality and trust
-
-Pen should measure and improve:
-
-- wrong-lane decisions
-- stale context failures
-- invalid/noop mutation receipts
-- acceptance by lane and apply strategy
-
-### Priority 3: Narrow planning
-
-Pen should expose a constrained planning flow that:
-
-- prepares reviewable changes
-- captures assumptions and verification steps
-- hands off into review/edit
-- never mutates directly
-
-### Priority 4: Controlled tool escalation
-
-Pen should support tool-backed AI when needed, but:
-
-- only as escalation
-- with readable tool summaries
-- with approvals for risky tools
-- without displacing the document-native default path
-
----
-
-## Canonical Product Model
-
-### Review-first flow
-
-1. user issues a request
-2. Pen routes the request
-3. Pen chooses direct apply, staged suggestions, or staged review based on confidence and target kind
-4. Pen renders a unified review surface
-5. user accepts or rejects at turn, group, or item scope
-6. Pen records receipt, route, outcome, and metrics
-
-### Planning flow
-
-1. user requests a plan
-2. Pen produces a draft or validated plan
-3. Pen captures assumptions, open questions, and verification steps
-4. user hands off into review/edit
-5. execution reuses plan context rather than starting from scratch
-
-### Escalation flow
-
-1. document-native route is attempted first
-2. if the route is insufficient, Pen escalates into tool-backed execution
-3. risky tools require approval
-4. tool results are summarized for humans
-5. final outputs still resolve into reviewable document changes whenever applicable
+That wave should be narrower than a full AI product shell.
 
 ---
 
 ## Success Criteria
 
-This direction is successful when:
+This architecture is successful when:
 
-- users can understand what AI changed without reading debug logs
-- acceptance rate improves for staged changes
-- retry loops decline for structured and reviewed flows
-- wrong-lane and stale-context failures become measurable and trend downward
-- planning improves execution quality without introducing broad mode complexity
-- tool usage remains purposeful rather than becoming the default path
-
----
-
-## Relationship To Existing Specs
-
-### Wave 7
-
-Wave 7 remains the technical foundation for:
-
-- sessions
-- suggestions
-- accept/reject
-- track changes
-- tool loop
-- diff and review primitives
-
-This direction builds the next product layer on top of that substrate.
-
-### Wave 11
-
-Wave 11 branching, apps, and execution remain valid but are not pulled wholesale into the core AI product sequence. Branch-backed AI stays deferred until staged review proves insufficient for key workflows.
+- consumers can build AI editing experiences without reimplementing mutation trust infrastructure
+- AI turns are easy to undo and inspect
+- review flows are fast and coherent
+- route quality and invalid/noop outcomes are measurable
+- tool escalation remains purposeful
+- `/web` and `/api` can build their own experiences without fighting Pen's assumptions
 
 ---
 
-## Required Follow-on Specs
+## Follow-on Specs
 
-This direction should be implemented through the following follow-on docs:
+This architecture should primarily flow into:
 
-1. `wave07bAiReviewProduct.md`
-2. `wave07cAiPlanningMode.md`
-3. `aiMetricsAndEvaluation.md`
-4. `wave07dAiToolEscalation.md`
+1. `wave07AiTrackChanges.md`
+2. `wave07bAiReviewInfrastructure.md`
 
----
+Route quality, undo integrity, and performance diagnostics should live inside those implementation waves rather than in a separate planning or analytics spec.
 
-## Direction Lock
-
-For the next AI product phase, Pen should optimize for:
-
-- review clarity
-- route correctness
-- change trust
-- acceptance outcomes
-
-It should not optimize first for:
-
-- more visible chat modes
-- broader generic agent behavior
-- org-scale customization systems
-- branch-first AI workflows
+A separate planning wave should not exist unless a later runtime need makes it unavoidable.

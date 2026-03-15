@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@pen/core": "workspace:*",
+    "@pen/types": "workspace:*",
     "htmlparser2": "^9.0.0",
     "domhandler": "^5.0.0",
     "isomorphic-dompurify": "^2.0.0"

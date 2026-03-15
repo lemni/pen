@@ -1,4 +1,5 @@
 import React, { useRef } from "react";
+import type { BlockRenderContext, Decoration } from "@pen/types";
 import { useEditorContext } from "../../context/editorContext";
 import { useFieldEditorContext } from "../../context/fieldEditorContext";
 import { useBlockDecorations } from "../../hooks/useBlockDecorations";
@@ -9,7 +10,6 @@ import { useBlockSurfaceRole } from "../../hooks/useBlockSurfaceRole";
 import { resolveRenderer } from "../../renderers/index";
 import { renderAsChild, type AsChildProps } from "../../utils/asChild";
 import { DATA_ATTRS } from "../../utils/dataAttributes";
-import type { BlockRenderContext, Decoration } from "@pen/core";
 import { useBlockDropPreview } from "./dropPreviewContext";
 
 export interface EditorBlockProps extends AsChildProps {

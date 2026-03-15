@@ -3,7 +3,8 @@
 import React, { act } from "react";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
-import { createEditor } from "@pen/core";
+import { createEditor as createCoreEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
 import type { FieldEditorImpl } from "../field-editor/fieldEditorImpl";
 import { handleCopy } from "../field-editor/clipboard";
 import { FIELD_EDITOR_SLOT_KEY } from "../constants/fieldEditor";
@@ -24,6 +25,20 @@ type TableBlockMapLike = {
 (
 	globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+function createEditor(
+	options: Parameters<typeof createCoreEditor>[0] = {},
+) {
+	const { without: _without, ...restOptions } = options;
+	return createCoreEditor({
+		...restOptions,
+		preset: defaultPreset({
+			documentOps: false,
+			deltaStream: false,
+			undo: false,
+		}),
+	});
+}
 
 async function flushAnimationFrames(count = 1): Promise<void> {
 	for (let i = 0; i < count; i++) {
@@ -93,9 +108,7 @@ function getFieldEditor(
 
 describe("@pen/react table rendering", () => {
 	it("renders a table block with cells from the canonical model", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -177,9 +190,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("renders cell text content through TableCellContent", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -232,9 +243,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("updates cell content when table ops are applied after render", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -295,9 +304,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("renders header row with placeholders when hasHeaderRow is set", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -337,9 +344,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("renders a full row grid even when a legacy row is missing trailing cells", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -388,9 +393,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("renders add row and column controls outside the table grid", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -438,9 +441,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("does not route printable keys through cell-selection shortcuts while editing a cell", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -505,9 +506,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("promotes a repeated click on the same cell to block selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -568,9 +567,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("promotes backspace at the start of the next block to table block selection", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const paragraphId = crypto.randomUUID();
 
 		editor.apply([
@@ -637,9 +634,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("promotes beforeinput backspace into a selected table that can be deleted", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const paragraphId = crypto.randomUUID();
 
 		editor.apply([
@@ -731,7 +726,6 @@ describe("@pen/react table rendering", () => {
 	it("maps cmd+a from a selected table directly to full-document selection in flow documents", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 
@@ -807,9 +801,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("keeps block-first cmd+a copy scoped to the selected table when block-first interaction is enabled", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const paragraphId = crypto.randomUUID();
 		const clipboardData = createClipboardData();
 
@@ -887,7 +879,6 @@ describe("@pen/react table rendering", () => {
 	it("promotes cmd+a copy from a selected table to the full document in flow documents", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 		const clipboardData = createClipboardData();
@@ -968,9 +959,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("pressing enter on a block-selected table inserts a paragraph after it", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 
 		editor.apply([
 			{
@@ -1020,7 +1009,6 @@ describe("@pen/react table rendering", () => {
 	it("keeps the first cmd+a cell-local before promoting to the document in flow documents", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 
@@ -1124,7 +1112,6 @@ describe("@pen/react table rendering", () => {
 	it("creates a canonical cross-block selection when dragging from a table into text in flow documents", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 
@@ -1218,9 +1205,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("falls back to block selection when dragging from a table into text in structured documents", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const paragraphId = crypto.randomUUID();
 
 		editor.apply([
@@ -1313,7 +1298,6 @@ describe("@pen/react table rendering", () => {
 	it("creates a canonical cross-block selection when shift-clicking from a table into text in flow documents", async () => {
 		const editor = createEditor({
 			documentProfile: "flow",
-			without: ["document-ops", "delta-stream", "undo"],
 		});
 		const paragraphId = crypto.randomUUID();
 
@@ -1388,9 +1372,7 @@ describe("@pen/react table rendering", () => {
 	});
 
 	it("falls back to block selection when shift-clicking from a table into text in structured documents", async () => {
-		const editor = createEditor({
-			without: ["document-ops", "delta-stream", "undo"],
-		});
+		const editor = createEditor();
 		const paragraphId = crypto.randomUUID();
 
 		editor.apply([

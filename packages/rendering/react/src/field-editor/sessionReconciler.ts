@@ -1,4 +1,4 @@
-import type { Editor, OpOrigin } from "@pen/core";
+import type { Editor, InlineDecoration, OpOrigin } from "@pen/types";
 import { fullReconcileToDOM } from "./reconciler";
 import type { FieldEditorTextLike } from "./crdt";
 
@@ -25,6 +25,7 @@ export class SessionReconciler {
 	private scheduledFrame: number | null = null;
 	private shouldProjectSelection = false;
 	private readonly unsubscribeCommit: () => void;
+	private readonly unsubscribeDecorationsChange: () => void;
 
 	constructor(editor: Editor, options: SessionReconcilerOptions) {
 		this.editor = editor;
@@ -32,10 +33,17 @@ export class SessionReconciler {
 		this.unsubscribeCommit = this.editor.onDocumentCommit((event) => {
 			this.handleCommit(event.origin, event.affectedBlocks);
 		});
+		this.unsubscribeDecorationsChange = this.editor.on(
+			"decorationsChange",
+			() => {
+				this.handleDecorationsChange();
+			},
+		);
 	}
 
 	destroy(): void {
 		this.unsubscribeCommit();
+		this.unsubscribeDecorationsChange();
 		if (this.scheduledFrame !== null) {
 			cancelAnimationFrame(this.scheduledFrame);
 			this.scheduledFrame = null;
@@ -95,6 +103,26 @@ export class SessionReconciler {
 		this.scheduleFlush();
 	}
 
+	private handleDecorationsChange(): void {
+		const snapshot = this.options.getSnapshot();
+		if (!snapshot.isEditing) {
+			return;
+		}
+		if (snapshot.mode === "expanded") {
+			for (const blockId of snapshot.activeBlockIds) {
+				this.pendingBlockIds.add(blockId);
+			}
+			if (snapshot.activeBlockIds.length > 0) {
+				this.scheduleFlush();
+			}
+			return;
+		}
+		if (snapshot.mode === "single" && snapshot.focusBlockId) {
+			this.pendingBlockIds.add(snapshot.focusBlockId);
+			this.scheduleFlush();
+		}
+	}
+
 	private scheduleFlush(): void {
 		if (this.scheduledFrame !== null) {
 			return;
@@ -149,7 +177,8 @@ export class SessionReconciler {
 					continue;
 				}
 				fullReconcileToDOM(ytext, element, this.editor.schema, {
-					preserveSelection: false,
+					preserveSelection: true,
+					inlineDecorations: this.getInlineDecorations(blockId),
 				});
 				continue;
 			}
@@ -167,7 +196,17 @@ export class SessionReconciler {
 			return;
 		}
 		fullReconcileToDOM(ytext, inlineElement, this.editor.schema, {
-			preserveSelection: false,
+			preserveSelection: true,
+			inlineDecorations: this.getInlineDecorations(blockId),
 		});
+	}
+
+	private getInlineDecorations(blockId: string): readonly InlineDecoration[] {
+		return this.editor
+			.getDecorations()
+			.forBlock(blockId)
+			.filter(
+				(decoration): decoration is InlineDecoration => decoration.type === "inline",
+			);
 	}
 }

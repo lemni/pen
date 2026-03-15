@@ -1,4 +1,4 @@
-import type { Editor, InlineDecoration } from "@pen/core";
+import type { Editor, InlineDecoration } from "@pen/types";
 import type { EphemeralSuggestion } from "../types";
 
 export class EphemeralSuggestionManager {
