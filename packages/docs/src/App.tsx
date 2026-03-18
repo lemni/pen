@@ -105,6 +105,26 @@ export function App() {
 		);
 	});
 
+	const sidebarTabs = pageGroups.slice(0, 4).map((group, index) => {
+		const firstPageId = group.pages[0]?.id;
+		const isActive = group.section.id === currentPage.sectionId;
+
+		return (
+			<button
+				key={group.section.id}
+				type="button"
+				className={isActive ? "docs-sidebar-tab is-active" : "docs-sidebar-tab"}
+				onClick={() => {
+					if (firstPageId) {
+						handlePageSelect(firstPageId);
+					}
+				}}
+			>
+				{index === 0 ? "Start" : group.section.title}
+			</button>
+		);
+	});
+
 	const topbarLink = docsUtilityLinks[0];
 	const topbarSecondaryLinks = docsUtilityLinks.slice(1).map((link) => {
 		return (
@@ -187,8 +207,10 @@ export function App() {
 						<span className="docs-sidebar-brand-mark" />
 						<span className="docs-sidebar-brand-name">Pen</span>
 					</div>
+					<div className="docs-sidebar-tabs">{sidebarTabs}</div>
 				</div>
 				<nav aria-label="Documentation navigation">{navGroups}</nav>
+				<div className="docs-sidebar-footer">{railLinkItems}</div>
 			</aside>
 			<main className="docs-main">
 				<div className="docs-topbar">
@@ -225,9 +247,6 @@ export function App() {
 						<div className="docs-rail-panel">
 							<span className="docs-rail-label">On this page</span>
 							<div className="docs-rail-links">{sectionRailItems}</div>
-							<div className="docs-rail-divider" />
-							<span className="docs-rail-card-label">Resources</span>
-							<div className="docs-rail-card-links">{railLinkItems}</div>
 						</div>
 					</aside>
 				</div>

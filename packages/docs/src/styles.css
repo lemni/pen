@@ -112,8 +112,33 @@ a:hover {
   font-family: "Inter", system-ui, sans-serif;
 }
 
+.docs-sidebar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0 0.2rem 0.6rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--docs-border);
+}
+
+.docs-sidebar-tab {
+  border: 0;
+  background: transparent;
+  color: var(--docs-muted);
+  padding: 0.28rem 0.38rem;
+  border-radius: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.docs-sidebar-tab.is-active {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+
 .docs-nav-group + .docs-nav-group {
-  margin-top: 1.05rem;
+  margin-top: 0.95rem;
 }
 
 .docs-nav-group h2 {
@@ -250,9 +275,9 @@ a:hover {
 
 .docs-main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 13rem;
-  gap: 2rem;
-  max-width: 70rem;
+  grid-template-columns: minmax(0, 1fr) 11rem;
+  gap: 3rem;
+  max-width: 68rem;
   padding: 1.85rem 1.25rem 0;
 }
 
@@ -261,7 +286,7 @@ a:hover {
 }
 
 .docs-main-header {
-  max-width: 36rem;
+  max-width: 34rem;
   margin-bottom: 1.5rem;
 }
 
@@ -303,21 +328,21 @@ a:hover {
 }
 
 .docs-main-header p {
-  max-width: 34rem;
-  font-size: 0.92rem;
-  line-height: 1.65;
+  max-width: 31rem;
+  font-size: 0.88rem;
+  line-height: 1.7;
 }
 
 .docs-main-header h1 {
-  max-width: 30rem;
-  font-size: clamp(2.65rem, 4vw, 3.45rem);
+  max-width: 27rem;
+  font-size: clamp(2.55rem, 4vw, 3.3rem);
   line-height: 0.96;
   letter-spacing: -0.06em;
   color: #ffffff;
 }
 
 .docs-article {
-  max-width: 36rem;
+  max-width: 34rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background: transparent;
 }
@@ -353,10 +378,10 @@ a:hover {
 
 .docs-article-body p,
 .docs-article-body li {
-  max-width: 60ch;
+  max-width: 58ch;
   color: #c1c8d6;
-  font-size: 0.9rem;
-  line-height: 1.75;
+  font-size: 0.88rem;
+  line-height: 1.78;
 }
 
 .docs-article-body ul,
@@ -421,7 +446,7 @@ a:hover {
 }
 
 .docs-rail-panel {
-  padding-top: 0.35rem;
+  padding-top: 0.3rem;
 }
 
 .docs-rail-label,
@@ -436,7 +461,7 @@ a:hover {
 }
 
 .docs-rail-links,
-.docs-rail-card-links {
+.docs-sidebar-footer {
   display: grid;
   gap: 0.2rem;
 }
@@ -457,11 +482,6 @@ a:hover {
   color: #ffffff;
 }
 
-.docs-rail-divider {
-  margin: 1rem 0;
-  border-top: 1px solid var(--docs-border);
-}
-
 .docs-rail-utility-link {
   color: #a7b0c2;
   font-size: 0.74rem;
@@ -472,8 +492,14 @@ a:hover {
   color: #ffffff;
 }
 
-.docs-rail-card-links .docs-rail-utility-link {
-  padding: 0.18rem 0;
+.docs-sidebar-footer {
+  margin-top: 1.2rem;
+  padding: 0.8rem 0.45rem 0;
+  border-top: 1px solid var(--docs-border);
+}
+
+.docs-sidebar-footer .docs-rail-utility-link {
+  padding: 0.1rem 0;
 }
 
 @media (max-width: 980px) {
@@ -506,7 +532,7 @@ a:hover {
 
   .docs-main-grid {
     grid-template-columns: 1fr;
-    gap: 2rem;
+    gap: 1.75rem;
     padding: 1.5rem 1.25rem 0;
   }
 
