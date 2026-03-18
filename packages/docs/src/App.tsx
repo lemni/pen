@@ -25,6 +25,7 @@ const docsSidebarStats = [
   `${sitePages.length} pages`,
   `${siteSections.length} sections`,
 ] as const;
+const docsTopNavItems = ["Docs", "Examples", "Guides"] as const;
 
 function resolvePageId(hash: string): string {
   const normalizedHash = hash.startsWith("#") ? hash.slice(1) : hash;
@@ -102,7 +103,6 @@ export function App() {
     return (
       <section key={group.section.id} className="docs-nav-group">
         <h2>{group.section.title}</h2>
-        <p>{group.section.description}</p>
         <div className="docs-nav-links">{pageButtons}</div>
       </section>
     );
@@ -133,6 +133,37 @@ export function App() {
   const currentSectionLabel = currentSection
     ? `${currentSection.title} section`
     : "Documentation";
+  const currentSectionPages =
+    pageGroups.find((group) => group.section.id === currentPage.sectionId)?.pages ?? [];
+
+  const topNavItems = docsTopNavItems.map((item) => {
+    const isActive = item === "Docs";
+
+    return (
+      <button
+        key={item}
+        type="button"
+        className={isActive ? "docs-top-nav-item is-active" : "docs-top-nav-item"}
+      >
+        {item}
+      </button>
+    );
+  });
+
+  const sectionRailItems = currentSectionPages.map((page) => {
+    const isActive = page.id === currentPage.id;
+
+    return (
+      <button
+        key={page.id}
+        type="button"
+        className={isActive ? "docs-rail-link is-active" : "docs-rail-link"}
+        onClick={() => handlePageSelect(page.id)}
+      >
+        {page.title}
+      </button>
+    );
+  });
 
   const article = renderArticle(currentPage, currentSection?.title ?? "Docs");
 
@@ -157,21 +188,41 @@ export function App() {
       <main className="docs-main">
         <div className="docs-topbar">
           <div className="docs-topbar-copy">
-            <span className="docs-topbar-label">Documentation</span>
+            <span className="docs-topbar-label">Pen</span>
             <span className="docs-topbar-subtitle">{currentSectionLabel}</span>
           </div>
+          <div className="docs-top-nav">{topNavItems}</div>
           <div className="docs-topbar-links">{utilityLinkItems}</div>
         </div>
-        <header className="docs-main-header">
-          <div>
-            <span className="docs-section-label">
-              {currentSection?.title ?? "Documentation"}
-            </span>
-            <h1>{currentPage.title}</h1>
-            <p>{currentPage.summary}</p>
-          </div>
-        </header>
-        {article}
+        <div className="docs-main-grid">
+          <section className="docs-content-column">
+            <header className="docs-main-header">
+              <div>
+                <span className="docs-section-label">
+                  {currentSection?.title ?? "Documentation"}
+                </span>
+                <h1>{currentPage.title}</h1>
+                <p>{currentPage.summary}</p>
+              </div>
+            </header>
+            {article}
+          </section>
+          <aside className="docs-rail">
+            <div className="docs-rail-panel">
+              <span className="docs-rail-label">In this section</span>
+              <div className="docs-rail-links">{sectionRailItems}</div>
+            </div>
+            <div className="docs-rail-card">
+              <span className="docs-rail-card-label">Repository</span>
+              <strong>Shipped surface only</strong>
+              <p>
+                Pen documents the packages and editor features that already exist in this
+                repository.
+              </p>
+              <div className="docs-rail-card-links">{utilityLinkItems}</div>
+            </div>
+          </aside>
+        </div>
       </main>
     </div>
   );
