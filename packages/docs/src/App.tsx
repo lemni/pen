@@ -114,12 +114,11 @@ export function App() {
     <div className="docs-shell">
       <aside className="docs-sidebar">
         <div className="docs-sidebar-header">
-          <span className="docs-eyebrow">Wave 12</span>
+          <span className="docs-eyebrow">Current Surface</span>
           <h1>Pen Docs</h1>
           <p>
-            Production foundations for the current Pen surface area: React-first adoption,
-            Vue renderer proof, canonical JSON, XML interoperability, and shipped
-            extensions.
+            Reference docs for the shipped Pen surface area: React-first adoption, the
+            Vue renderer, canonical JSON, XML interoperability, and shipped extensions.
           </p>
         </div>
         <nav aria-label="Documentation navigation">{navGroups}</nav>

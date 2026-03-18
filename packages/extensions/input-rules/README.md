@@ -42,7 +42,7 @@ Block shortcuts:
 - `1. ` -> numbered list
 - `[ ] `, `[x] ` -> checklist
 - `> ` -> blockquote
-- `` ``` `` -> code block
+- ` ``` ` -> code block
 - `---`, `***`, `___` -> divider
 - `> [!note] ` -> callout
 

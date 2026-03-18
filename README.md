@@ -42,6 +42,218 @@ export function App() {
 }
 ```
 
+`PenEditor` is the fastest path. If you want to own the shell, layout, and controls, use the compound primitives directly.
+
+## Editor Example
+
+This example keeps Pen headless where it matters while still giving you a batteries-included editor surface in React.
+
+```bash
+pnpm add @pen/ai @pen/input-rules @pen/search @pen/shortcuts
+```
+
+```tsx
+import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
+import { inputRulesExtension } from "@pen/input-rules";
+import { searchExtension, getSearchController } from "@pen/search";
+import { Pen } from "@pen/react";
+
+const editor = createEditor({
+  preset: defaultPreset(),
+  extensions: [inputRulesExtension(), searchExtension()],
+});
+
+export function App() {
+  return (
+    <Pen.Editor.Root editor={editor}>
+      <section className="editor-shell">
+        <header className="editor-toolbar">
+          <button
+            type="button"
+            onClick={() => getSearchController(editor)?.toggleOpen()}
+          >
+            Search
+          </button>
+        </header>
+
+        <Pen.Search.Root editor={editor}>
+          <Pen.Search.Input />
+          <Pen.Search.Results />
+          <Pen.Search.Previous>Previous</Pen.Search.Previous>
+          <Pen.Search.Next>Next</Pen.Search.Next>
+        </Pen.Search.Root>
+
+        <Pen.Editor.Content />
+      </section>
+    </Pen.Editor.Root>
+  );
+}
+```
+
+You can stop at `PenEditor`, compose `Pen.*` primitives, or replace the UI entirely with your own controls.
+
+## Headless UI Examples
+
+Pen keeps runtime state and document mutation in the editor. Your app can subscribe to that state and render any UI system around it.
+
+### Bring Your Own Toolbar
+
+`useToolbar(editor)` exposes formatting state, and `@pen/shortcuts` gives you reusable formatting commands. That lets you render your own toolbar shell without giving up Pen's selection-aware behavior.
+
+```tsx
+import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
+import { toggleInlineMark } from "@pen/shortcuts";
+import { Pen, useToolbar } from "@pen/react";
+
+const editor = createEditor({
+  preset: defaultPreset(),
+});
+
+function FormattingToolbar() {
+  const toolbar = useToolbar(editor);
+  const currentBlockId =
+    editor.selection?.type === "text" ? editor.selection.anchor.blockId : null;
+
+  function handleHeading() {
+    if (!currentBlockId) {
+      return;
+    }
+
+    editor.apply(
+      [{ type: "convert-block", blockId: currentBlockId, newType: "heading" }],
+      { origin: "user" },
+    );
+  }
+
+  return (
+    <div className="toolbar">
+      <button
+        type="button"
+        disabled={!toolbar.canBold}
+        aria-pressed={Boolean(toolbar.activeMarks.bold)}
+        onClick={() => toggleInlineMark(editor, "bold")}
+      >
+        Bold
+      </button>
+      <button
+        type="button"
+        disabled={!toolbar.canItalic}
+        aria-pressed={Boolean(toolbar.activeMarks.italic)}
+        onClick={() => toggleInlineMark(editor, "italic")}
+      >
+        Italic
+      </button>
+      <button type="button" disabled={!currentBlockId} onClick={handleHeading}>
+        Heading
+      </button>
+      <span>Block: {toolbar.blockType ?? "paragraph"}</span>
+    </div>
+  );
+}
+
+export function App() {
+  return (
+    <Pen.Editor.Root editor={editor}>
+      <FormattingToolbar />
+      <Pen.Editor.Content />
+    </Pen.Editor.Root>
+  );
+}
+```
+
+### Bring Your Own AI UI
+
+`@pen/ai` owns sessions, generation state, and suggest-mode behavior. In React, you can wire that state into your own chat panel, action bar, or review surface.
+
+```tsx
+import { useState } from "react";
+import { createEditor } from "@pen/core";
+import { defaultPreset } from "@pen/preset-default";
+import { aiExtension } from "@pen/ai";
+import { Pen, useAI, useAIActions, useAISessions } from "@pen/react";
+
+const editor = createEditor({
+  preset: defaultPreset(),
+  extensions: [
+    aiExtension({
+      model: {
+        async *stream() {
+          yield {
+            type: "text-delta" as const,
+            delta: "Here is a clearer version of the selected text.",
+          };
+          yield { type: "done" as const };
+        },
+      },
+    }),
+  ],
+});
+
+function AIPanel() {
+  const [prompt, setPrompt] = useState("Rewrite the selection to be clearer.");
+  const ai = useAI(editor);
+  const sessions = useAISessions(editor);
+  const actions = useAIActions(editor);
+  const latestSession = sessions[sessions.length - 1] ?? null;
+
+  async function handleSubmit() {
+    const session = actions.startSession({
+      surface: "bottom-chat",
+      target: "selection",
+    });
+
+    if (!session) {
+      return;
+    }
+
+    await actions.runSessionPrompt(session.id, prompt, {
+      target: "selection",
+    });
+  }
+
+  return (
+    <aside className="ai-panel">
+      <textarea
+        value={prompt}
+        onChange={(event) => setPrompt(event.target.value)}
+      />
+      <div className="ai-actions">
+        <button
+          type="button"
+          disabled={prompt.length === 0 || ai.status !== "idle"}
+          onClick={() => void handleSubmit()}
+        >
+          Ask AI
+        </button>
+        <button type="button" onClick={() => actions.openCommandMenu()}>
+          Commands
+        </button>
+      </div>
+      <p>Status: {ai.status}</p>
+      <p>
+        Latest session:{" "}
+        {latestSession
+          ? `${latestSession.status} with ${latestSession.turns.length} turn(s)`
+          : "none"}
+      </p>
+    </aside>
+  );
+}
+
+export function App() {
+  return (
+    <Pen.Editor.Root editor={editor}>
+      <AIPanel />
+      <Pen.Editor.Content />
+    </Pen.Editor.Root>
+  );
+}
+```
+
+If you want less custom UI code, `@pen/react` also ships `Pen.Toolbar.*` and `Pen.AI.*` primitives on top of the same runtime.
+
 ## Recommended Packages
 
 - `@pen/core`: create editors and access the headless runtime
@@ -99,14 +311,29 @@ Pen keeps one block-native document model and one canonical mutation path.
 
 For the full current-state package and architecture specs, see [spec/README.md](spec/README.md).
 
+## Repository Resources
+
+- `packages/docs`: repository docs app for the current public Pen surface
+- `.github/workflows/docs.yml`: GitHub Pages deployment for the docs app after Pages is enabled for the repository
+- `playground`: integration sandbox for trying renderer, AI, and collaboration flows
+- `playground/src/utils/playgroundCollaboration.ts`: concrete `y-websocket` wiring used by the playground
+
 ## Development
 
 ```bash
 pnpm install
+pnpm lint
 pnpm build
 pnpm test
 pnpm typecheck
 ```
+
+## Community
+
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+- [Support](SUPPORT.md)
 
 ## Authors
 

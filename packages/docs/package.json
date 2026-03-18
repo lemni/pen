@@ -2,7 +2,7 @@
   "name": "@pen/docs",
   "private": true,
   "version": "0.0.0",
-  "description": "Wave 12 documentation site for Pen",
+  "description": "Repository documentation site for Pen",
   "license": "LICENSE.md",
   "type": "module",
   "scripts": {

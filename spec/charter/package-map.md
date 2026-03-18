@@ -16,8 +16,8 @@ Provide a stable overview of the workspace layout and the spec paths that mirror
 - `packages/transports`: transport implementations
 - `packages/shared`: lower-level shared support libraries
 - `packages/tooling`: testing, benchmarks, and development utilities
-- `packages/docs`: private docs site
-- `playground`: private demo and integration app
+- `packages/docs`: repository docs app for the current public Pen surface
+- `playground`: integration app and playground for shipped editor flows
 
 ## Generated Package Specs
 

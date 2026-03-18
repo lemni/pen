@@ -64,7 +64,7 @@ export const sitePages: SitePage[] = [
     id: "introduction",
     sectionId: "getting-started",
     title: "Introduction",
-    summary: "What Pen is, what Wave 12 ships, and how to choose the core packages.",
+    summary: "What Pen is, what ships today, and how to choose the core packages.",
     content: (
       <>
         <p>
@@ -73,9 +73,9 @@ export const sitePages: SitePage[] = [
           Renderers such as React and Vue stay separate from the editing model.
         </p>
         <div className="docs-callout">
-          Wave 12 closes on four production-facing surfaces: canonical JSON export and
-          import, XML interoperability, a Vue renderer, and docs that reflect shipped
-          features only.
+          Pen documents the shipped editor surface only: canonical JSON import/export,
+          XML interoperability, the React and Vue renderers, and the extension packages
+          that are already available in this repository.
         </div>
         <h2>Package roles</h2>
         <ul>
@@ -341,9 +341,9 @@ const editor = createEditor({
     content: (
       <>
         <p>
-          Wave 12 establishes JSON as Pen&apos;s canonical machine-readable format and XML
-          as a secondary interoperability surface. Markdown and HTML import/export still
-          exist for human-oriented workflows.
+          Pen uses JSON as its canonical machine-readable format and XML as a secondary
+          interoperability surface. Markdown and HTML import/export still exist for
+          human-oriented workflows.
         </p>
         <h2>JSON</h2>
         <ul>
@@ -391,8 +391,8 @@ xmlImporter.import(xml, editor, { replace: true });`)}
     content: (
       <>
         <p>
-          This is intentionally a compact reference page. Wave 12 requires docs for the
-          shipped surfaces that exist today, not generated symbol-by-symbol API docs.
+          This is intentionally a compact reference page. It documents the shipped
+          surfaces that exist today, not generated symbol-by-symbol API docs.
         </p>
         <div className="docs-package-grid">
           <article className="docs-package-card">
@@ -498,8 +498,9 @@ xmlImporter.import(xml, editor, { replace: true });`)}
             integration and feature experimentation
           </li>
           <li>
-            <strong>Yjs WebSocket example:</strong> recommended collaboration setup using
-            <code>y-websocket</code>
+            <strong>Playground collaboration wiring:</strong> the repository&apos;s concrete
+            <code>y-websocket</code> session wiring lives in{" "}
+            <code>playground/src/utils/playgroundCollaboration.ts</code>
           </li>
           <li>
             <strong>Vue renderer package:</strong> reference implementation for the

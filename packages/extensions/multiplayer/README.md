@@ -66,4 +66,5 @@ See `@pen/crdt-yjs` for the canonical `y-websocket` integration example using:
 - `getYjsAwareness()`
 - `createYjsProviderSession()`
 
-There is also a repo example in `examples/y-websocket/`.
+For a concrete repository reference, see the playground collaboration wiring in
+`playground/src/utils/playgroundCollaboration.ts`.

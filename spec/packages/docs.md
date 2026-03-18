@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Wave 12 documentation site for Pen
+Repository documentation site for Pen
 
 ## Public Role
 
-Publish the current product surface as a private workspace docs site.
+Publish the current product surface as a workspace docs app for the repository.
 
 ## Key Exports / Entrypoints
 
@@ -17,21 +17,21 @@ Publish the current product surface as a private workspace docs site.
 
 - Runtime dependencies: `react`, `react-dom`
 - Peer dependencies: No peer dependencies declared.
-- Boundary: This is a private app, not a reusable runtime package.
+- Boundary: This is a workspace app, not a reusable runtime package.
 
 ## Data Flow / Runtime Model
 
-Private docs app packages in Pen should stay package-first and explicit about ownership. Use it to document shipped surfaces only.
+The docs app should stay package-first and explicit about ownership. Use it to document shipped surfaces only.
 
 ## Integration Notes
 
 - Path in workspace: `packages/docs`
 - Spec path mirrors workspace path: `packages/docs.md`
-- This package is private to the workspace and exists to support docs, demos, or local development flows.
+- This package is workspace-only and exists to support docs, demos, and local development flows.
 
 ## Current Maturity / Intended Usage
 
-Private workspace app.
+Workspace app.
 
 ## Non-goals
 

@@ -94,7 +94,10 @@ const editor = createEditor({
 });
 ```
 
-There is also a repo example in `examples/y-websocket/`, including a reusable `createYWebsocketSessionFactory()` helper.
+For a concrete repository reference, see
+`playground/src/utils/playgroundCollaboration.ts`, which includes a reusable
+`createYWebsocketSessionFactory()` helper for the playground&apos;s `y-websocket`
+setup.
 
 ## Why `getYjsAwareness()` exists
 
