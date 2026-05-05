@@ -2,7 +2,7 @@
 <img width="100%" height="auto" alt="logo_black@2x" src="https://github.com/user-attachments/assets/b49fb5a2-f7b9-4464-9222-f6b75509313b" />
 
 <h3 align="center">
-  Headless, extension-first rich text editor<br/> engine for AI collaboration
+  Headless, extension-first rich text editor<br/> engine for human-AI collaboration
 </h3>
 
 <p align="center">
