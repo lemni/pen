@@ -4201,6 +4201,126 @@ describe("@pen/react selected text deletion", () => {
 		}
 	});
 
+	it("keeps repeated cmd+a deletion working after retyping in EditContext", async () => {
+		const originalEditContext = (
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext;
+		(
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext = FakeEditContext;
+
+		const editor = createEditor();
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Title" },
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		try {
+			await act(async () => {
+				root.render(
+					<Pen.Editor.Root
+						editor={editor}
+						inputBackend="edit-context"
+					>
+						<Pen.Editor.Content />
+					</Pen.Editor.Root>,
+				);
+			});
+
+			const fieldEditor = getFieldEditor(editor);
+			const inlineElement = container.querySelector(
+				"[data-pen-inline-content]",
+			) as
+				| (HTMLElement & { editContext?: FakeEditContext | null })
+				| null;
+
+			expect(inlineElement).not.toBeNull();
+
+			await act(async () => {
+				fieldEditor.activate(blockId);
+				await flushAnimationFrames(2);
+			});
+
+			await act(async () => {
+				inlineElement!.dispatchEvent(createSelectAllEvent());
+				await flushAnimationFrames(2);
+				inlineElement!.dispatchEvent(
+					createKeyEvent("Backspace", { cancelable: true }),
+				);
+				await flushAnimationFrames(2);
+			});
+
+			expect(editor.getBlock(blockId)?.textContent()).toBe("");
+
+			const editContext = inlineElement?.editContext;
+			expect(editContext).toBeTruthy();
+
+			await act(async () => {
+				editContext!.emit("textupdate", {
+					updateRangeStart: 0,
+					updateRangeEnd: 0,
+					text: "Again",
+					selectionStart: 5,
+					selectionEnd: 5,
+				});
+				await flushAnimationFrames(2);
+			});
+
+			expect(editor.getBlock(blockId)?.textContent()).toBe("Again");
+
+			await act(async () => {
+				inlineElement!.dispatchEvent(createSelectAllEvent());
+				await flushAnimationFrames(2);
+			});
+
+			expect(editor.selection).toMatchObject({
+				type: "text",
+				anchor: { blockId, offset: 0 },
+				focus: { blockId, offset: 5 },
+				isCollapsed: false,
+				isMultiBlock: false,
+			});
+
+			await act(async () => {
+				setNativeSelectionRange(inlineElement!, 0, inlineElement!, 0);
+				inlineElement!.dispatchEvent(
+					createKeyEvent("Backspace", { cancelable: true }),
+				);
+				await flushAnimationFrames(2);
+			});
+
+			expect(editor.getBlock(blockId)?.textContent()).toBe("");
+			expect(editor.selection).toMatchObject({
+				type: "text",
+				anchor: { blockId, offset: 0 },
+				focus: { blockId, offset: 0 },
+				isCollapsed: true,
+				isMultiBlock: false,
+			});
+
+			await act(async () => {
+				root.unmount();
+			});
+			container.remove();
+			editor.destroy();
+		} finally {
+			(
+				globalThis as typeof globalThis & {
+					EditContext?: typeof FakeEditContext;
+				}
+			).EditContext = originalEditContext;
+		}
+	});
+
 	it("restores logical selection on undo and redo", async () => {
 		const editor = createUndoSelectionDeletionEditor();
 		const blockId = editor.firstBlock()!.id;
