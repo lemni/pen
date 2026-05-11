@@ -4159,6 +4159,9 @@ describe("@pen/react selected text deletion", () => {
 
 			await act(async () => {
 				inlineElement!.dispatchEvent(createSelectAllEvent());
+				await flushAnimationFrames(4);
+				setNativeSelectionRange(inlineElement!, 0, inlineElement!, 0);
+				document.dispatchEvent(new Event("selectionchange"));
 				await flushAnimationFrames(2);
 			});
 

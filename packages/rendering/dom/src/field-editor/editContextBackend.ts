@@ -545,6 +545,32 @@ export class EditContextBackend implements InputBackend {
 		};
 	}
 
+	private shouldIgnoreStaleCollapsedDomSelection(
+		selection: ReturnType<typeof normalizeSelectionFormation>,
+	): boolean {
+		if (selection.type === "block") {
+			return false;
+		}
+		if (
+			selection.anchor.blockId !== selection.focus.blockId ||
+			selection.anchor.offset !== selection.focus.offset
+		) {
+			return false;
+		}
+
+		const editorSelectionRange = this.resolveEditorSelectionRange(
+			selection.anchor.blockId,
+		);
+		if (!editorSelectionRange) {
+			return false;
+		}
+
+		return (
+			selection.anchor.offset !== editorSelectionRange.start ||
+			selection.focus.offset !== editorSelectionRange.end
+		);
+	}
+
 	private applyInlineInputRule(
 		blockId: string,
 		offset: number,
@@ -714,6 +740,11 @@ export class EditContextBackend implements InputBackend {
 			mappedSelection,
 		);
 
+		if (this.shouldIgnoreStaleCollapsedDomSelection(normalizedSelection)) {
+			this.restoreDOMCaret();
+			return;
+		}
+
 		if (normalizedSelection.type === "block") {
 			this.fieldEditor.deactivate();
 			this.editor.setSelection({
@@ -752,6 +783,23 @@ export class EditContextBackend implements InputBackend {
 
 		const offsets = getDirectionalSelectionOffsets(this.element);
 		if (!offsets) return;
+		const editorSelectionRange = this.resolveEditorSelectionRange(
+			normalizedSelection.anchor.blockId,
+		);
+		if (
+			editorSelectionRange &&
+			offsets.anchor === offsets.focus &&
+			(offsets.start !== editorSelectionRange.start ||
+				offsets.end !== editorSelectionRange.end)
+		) {
+			this.setEditContextSelection({
+				blockId: normalizedSelection.anchor.blockId,
+				anchorOffset: editorSelectionRange.start,
+				focusOffset: editorSelectionRange.end,
+			});
+			this.restoreDOMCaret();
+			return;
+		}
 		const authoritativeSelection = this.getAuthoritativeTextInputSelection(
 			normalizedSelection.anchor.blockId,
 		);
