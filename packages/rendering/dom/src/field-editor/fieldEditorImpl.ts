@@ -176,6 +176,14 @@ export class FieldEditorImpl implements FieldEditorSession {
 		this.resetSelectAllCycle();
 	}
 
+	setInputBackend(inputBackend: "contenteditable" | "edit-context"): void {
+		if (this._inputBackend === inputBackend) {
+			return;
+		}
+		this._inputBackend = inputBackend;
+		this._syncBackendForSurfaceMode();
+	}
+
 	// ── Lifecycle ─────────────────────────────────────────────
 
 	activate(blockId: string): void {
@@ -420,17 +428,27 @@ export class FieldEditorImpl implements FieldEditorSession {
 
 		if (!inlineEl) return;
 
+		const selection = this._editor.selection;
 		inlineEl.focus({ preventScroll: false });
 
-		const selection = root.ownerDocument?.getSelection();
-		if (!selection) return;
+		if (
+			selection?.type === "text" &&
+			selection.anchor.blockId === this._focusBlockId &&
+			selection.focus.blockId === this._focusBlockId
+		) {
+			this._backend?.updateSelection(null);
+			return;
+		}
+
+		const nativeSelection = root.ownerDocument?.getSelection();
+		if (!nativeSelection) return;
 
 		const range = root.ownerDocument.createRange();
 		range.selectNodeContents(inlineEl);
 		range.collapse(false);
 
-		selection.removeAllRanges();
-		selection.addRange(range);
+		nativeSelection.removeAllRanges();
+		nativeSelection.addRange(range);
 	}
 
 	blur(): void {

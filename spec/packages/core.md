@@ -54,6 +54,7 @@ Important rules:
 - `DocumentOp[]` is the mutation currency.
 - Durable document writes go through `editor.apply(...)`.
 - Structured operation origins can carry `groupId`, `requestId`, `actorId`, and `source` metadata so hosts can attribute and group mutations without inventing a parallel apply path.
+- Default feature composition should flow through presets or explicit extensions; legacy `createEditor({ without })` remains deprecated compatibility rather than the preferred way to remove default features.
 - Extensions can prepare work, observe editor events, and register slots, but they do not bypass the core mutation boundary.
 - Renderer packages read `DocumentState`, `BlockHandle`, selection, and decorations from the editor; they do not become alternate document authorities.
 
@@ -68,6 +69,7 @@ Headless editors default to the core apply pipeline only. Hosts can opt into def
 - Path in workspace: `packages/core`
 - Spec path mirrors workspace path: `packages/core.md`
 - Typical adoption starts with `createEditor()` plus `@pen/schema-default` and `@pen/preset-default`
+- Use `createEditor({ preset: defaultPreset(...) })` or explicit `extensions` for feature composition instead of the deprecated `without` option.
 - Server/workflow adoption starts with `createHeadlessEditor()` plus a wrapped CRDT document.
 - Schema composition happens here through the registry/merge APIs, not in renderer packages
 - Serialization packages and tool packages should treat the editor as the authority boundary, even when they export convenience helpers

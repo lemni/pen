@@ -79,7 +79,7 @@ export interface EditorContentProps extends AsChildProps {
 
 export function EditorContent(props: EditorContentProps) {
 	const { virtualize: _virtualize, emptyPlaceholder, ...rest } = props;
-	const { editor, readonly, blockDragAndDrop, interactionModel } = useEditorContext();
+	const { editor, readonly, blockDragAndDrop, blockSelection, interactionModel } = useEditorContext();
 	const fieldEditor = useFieldEditorContext();
 	const { store: regionSelectionStore } = useEditorRegionSelectionContext();
 	const fieldEditorState = useFieldEditorState(fieldEditor);
@@ -308,6 +308,7 @@ export function EditorContent(props: EditorContentProps) {
 		const getRegionSelectorConfig = (
 			event: MouseEvent,
 		): RegionSelectorConfig | null => {
+			if (!blockSelection.enabled) return null;
 			const config = regionSelectionStore.getSnapshot().config;
 			if (!config?.enabled) return null;
 			if (config.selectionMode !== "block") return null;
@@ -394,6 +395,7 @@ export function EditorContent(props: EditorContentProps) {
 				focus: focusPoint,
 			});
 			if (normalizedSelection.type === "block") {
+				if (!blockSelection.enabled) return;
 				gestureEl.ownerDocument?.getSelection()?.removeAllRanges();
 				editor.selectBlocks(normalizedSelection.blockIds);
 				fieldEditor.deactivate();
@@ -407,9 +409,11 @@ export function EditorContent(props: EditorContentProps) {
 			if (!selectedIds) return;
 
 			if (shouldUseBlockSelection(editor, selectedIds.length)) {
-				editor.selectBlocks(selectedIds);
-				fieldEditor.deactivate();
-				return;
+				if (blockSelection.enabled) {
+					editor.selectBlocks(selectedIds);
+					fieldEditor.deactivate();
+					return;
+				}
 			}
 
 			fieldEditor.applyDocumentTextSelection(
@@ -471,7 +475,10 @@ export function EditorContent(props: EditorContentProps) {
 						selectingForward ? "end" : "start",
 					);
 
-					if (shouldUseBlockSelection(editor, selectedIds.length)) {
+					if (
+						blockSelection.enabled &&
+						shouldUseBlockSelection(editor, selectedIds.length)
+					) {
 						editor.selectBlocks(selectedIds);
 						fieldEditor.deactivate();
 						event.preventDefault();
@@ -600,7 +607,7 @@ export function EditorContent(props: EditorContentProps) {
 			const gesture = regionGestureRef.current;
 			if (gesture) {
 				const config = regionSelectionStore.getSnapshot().config;
-				if (!config?.enabled) {
+				if (!blockSelection.enabled || !config?.enabled) {
 					clearRegionSelectionState();
 					return;
 				}
@@ -682,6 +689,7 @@ export function EditorContent(props: EditorContentProps) {
 			pointerGesture.promotedDuringDrag = true;
 			skipNextClickRef.current = true;
 			if (resolvedSelection.mode === "block") {
+				if (!blockSelection.enabled) return;
 				editor.selectBlocks(resolvedSelection.blockIds);
 				fieldEditor.deactivate();
 				return;
@@ -709,6 +717,11 @@ export function EditorContent(props: EditorContentProps) {
 					"[data-pen-editor-root]",
 				) as HTMLElement | null;
 				if (wasSelecting) {
+					if (!blockSelection.enabled) {
+						skipNextClickRef.current = true;
+						clearRegionSelectionState();
+						return;
+					}
 					const liveRect = createClientRect(
 						regionGesture.clientX,
 						regionGesture.clientY,
@@ -962,6 +975,7 @@ export function EditorContent(props: EditorContentProps) {
 				}
 
 				if (resolvedSelection.mode === "block") {
+					if (!blockSelection.enabled) return false;
 					editor.selectBlocks(resolvedSelection.blockIds);
 					fieldEditor.deactivate();
 					if (root) {
@@ -998,6 +1012,9 @@ export function EditorContent(props: EditorContentProps) {
 				if (resolvedSelection?.mode !== "block") {
 					return false;
 				}
+				if (!blockSelection.enabled) {
+					return false;
+				}
 
 				editor.selectBlocks(resolvedSelection.blockIds);
 				fieldEditor.deactivate();
@@ -1026,6 +1043,11 @@ export function EditorContent(props: EditorContentProps) {
 						cellCoord,
 					})
 				) {
+					if (!blockSelection.enabled) {
+						editor.selectCell(blockId, cellCoord.row, cellCoord.col);
+						skipNextClickRef.current = true;
+						return true;
+					}
 					editor.selectBlock(blockId);
 					if (root) {
 						ensureEditorFocus(root);
@@ -1075,12 +1097,18 @@ export function EditorContent(props: EditorContentProps) {
 						return true;
 					}
 
+					if (!blockSelection.enabled) {
+						return false;
+					}
 					editor.selectBlock(blockId);
 					skipNextClickRef.current = true;
 					return true;
 				}
 
 				if (blockPointerIntent === "select-block") {
+					if (!blockSelection.enabled) {
+						return false;
+					}
 					editor.selectBlock(blockId);
 					fieldEditor.deactivate();
 					if (root) {
@@ -1142,6 +1170,7 @@ export function EditorContent(props: EditorContentProps) {
 				}
 
 				if (
+					blockSelection.enabled &&
 					moved &&
 					gesture.blockId !== blockId &&
 					getEditorBlockSelectionRole(editor, gesture.blockId) !==
@@ -1212,7 +1241,7 @@ export function EditorContent(props: EditorContentProps) {
 			}
 			clearRegionSelectionState();
 		};
-	}, [editor, fieldEditor, readonly, regionSelectionStore]);
+	}, [blockSelection.enabled, editor, fieldEditor, readonly, regionSelectionStore]);
 
 	const blockElements: React.ReactElement[] = [];
 	const previewBlocks = visibleSuggestion?.previewBlocks ?? [];

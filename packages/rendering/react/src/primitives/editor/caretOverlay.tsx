@@ -13,6 +13,13 @@ import { isDevelopmentEnvironment } from "../../utils/environment";
 type CaretStyle = React.CSSProperties & Record<string, string | number>;
 const CARET_BLINK_RESUME_DELAY_MS = 500;
 
+export const CARET = {
+	DEFAULT: "default",
+	MACOS: "macos",
+} as const;
+
+export type EditorCaretVariant = (typeof CARET)[keyof typeof CARET];
+
 export interface EditorCaretRenderProps {
 	selection: TextSelection;
 	point: {
@@ -25,12 +32,18 @@ export interface EditorCaretRenderProps {
 
 export interface EditorCaretOverlayProps extends AsChildProps {
 	editor?: Editor;
+	variant?: EditorCaretVariant;
 	renderCaret?: (props: EditorCaretRenderProps) => React.ReactNode;
 	ref?: React.Ref<HTMLElement>;
 }
 
 export function EditorCaretOverlay(props: EditorCaretOverlayProps) {
-	const { editor: editorProp, renderCaret, ...rest } = props;
+	const {
+		editor: editorProp,
+		variant = CARET.DEFAULT,
+		renderCaret,
+		...rest
+	} = props;
 	const editorContext = useContext(EditorContext);
 	const editor = editorProp ?? editorContext?.editor;
 	const fieldEditor = useFieldEditorContext();
@@ -110,6 +123,7 @@ export function EditorCaretOverlay(props: EditorCaretOverlayProps) {
 			caretSelection,
 			rect,
 			blinkPaused,
+			variant,
 		);
 		caretNode = renderCaret ? (
 			renderCaret(renderProps)
@@ -160,10 +174,11 @@ function createCaretRenderProps(
 	selection: TextSelection,
 	rect: DOMRect,
 	blinkPaused: boolean,
+	variant: EditorCaretVariant,
 ): EditorCaretRenderProps {
 	const height = Math.max(rect.height, 16);
 	const point = selection.focus;
-	const isMacOS = isMacOSPlatform();
+	const isMacOS = variant === CARET.MACOS;
 	const defaultCaretColor = isMacOS
 		? "var(--palette-blue, #0a84ff)"
 		: "var(--palette-b100, currentColor)";
@@ -198,13 +213,6 @@ function createCaretRenderProps(
 		caretStyle,
 		attributes,
 	};
-}
-
-function isMacOSPlatform(): boolean {
-	return (
-		typeof navigator !== "undefined" &&
-		/\bMacintosh\b|\bMac OS X\b/.test(navigator.userAgent)
-	);
 }
 
 function useCaretBlinkPauseState(options: {

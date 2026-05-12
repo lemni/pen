@@ -30,6 +30,16 @@ export interface ResolvedBlockDragAndDropOptions {
 	enabled: boolean;
 }
 
+export type BlockSelectionOptions =
+	| boolean
+	| {
+			enabled?: boolean;
+	  };
+
+export interface ResolvedBlockSelectionOptions {
+	enabled: boolean;
+}
+
 export interface ResolvedInteractionModel {
 	model: InteractionModel;
 	selectAllBehavior: EditorSelectAllBehavior;
@@ -61,6 +71,18 @@ export function resolveInteractionModel(
 	};
 }
 
+export function resolveBlockSelection(
+	blockSelection?: BlockSelectionOptions,
+): ResolvedBlockSelectionOptions {
+	if (typeof blockSelection === "boolean") {
+		return { enabled: blockSelection };
+	}
+
+	return {
+		enabled: blockSelection?.enabled ?? true,
+	};
+}
+
 export interface BlockControlsProps {
 	blockId: string;
 	blockType: string;
@@ -78,6 +100,7 @@ export interface EditorContextValue {
 	editorViewMode: EditorViewMode;
 	interactionModel: ResolvedInteractionModel;
 	blockDragAndDrop: ResolvedBlockDragAndDropOptions;
+	blockSelection: ResolvedBlockSelectionOptions;
 	blockControls?: BlockControlsRenderer;
 	importers?: PasteImporters;
 	assets?: AssetProvider;

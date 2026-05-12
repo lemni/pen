@@ -1,4 +1,5 @@
 export {
+	CARET,
 	EditorRoot,
 	EditorContent,
 	EditorBlock,
@@ -92,6 +93,7 @@ export {
 // ── Pen.* namespace for compound component API ──────────────
 
 import {
+	CARET,
 	EditorRoot,
 	EditorContent,
 	EditorBlock,
@@ -189,6 +191,7 @@ export const Pen = {
 		Block: EditorBlock,
 		InlineContent,
 		CaretOverlay: EditorCaretOverlay,
+		CARET,
 		BlockHandle: EditorBlockHandle,
 		DragOverlay: EditorDragOverlay,
 		RegionSelector: EditorRegionSelector,

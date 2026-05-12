@@ -19,6 +19,7 @@ import { isHistoryTransactionOrigin } from "./historyOrigin";
 import { handleCopy, handleCut, handleClipboardPaste } from "./clipboard";
 import type { PasteImporters } from "../types/paste";
 import { applyListInputRule } from "./commands";
+import { isFieldEditorTextEditingKey } from "../utils/textEntryTarget";
 import type {
 	FieldEditorObserver,
 	FieldEditorTextChangeEvent,
@@ -48,6 +49,16 @@ type EditContextSelectionOptions = {
 type EditContextRange = {
 	start: number;
 	end: number;
+};
+
+type DirectionalSelectionOffsets = NonNullable<
+	ReturnType<typeof getDirectionalSelectionOffsets>
+>;
+
+type KeyDownRangeResolution = {
+	range: EditContextRange;
+	nextSelection: EditContextSelection | null;
+	shouldSyncEditContextSelection: boolean;
 };
 
 type EditContextTextFormat = {
@@ -936,26 +947,25 @@ export class EditContextBackend implements InputBackend {
 			blockId != null && this.editContextSelection?.blockId === blockId
 				? this.editContextSelection
 				: null;
+		const editorSelection =
+			selection?.type === "text" &&
+			blockId &&
+			selection.anchor.blockId === blockId &&
+			selection.focus.blockId === blockId
+				? selection
+				: null;
 		const anchorOffset =
 			pendingSelection?.anchorOffset ??
 			authoritativeInputSelection?.anchorOffset ??
+			editorSelection?.anchor.offset ??
 			editContextSelection?.anchorOffset ??
-			(selection?.type === "text" &&
-			blockId &&
-			selection.anchor.blockId === blockId &&
-			selection.focus.blockId === blockId
-				? selection.anchor.offset
-				: null);
+			null;
 		const focusOffset =
 			pendingSelection?.focusOffset ??
 			authoritativeInputSelection?.focusOffset ??
+			editorSelection?.focus.offset ??
 			editContextSelection?.focusOffset ??
-			(selection?.type === "text" &&
-			blockId &&
-			selection.anchor.blockId === blockId &&
-			selection.focus.blockId === blockId
-				? selection.focus.offset
-				: null);
+			null;
 		if (root && blockId && anchorOffset != null && focusOffset != null) {
 			this.isApplyingSelection++;
 			editorSelectionToDOM(
@@ -1013,62 +1023,11 @@ export class EditContextBackend implements InputBackend {
 
 		const blockId = this.fieldEditor.focusBlockId;
 		const liveDomOffsets = getDirectionalSelectionOffsets(this.element);
-		const editorSelectionRange = blockId
-			? this.resolveEditorSelectionRange(blockId)
-			: null;
-		const shouldUseEditorSelectionRange =
-			editorSelectionRange != null &&
-			(!liveDomOffsets ||
-				(liveDomOffsets.start === liveDomOffsets.end &&
-					(liveDomOffsets.start !== editorSelectionRange.start ||
-						liveDomOffsets.end !== editorSelectionRange.end)));
-		const range = shouldUseEditorSelectionRange
-			? editorSelectionRange
-			: liveDomOffsets
-				? {
-						start: liveDomOffsets.start,
-						end: liveDomOffsets.end,
-					}
-				: {
-						start: Math.min(
-							this.editContext.selectionStart,
-							this.editContext.selectionEnd,
-						),
-						end: Math.max(
-							this.editContext.selectionStart,
-							this.editContext.selectionEnd,
-						),
-					};
-		const authoritativeSelection = this.fieldEditor.focusBlockId
-			? this.getAuthoritativeTextInputSelection(
-					this.fieldEditor.focusBlockId,
-				)
-			: null;
-		const shouldUseLiveDomSelection =
-			!!liveDomOffsets &&
-			!(
-				authoritativeSelection &&
-				liveDomOffsets.anchor === liveDomOffsets.focus &&
-				(liveDomOffsets.anchor !==
-					authoritativeSelection.anchorOffset ||
-					liveDomOffsets.focus !== authoritativeSelection.focusOffset)
-			);
-		if (blockId && shouldUseEditorSelectionRange) {
+		const { range, nextSelection, shouldSyncEditContextSelection } =
+			this.resolveKeyDownRange(blockId, event, liveDomOffsets);
+
+		if (shouldSyncEditContextSelection) {
 			this.editContext.updateSelection(range.start, range.end);
-			this.editContextSelection = {
-				blockId,
-				anchorOffset: range.start,
-				focusOffset: range.end,
-			};
-		} else if (liveDomOffsets && shouldUseLiveDomSelection) {
-			this.editContext.updateSelection(range.start, range.end);
-			const nextSelection = blockId
-				? {
-						blockId,
-						anchorOffset: liveDomOffsets.anchor,
-						focusOffset: liveDomOffsets.focus,
-					}
-				: null;
 			this.editContextSelection = nextSelection;
 		}
 
@@ -1083,6 +1042,193 @@ export class EditContextBackend implements InputBackend {
 			event.preventDefault();
 		}
 	};
+
+	private resolveKeyDownRange(
+		blockId: string | null,
+		event: KeyboardEvent,
+		liveDomOffsets: DirectionalSelectionOffsets | null,
+	): KeyDownRangeResolution {
+		if (!blockId) {
+			return {
+				range: liveDomOffsets
+					? directionalSelectionToRange(liveDomOffsets)
+					: this.resolveEditContextSelectionRange(),
+				nextSelection: null,
+				shouldSyncEditContextSelection: false,
+			};
+		}
+
+		const editorSelectionRange = this.resolveEditorSelectionRange(blockId);
+		const trustedKeyRange = this.resolveTrustedKeyDownRange(
+			blockId,
+			event,
+			editorSelectionRange,
+		);
+		if (trustedKeyRange) {
+			return {
+				range: trustedKeyRange,
+				nextSelection: rangeToSelection(blockId, trustedKeyRange),
+				shouldSyncEditContextSelection: true,
+			};
+		}
+
+		if (
+			editorSelectionRange &&
+			(!liveDomOffsets ||
+				(liveDomOffsets.start === liveDomOffsets.end &&
+					!rangesEqual(liveDomOffsets, editorSelectionRange)))
+		) {
+			return {
+				range: editorSelectionRange,
+				nextSelection: rangeToSelection(blockId, editorSelectionRange),
+				shouldSyncEditContextSelection: true,
+			};
+		}
+
+		if (liveDomOffsets && this.shouldUseLiveDomSelection(blockId, liveDomOffsets)) {
+			return {
+				range: directionalSelectionToRange(liveDomOffsets),
+				nextSelection: {
+					blockId,
+					anchorOffset: liveDomOffsets.anchor,
+					focusOffset: liveDomOffsets.focus,
+				},
+				shouldSyncEditContextSelection: true,
+			};
+		}
+
+		return {
+			range: liveDomOffsets
+				? directionalSelectionToRange(liveDomOffsets)
+				: this.resolveEditContextSelectionRange(),
+			nextSelection: null,
+			shouldSyncEditContextSelection: false,
+		};
+	}
+
+	private shouldUseLiveDomSelection(
+		blockId: string,
+		liveDomOffsets: DirectionalSelectionOffsets,
+	): boolean {
+		const authoritativeSelection =
+			this.getAuthoritativeTextInputSelection(blockId);
+		return !(
+			authoritativeSelection &&
+			liveDomOffsets.anchor === liveDomOffsets.focus &&
+			(liveDomOffsets.anchor !== authoritativeSelection.anchorOffset ||
+				liveDomOffsets.focus !== authoritativeSelection.focusOffset)
+		);
+	}
+
+	private resolveEditContextSelectionRange(): EditContextRange {
+		if (!this.editContext) {
+			return { start: 0, end: 0 };
+		}
+
+		return {
+			start: Math.min(
+				this.editContext.selectionStart,
+				this.editContext.selectionEnd,
+			),
+			end: Math.max(
+				this.editContext.selectionStart,
+				this.editContext.selectionEnd,
+			),
+		};
+	}
+
+	private resolveTrustedKeyDownRange(
+		blockId: string,
+		event: KeyboardEvent,
+		editorSelectionRange: EditContextRange | null,
+	): EditContextRange | null {
+		if (!isFieldEditorTextEditingKey(event)) {
+			return null;
+		}
+
+		if (editorSelectionRange) {
+			return editorSelectionRange;
+		}
+
+		const authoritativeSelection =
+			this.getAuthoritativeTextInputSelection(blockId);
+		if (authoritativeSelection) {
+			return selectionToRange(authoritativeSelection);
+		}
+
+		const collapsedEditorSelection =
+			this.resolveCollapsedEditorSelectionRange(blockId);
+		if (collapsedEditorSelection) {
+			return collapsedEditorSelection;
+		}
+
+		const projectedSelection = this.getProjectedTextSelection(blockId);
+		if (projectedSelection) {
+			return selectionToRange(projectedSelection);
+		}
+
+		const synchronizedEditContextRange =
+			this.resolveSynchronizedEditContextRange(blockId);
+		if (synchronizedEditContextRange) {
+			return synchronizedEditContextRange;
+		}
+
+		return null;
+	}
+
+	private getProjectedTextSelection(
+		blockId: string,
+	): EditContextSelection | null {
+		return this.editContextSelection?.blockId === blockId
+			? this.editContextSelection
+			: null;
+	}
+
+	private resolveCollapsedEditorSelectionRange(
+		blockId: string,
+	): EditContextRange | null {
+		const selection = this.fieldEditor.selection;
+		if (
+			selection?.type === "text" &&
+			selection.isCollapsed &&
+			selection.focus.blockId === blockId
+		) {
+			return {
+				start: selection.focus.offset,
+				end: selection.focus.offset,
+			};
+		}
+
+		return null;
+	}
+
+	private resolveSynchronizedEditContextRange(
+		blockId: string,
+	): EditContextRange | null {
+		if (!this.editContext) {
+			return null;
+		}
+
+		const editContextRange = {
+			start: Math.min(
+				this.editContext.selectionStart,
+				this.editContext.selectionEnd,
+			),
+			end: Math.max(
+				this.editContext.selectionStart,
+				this.editContext.selectionEnd,
+			),
+		};
+		const editorRange =
+			this.resolveEditorSelectionRange(blockId) ??
+			this.resolveCollapsedEditorSelectionRange(blockId);
+
+		if (editorRange && rangesEqual(editContextRange, editorRange)) {
+			return editContextRange;
+		}
+
+		return null;
+	}
 
 	private handleCopyEvent = (event: ClipboardEvent): void => {
 		event.preventDefault();
@@ -1252,6 +1398,40 @@ function collapsedSelectionOffset(
 		return null;
 	}
 	return selection.focusOffset;
+}
+
+function selectionToRange(selection: EditContextSelection): EditContextRange {
+	return {
+		start: Math.min(selection.anchorOffset, selection.focusOffset),
+		end: Math.max(selection.anchorOffset, selection.focusOffset),
+	};
+}
+
+function directionalSelectionToRange(
+	selection: DirectionalSelectionOffsets,
+): EditContextRange {
+	return {
+		start: selection.start,
+		end: selection.end,
+	};
+}
+
+function rangeToSelection(
+	blockId: string,
+	range: EditContextRange,
+): EditContextSelection {
+	return {
+		blockId,
+		anchorOffset: range.start,
+		focusOffset: range.end,
+	};
+}
+
+function rangesEqual(
+	left: EditContextRange,
+	right: EditContextRange,
+): boolean {
+	return left.start === right.start && left.end === right.end;
 }
 
 function isNavigationSelectionKey(event: KeyboardEvent): boolean {

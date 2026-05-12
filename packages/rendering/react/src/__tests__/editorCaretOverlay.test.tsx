@@ -15,11 +15,6 @@ import { FIELD_EDITOR_SLOT_KEY } from "../constants/fieldEditor";
 
 describe("@pen/react editor caret overlay", () => {
 	it("renders a custom local caret for collapsed selections only", async () => {
-		const originalUserAgent = navigator.userAgent;
-		Object.defineProperty(navigator, "userAgent", {
-			value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-			configurable: true,
-		});
 		const editor = createEditor({
 			preset: defaultPreset({
 				documentOps: false,
@@ -144,21 +139,12 @@ describe("@pen/react editor caret overlay", () => {
 			await act(async () => {
 				root.unmount();
 			});
-			Object.defineProperty(navigator, "userAgent", {
-				value: originalUserAgent,
-				configurable: true,
-			});
 			container.remove();
 			editor.destroy();
 		}
 	});
 
-	it("uses macOS caret defaults", async () => {
-		const originalUserAgent = navigator.userAgent;
-		Object.defineProperty(navigator, "userAgent", {
-			value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-			configurable: true,
-		});
+	it("uses macOS caret defaults when requested", async () => {
 		const editor = createEditor({
 			preset: defaultPreset({
 				documentOps: false,
@@ -187,6 +173,7 @@ describe("@pen/react editor caret overlay", () => {
 					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 						<Pen.Editor.CaretOverlay
+							variant={Pen.Editor.CARET.MACOS}
 							renderCaret={(props) => {
 								caretStyle = props.caretStyle;
 								return (
@@ -235,10 +222,6 @@ describe("@pen/react editor caret overlay", () => {
 		} finally {
 			await act(async () => {
 				root.unmount();
-			});
-			Object.defineProperty(navigator, "userAgent", {
-				value: originalUserAgent,
-				configurable: true,
 			});
 			container.remove();
 			editor.destroy();

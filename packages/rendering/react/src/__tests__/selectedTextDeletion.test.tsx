@@ -347,7 +347,7 @@ describe("@pen/react selected text deletion", () => {
 		editor.destroy();
 	});
 
-	it("can opt into contenteditable even when EditContext is available", async () => {
+	it("falls back to contenteditable when EditContext is unavailable", async () => {
 		const originalEditContext = (
 			globalThis as typeof globalThis & {
 				EditContext?: typeof FakeEditContext;
@@ -357,7 +357,7 @@ describe("@pen/react selected text deletion", () => {
 			globalThis as typeof globalThis & {
 				EditContext?: typeof FakeEditContext;
 			}
-		).EditContext = FakeEditContext;
+		).EditContext = undefined;
 
 		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
@@ -368,10 +368,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="contenteditable"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -465,7 +462,7 @@ describe("@pen/react selected text deletion", () => {
 			);
 
 			return (
-				<Pen.Editor.Root editor={editor} inputBackend="edit-context">
+				<Pen.Editor.Root editor={editor}>
 					<Pen.Editor.Content />
 				</Pen.Editor.Root>
 			);
@@ -2488,6 +2485,69 @@ describe("@pen/react selected text deletion", () => {
 		editor.destroy();
 	});
 
+	it("preserves the active text selection when refocusing from editor chrome", async () => {
+		const editor = createEditor();
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Hello" },
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<button type="button">Toolbar</button>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const fieldEditor = getFieldEditor(editor);
+		const rootElement = container.querySelector(
+			"[data-pen-editor-root]",
+		) as HTMLElement | null;
+		const toolbarButton = container.querySelector(
+			"button",
+		) as HTMLButtonElement | null;
+
+		expect(rootElement).not.toBeNull();
+		expect(toolbarButton).not.toBeNull();
+
+		await act(async () => {
+			fieldEditor.activateTextSelection(blockId, 1, 4);
+			await flushAnimationFrames(3);
+		});
+
+		await act(async () => {
+			toolbarButton!.focus();
+			fieldEditor.activateTextSelection(blockId, 1, 4);
+			fieldEditor.focus();
+			await flushAnimationFrames(3);
+		});
+
+		expect(editor.selection).toMatchObject({
+			type: "text",
+			anchor: { blockId, offset: 1 },
+			focus: { blockId, offset: 4 },
+			isCollapsed: false,
+			isMultiBlock: false,
+		});
+		expect(domSelectionToEditor(rootElement!)).toMatchObject({
+			anchor: { blockId, offset: 1 },
+			focus: { blockId, offset: 4 },
+		});
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
 	it("resets an empty heading to paragraph on backspace keydown", async () => {
 		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
@@ -2878,6 +2938,318 @@ describe("@pen/react selected text deletion", () => {
 		editor.destroy();
 	});
 
+	it("moves the caret into the inserted block after Enter at block end in flow EditContext documents", async () => {
+		const originalEditContext = (
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext;
+		(
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext = FakeEditContext;
+
+		const editor = createEditor({ documentProfile: "flow" });
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Hello" },
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		try {
+			await act(async () => {
+				root.render(
+					<Pen.Editor.Root editor={editor}>
+						<Pen.Editor.Content />
+					</Pen.Editor.Root>,
+				);
+			});
+
+			const fieldEditor = getFieldEditor(editor);
+			const inlineElement = container.querySelector(
+				"[data-pen-inline-content]",
+			) as HTMLElement | null;
+
+			expect(inlineElement).not.toBeNull();
+
+			await act(async () => {
+				fieldEditor.activateTextSelection(blockId, 5, 5);
+				await flushAnimationFrames(4);
+			});
+
+			expect(inlineElement!.getAttribute("contenteditable")).toBeNull();
+
+			await act(async () => {
+				inlineElement!.dispatchEvent(createKeyEvent("Enter"));
+				await flushAnimationFrames(4);
+			});
+
+			const blockIds = editor.documentState.blockOrder;
+			const newBlockId = blockIds[1];
+
+			expect(newBlockId).toBeTruthy();
+			expect(editor.selection).toMatchObject({
+				type: "text",
+				anchor: { blockId: newBlockId, offset: 0 },
+				focus: { blockId: newBlockId, offset: 0 },
+				isCollapsed: true,
+				isMultiBlock: false,
+			});
+		} finally {
+			(
+				globalThis as typeof globalThis & {
+					EditContext?: typeof FakeEditContext;
+				}
+			).EditContext = originalEditContext;
+			await act(async () => {
+				root.unmount();
+			});
+			container.remove();
+			editor.destroy();
+		}
+	});
+
+	it("uses the EditContext caret for Enter when native DOM selection is stale at block start", async () => {
+		const originalEditContext = (
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext;
+		(
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext = FakeEditContext;
+
+		const editor = createEditor({ documentProfile: "flow" });
+		const blockId = editor.firstBlock()!.id;
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Hello" },
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		try {
+			await act(async () => {
+				root.render(
+					<Pen.Editor.Root editor={editor} editorViewMode="flow">
+						<Pen.Editor.Content />
+					</Pen.Editor.Root>,
+				);
+			});
+
+			const fieldEditor = getFieldEditor(editor);
+			const inlineElement = container.querySelector(
+				"[data-pen-inline-content]",
+			) as
+				| (HTMLElement & { editContext?: FakeEditContext | null })
+				| null;
+
+			expect(inlineElement).not.toBeNull();
+
+			await act(async () => {
+				fieldEditor.activateTextSelection(blockId, 5, 5);
+				await flushAnimationFrames(4);
+			});
+
+			const editContext = inlineElement?.editContext;
+			expect(editContext).toBeTruthy();
+			expect(editContext?.selectionStart).toBe(5);
+			expect(editContext?.selectionEnd).toBe(5);
+
+			setNativeSelectionRange(inlineElement!, 0, inlineElement!, 0);
+			editContext?.updateSelection(0, 0);
+
+			await act(async () => {
+				inlineElement!.dispatchEvent(
+					createKeyEvent("Enter", { cancelable: true }),
+				);
+				await flushAnimationFrames(4);
+			});
+
+			const blockIds = editor.documentState.blockOrder;
+			const newBlockId = blockIds[1];
+			expect(blockIds).toHaveLength(2);
+			expect(editor.getBlock(blockId)?.textContent()).toBe("Hello");
+			expect(editor.getBlock(newBlockId!)?.textContent()).toBe("");
+			expect(editor.selection).toMatchObject({
+				type: "text",
+				anchor: { blockId: newBlockId, offset: 0 },
+				focus: { blockId: newBlockId, offset: 0 },
+				isCollapsed: true,
+				isMultiBlock: false,
+			});
+		} finally {
+			(
+				globalThis as typeof globalThis & {
+					EditContext?: typeof FakeEditContext;
+				}
+			).EditContext = originalEditContext;
+			await act(async () => {
+				root.unmount();
+			});
+			container.remove();
+			editor.destroy();
+		}
+	});
+
+	it("inserts a paragraph on Enter from a selected content-first flow paragraph", async () => {
+		const editor = createEditor({ documentProfile: "flow" });
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Hello" },
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		try {
+			await act(async () => {
+				root.render(
+					<Pen.Editor.Root editor={editor} editorViewMode="flow">
+						<Pen.Editor.Content />
+					</Pen.Editor.Root>,
+				);
+			});
+
+			const rootElement = container.querySelector(
+				"[data-pen-editor-root]",
+			) as HTMLElement | null;
+			expect(rootElement).not.toBeNull();
+
+			await act(async () => {
+				editor.selectBlock(blockId);
+				rootElement!.focus();
+				rootElement!.dispatchEvent(
+					createKeyEvent("Enter", { cancelable: true }),
+				);
+				await flushAnimationFrames(4);
+			});
+
+			const blockIds = editor.documentState.blockOrder;
+			const newBlockId = blockIds[1];
+
+			expect(blockIds).toHaveLength(2);
+			expect(blockIds[0]).toBe(blockId);
+			expect(editor.getBlock(blockId)?.textContent()).toBe("Hello");
+			expect(editor.getBlock(newBlockId!)?.textContent()).toBe("");
+			expect(editor.selection).toMatchObject({
+				type: "text",
+				anchor: { blockId: newBlockId, offset: 0 },
+				focus: { blockId: newBlockId, offset: 0 },
+				isCollapsed: true,
+				isMultiBlock: false,
+			});
+		} finally {
+			await act(async () => {
+				root.unmount();
+			});
+			container.remove();
+			editor.destroy();
+		}
+	});
+
+	it("re-enters text editing on Enter from a single selected block-first flow paragraph", async () => {
+		const originalEditContext = (
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext;
+		(
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext = FakeEditContext;
+
+		const editor = createEditor({ documentProfile: "flow" });
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Hello" },
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		try {
+			await act(async () => {
+				root.render(
+					<Pen.Editor.Root
+						editor={editor}
+						editorViewMode="flow"
+						interactionModel="block-first"
+					>
+						<Pen.Editor.Content />
+					</Pen.Editor.Root>,
+				);
+			});
+
+			const rootElement = container.querySelector(
+				"[data-pen-editor-root]",
+			) as HTMLElement | null;
+			const inlineElement = container.querySelector(
+				"[data-pen-inline-content]",
+			) as HTMLElement | null;
+
+			expect(rootElement).not.toBeNull();
+			expect(inlineElement).not.toBeNull();
+
+			await act(async () => {
+				editor.selectBlock(blockId);
+				rootElement!.focus();
+				rootElement!.dispatchEvent(
+					createKeyEvent("Enter", { cancelable: true }),
+				);
+				await flushAnimationFrames(4);
+			});
+
+			expect(editor.documentState.blockOrder).toEqual([blockId]);
+			expect(editor.selection).toMatchObject({
+				type: "text",
+				anchor: { blockId, offset: 5 },
+				focus: { blockId, offset: 5 },
+				isCollapsed: true,
+				isMultiBlock: false,
+			});
+
+			const activeInlineElement = container.querySelector(
+				"[data-pen-inline-content][data-pen-field-editor-active-surface]",
+			) as HTMLElement | null;
+			expect(activeInlineElement).not.toBeNull();
+
+			await act(async () => {
+				document.dispatchEvent(
+					createKeyEvent("Backspace", { cancelable: true }),
+				);
+				await flushAnimationFrames(2);
+			});
+
+			expect(editor.documentState.blockOrder).toEqual([blockId]);
+			expect(editor.getBlock(blockId)?.textContent()).toBe("Hello");
+		} finally {
+			(
+				globalThis as typeof globalThis & {
+					EditContext?: typeof FakeEditContext;
+				}
+			).EditContext = originalEditContext;
+			await act(async () => {
+				root.unmount();
+			});
+			container.remove();
+			editor.destroy();
+		}
+	});
+
 	it("shows the next ordered-list marker after Enter continues a numbered list", async () => {
 		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
@@ -3179,10 +3551,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -3297,10 +3666,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -3435,10 +3801,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -3567,10 +3930,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -3669,10 +4029,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -3753,10 +4110,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -3839,10 +4193,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -3957,10 +4308,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -4043,10 +4391,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -4134,10 +4479,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -4230,10 +4572,7 @@ describe("@pen/react selected text deletion", () => {
 		try {
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);
@@ -4709,10 +5048,7 @@ describe("@pen/react selected text deletion", () => {
 
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<button type="button">Undo</button>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
@@ -4828,10 +5164,7 @@ describe("@pen/react selected text deletion", () => {
 
 			await act(async () => {
 				root.render(
-					<Pen.Editor.Root
-						editor={editor}
-						inputBackend="edit-context"
-					>
+					<Pen.Editor.Root editor={editor}>
 						<Pen.Editor.Content />
 					</Pen.Editor.Root>,
 				);

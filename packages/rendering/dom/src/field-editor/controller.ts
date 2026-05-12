@@ -10,11 +10,7 @@ export type ActiveCellCoord = {
 
 type FieldEditorSelectionState = Pick<
 	FieldEditorStore,
-	| "focusBlockId"
-	| "selection"
-	| "inputMode"
-	| "isEditing"
-	| "isComposing"
+	"focusBlockId" | "selection" | "inputMode" | "isEditing" | "isComposing"
 > & {
 	readonly activeCellCoord: ActiveCellCoord | null;
 };
@@ -22,6 +18,7 @@ type FieldEditorSelectionState = Pick<
 export interface FieldEditorRootHandle {
 	setRootElement(element: HTMLElement | null): void;
 	setFocused(focused: boolean): void;
+	setInputBackend(inputBackend: "contenteditable" | "edit-context"): void;
 	setSelectAllBehavior(behavior: EditorSelectAllBehavior): void;
 	deactivate(): void;
 	activateTextSelection(
@@ -62,8 +59,10 @@ export interface FieldEditorDomController extends FieldEditorSelectionState {
 	deactivate(): void;
 }
 
-export interface FieldEditorKeyboardController
-	extends Pick<FieldEditorSelectionState, "focusBlockId" | "inputMode"> {
+export interface FieldEditorKeyboardController extends Pick<
+	FieldEditorSelectionState,
+	"focusBlockId" | "inputMode"
+> {
 	readonly activeCellCoord: ActiveCellCoord | null;
 	activateCell(blockId: string, row: number, col: number): void;
 	activateTextSelection(
@@ -92,11 +91,10 @@ export interface FieldEditorTableNavigationController {
 	deactivate(): void;
 }
 
-export interface FieldEditorEscapeController
-	extends Pick<
-		FieldEditorSelectionState,
-		"focusBlockId" | "isEditing" | "isComposing"
-	> {
+export interface FieldEditorEscapeController extends Pick<
+	FieldEditorSelectionState,
+	"focusBlockId" | "isEditing" | "isComposing"
+> {
 	readonly activeCellCoord: ActiveCellCoord | null;
 	collapseSelectionToFocus(): void;
 	deactivate(): void;
@@ -120,13 +118,16 @@ export type FieldEditorSession = FieldEditorStore &
 	FieldEditorEscapeController & {
 		beginPointerSelection(): void;
 		endPointerSelection(): void;
-	selectAll(rootElement?: HTMLElement | null): boolean;
-	resetSelectAllCycle(): void;
-	suspendForPointerSelection(): void;
-	getPendingMarks(): Readonly<Record<string, unknown | null>>;
-	togglePendingMark(markType: string): boolean;
-	clearPendingMarks(): void;
-	collapseSelectionToAnchor(): void;
-	collapseSelectionToPoint(point: { blockId: string; offset: number }): void;
-	delegate(blockSchema: BlockSchema): boolean;
-};
+		selectAll(rootElement?: HTMLElement | null): boolean;
+		resetSelectAllCycle(): void;
+		suspendForPointerSelection(): void;
+		getPendingMarks(): Readonly<Record<string, unknown | null>>;
+		togglePendingMark(markType: string): boolean;
+		clearPendingMarks(): void;
+		collapseSelectionToAnchor(): void;
+		collapseSelectionToPoint(point: {
+			blockId: string;
+			offset: number;
+		}): void;
+		delegate(blockSchema: BlockSchema): boolean;
+	};

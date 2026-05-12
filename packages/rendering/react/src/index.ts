@@ -17,6 +17,7 @@ export { Pen } from "./primitives/index";
 
 // ── Editor primitives ───────────────────────────────────────
 export {
+	CARET,
 	EditorRoot,
 	EditorContent,
 	EditorBlock,
@@ -27,6 +28,7 @@ export {
 	EditorRegionSelector,
 	EditorSelectionRect,
 	EditorFieldEditor,
+	type EditorCaretVariant,
 	type EditorRootProps,
 	type EditorContentProps,
 	type EditorBlockProps,
@@ -265,7 +267,9 @@ export {
 	type BlockControlsProps,
 	type BlockControlsRenderer,
 	type BlockDragAndDropOptions,
+	type BlockSelectionOptions,
 	type ResolvedBlockDragAndDropOptions,
+	type ResolvedBlockSelectionOptions,
 	type ResolvedInteractionModel,
 	type PasteImporters,
 	type RendererOverrides,

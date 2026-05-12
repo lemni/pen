@@ -719,6 +719,35 @@ describe("@pen/core createEditor", () => {
 		editor.destroy();
 	});
 
+	it("splits at offset zero by inserting an empty block above", () => {
+		const editor = createEditor();
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{
+				type: "insert-text",
+				blockId,
+				offset: 0,
+				text: "hello world",
+			},
+		]);
+
+		editor.apply([
+			{
+				type: "split-block",
+				blockId,
+				offset: 0,
+				newBlockId: "b2",
+			},
+		]);
+
+		expect(editor.documentState.blockOrder).toEqual([blockId, "b2"]);
+		expect(editor.getBlock(blockId)?.textContent()).toBe("");
+		expect(editor.getBlock("b2")?.textContent()).toBe("hello world");
+
+		editor.destroy();
+	});
+
 	it("preserves full text offsets for code blocks", () => {
 		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;

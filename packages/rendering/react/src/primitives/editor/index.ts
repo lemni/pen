@@ -6,7 +6,9 @@ export { EditorContent, type EditorContentProps } from "./content";
 export { EditorBlock, type EditorBlockProps } from "./block";
 export { InlineContent, type InlineContentProps } from "./inlineContent";
 export {
+	CARET,
 	EditorCaretOverlay,
+	type EditorCaretVariant,
 	type EditorCaretOverlayProps,
 	type EditorCaretRenderProps,
 } from "./caretOverlay";
