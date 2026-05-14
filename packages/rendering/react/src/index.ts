@@ -78,6 +78,24 @@ export {
 	type SlashMenuEmptyProps,
 } from "./primitives/slash-menu/index";
 
+// ── Suggestion menu primitives ───────────────────────────────
+export {
+	SuggestionMenuRoot,
+	SuggestionMenuContent,
+	SuggestionMenuList,
+	SuggestionMenuGroup,
+	SuggestionMenuItem,
+	SuggestionMenuEmpty,
+	useSuggestionMenuContext,
+	type SuggestionMenuContextValue,
+	type SuggestionMenuRootProps,
+	type SuggestionMenuContentProps,
+	type SuggestionMenuListProps,
+	type SuggestionMenuGroupProps,
+	type SuggestionMenuItemProps,
+	type SuggestionMenuEmptyProps,
+} from "./primitives/suggestion-menu/index";
+
 // ── Selection toolbar primitives ────────────────────────────
 export {
 	SelectionToolbarRoot,
@@ -230,6 +248,8 @@ export {
 	useToolbar,
 	useSelectionToolbar,
 	useSlashMenu,
+	useSuggestionMenu,
+	resolveSuggestionMenuTarget,
 	useBlockList,
 	useBlockDragHandle,
 	useVisualViewport,
@@ -250,6 +270,17 @@ export {
 	type SelectionToolbarState,
 	type SlashMenuState,
 	type SlashMenuActions,
+	type SlashMenuTarget,
+	type SuggestionMenuActions,
+	type SuggestionMenuBoundary,
+	type SuggestionMenuController,
+	type SuggestionMenuGetItemsOptions,
+	type SuggestionMenuSelectOptions,
+	type SuggestionMenuState,
+	type SuggestionMenuStatus,
+	type SuggestionMenuTarget,
+	type SuggestionMenuTrigger,
+	type UseSuggestionMenuOptions,
 	type VisualViewportState,
 } from "./hooks/index";
 

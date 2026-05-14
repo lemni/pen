@@ -30,6 +30,14 @@ export {
 	SlashMenuItem,
 	SlashMenuEmpty,
 } from "./slash-menu/index";
+export {
+	SuggestionMenuRoot,
+	SuggestionMenuContent,
+	SuggestionMenuList,
+	SuggestionMenuGroup,
+	SuggestionMenuItem,
+	SuggestionMenuEmpty,
+} from "./suggestion-menu/index";
 
 export {
 	SelectionToolbarRoot,
@@ -124,6 +132,14 @@ import {
 	SlashMenuItem,
 	SlashMenuEmpty,
 } from "./slash-menu/index";
+import {
+	SuggestionMenuRoot,
+	SuggestionMenuContent,
+	SuggestionMenuList,
+	SuggestionMenuGroup,
+	SuggestionMenuItem,
+	SuggestionMenuEmpty,
+} from "./suggestion-menu/index";
 
 import {
 	SelectionToolbarRoot,
@@ -214,6 +230,14 @@ export const Pen = {
 		Group: SlashMenuGroup,
 		Item: SlashMenuItem,
 		Empty: SlashMenuEmpty,
+	},
+	SuggestionMenu: {
+		Root: SuggestionMenuRoot,
+		Content: SuggestionMenuContent,
+		List: SuggestionMenuList,
+		Group: SuggestionMenuGroup,
+		Item: SuggestionMenuItem,
+		Empty: SuggestionMenuEmpty,
 	},
 	SelectionToolbar: {
 		Root: SelectionToolbarRoot,

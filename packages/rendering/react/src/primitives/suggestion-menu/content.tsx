@@ -8,29 +8,21 @@ import {
 	type AnchoredMenuPosition,
 	type MenuPlacementSide,
 } from "../../utils/menuPosition";
-import { useSlashMenuContext } from "./root";
+import { useSuggestionMenuContext } from "./root";
 
 type Side = MenuPlacementSide;
-type SlashMenuPosition = AnchoredMenuPosition;
+type SuggestionMenuPosition = AnchoredMenuPosition;
 
-export interface SlashMenuContentProps extends AsChildProps {
-	/**
-	 * Preferred placement side relative to the caret.
-	 * @default "bottom"
-	 */
+export interface SuggestionMenuContentProps extends AsChildProps {
 	side?: Side;
-	/** Horizontal offset in px from the trigger token. @default 0 */
 	alignOffset?: number;
-	/** Gap in px between the caret and menu. @default 10 */
 	sideOffset?: number;
-	/** Minimum max-height in px when viewport space is tight. @default 120 */
 	minHeight?: number;
-	/** Viewport padding in px. @default 16 */
 	viewportPadding?: number;
 	ref?: React.Ref<HTMLElement>;
 }
 
-export function SlashMenuContent(props: SlashMenuContentProps) {
+export function SuggestionMenuContent(props: SuggestionMenuContentProps) {
 	const {
 		alignOffset = 0,
 		minHeight = 120,
@@ -48,15 +40,21 @@ export function SlashMenuContent(props: SlashMenuContentProps) {
 		open,
 		query,
 		selectedIndex,
+		status,
 		target,
-	} = useSlashMenuContext();
+	} = useSuggestionMenuContext();
 	const editor = controllerEditor ?? editorContext?.editor;
 	const contentRef = useRef<HTMLElement | null>(null);
-	const [position, setPosition] = useState<SlashMenuPosition | null>(null);
+	const [position, setPosition] = useState<SuggestionMenuPosition | null>(
+		null,
+	);
 
 	useLayoutEffect(() => {
 		if (!open || !editor) {
 			setPosition(null);
+			return;
+		}
+		if (typeof window === "undefined") {
 			return;
 		}
 
@@ -70,7 +68,7 @@ export function SlashMenuContent(props: SlashMenuContentProps) {
 					minHeight,
 					preferredSide,
 					sideOffset,
-					target: target ?? null,
+					target,
 					viewportPadding,
 				}),
 			);
@@ -100,6 +98,7 @@ export function SlashMenuContent(props: SlashMenuContentProps) {
 		preferredSide,
 		query,
 		sideOffset,
+		status,
 		target?.blockId,
 		target?.endOffset,
 		target?.startOffset,
@@ -107,24 +106,31 @@ export function SlashMenuContent(props: SlashMenuContentProps) {
 	]);
 
 	useEffect(() => {
-		if (!open) return;
+		if (!open) {
+			return;
+		}
 
 		const handlePointerDown = (event: MouseEvent) => {
-			if (contentRef.current?.contains(event.target as Node)) return;
+			if (contentRef.current?.contains(event.target as Node)) {
+				return;
+			}
 			dismiss();
 		};
 
 		document.addEventListener("mousedown", handlePointerDown, true);
-		return () =>
+		return () => {
 			document.removeEventListener("mousedown", handlePointerDown, true);
+		};
 	}, [dismiss, open]);
 
 	useEffect(() => {
-		if (!open) return;
+		if (!open) {
+			return;
+		}
 
 		const selectedItemElement =
 			contentRef.current?.querySelector<HTMLElement>(
-				"[data-pen-slash-menu-item][data-selected]",
+				"[data-pen-suggestion-menu-item][data-selected]",
 			);
 		if (typeof selectedItemElement?.scrollIntoView === "function") {
 			selectedItemElement.scrollIntoView({ block: "nearest" });
@@ -134,18 +140,22 @@ export function SlashMenuContent(props: SlashMenuContentProps) {
 	if (!editor) {
 		if (isDevelopmentEnvironment()) {
 			console.error(
-				"Pen: <Pen.SlashMenu.Content> must be used within <Pen.Editor.Root> or <Pen.SlashMenu.Root editor={editor}>.",
+				"Pen: <Pen.SuggestionMenu.Content> must be used within <Pen.Editor.Root> or <Pen.SuggestionMenu.Root editor={editor}>.",
 			);
 		}
-		throw new Error("Missing editor for Pen.SlashMenu.Content");
+		throw new Error("Missing editor for Pen.SuggestionMenu.Content");
 	}
 
-	if (!open) return null;
+	if (!open) {
+		return null;
+	}
 
 	const primitiveProps: Record<string, unknown> = {
-		"data-pen-slash-menu-content": "",
+		"data-pen-suggestion-menu-content": "",
 		"data-side": position?.side ?? preferredSide,
 		"data-state": "open",
+		"data-status": status,
+		"data-trigger": target?.trigger,
 		style: {
 			position: "fixed" as const,
 			top: position ? `${Math.round(position.top)}px` : 0,

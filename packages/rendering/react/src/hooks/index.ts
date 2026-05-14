@@ -53,11 +53,36 @@ export {
 } from "./useInlineSuggestionControls";
 export { useSuggestMode } from "./useSuggestMode";
 export { useToolbar } from "./useToolbar";
-export { useSelectionToolbar, type SelectionToolbarState } from "./useSelectionToolbar";
-export { useSlashMenu, type SlashMenuState, type SlashMenuActions } from "./useSlashMenu";
+export {
+	useSelectionToolbar,
+	type SelectionToolbarState,
+} from "./useSelectionToolbar";
+export {
+	useSlashMenu,
+	type SlashMenuState,
+	type SlashMenuActions,
+	type SlashMenuTarget,
+} from "./useSlashMenu";
+export {
+	useSuggestionMenu,
+	resolveSuggestionMenuTarget,
+	type SuggestionMenuActions,
+	type SuggestionMenuBoundary,
+	type SuggestionMenuController,
+	type SuggestionMenuGetItemsOptions,
+	type SuggestionMenuSelectOptions,
+	type SuggestionMenuState,
+	type SuggestionMenuStatus,
+	type SuggestionMenuTarget,
+	type SuggestionMenuTrigger,
+	type UseSuggestionMenuOptions,
+} from "./useSuggestionMenu";
 export { useBlockList } from "./useBlockList";
 export {
 	useBlockDragHandle,
 	type BlockDragHandleHookResult,
 } from "./useBlockDragHandle";
-export { useVisualViewport, type VisualViewportState } from "./useVisualViewport";
+export {
+	useVisualViewport,
+	type VisualViewportState,
+} from "./useVisualViewport";

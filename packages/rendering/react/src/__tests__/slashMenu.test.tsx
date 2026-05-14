@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React, { act } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { createEditor } from "@pen/core";
 import { defaultPreset } from "@pen/preset-default";
@@ -34,7 +34,144 @@ function createSlashMenuEditor(
 	});
 }
 
+function dispatchKey(key: string, target: EventTarget = document) {
+	target.dispatchEvent(
+		new KeyboardEvent("keydown", {
+			key,
+			bubbles: true,
+			cancelable: true,
+		}),
+	);
+}
+
 describe("@pen/react slash menu", () => {
+	it("handles navigation keys without transform-based placement or downstream propagation", async () => {
+		const editor = createSlashMenuEditor();
+		const blockId = editor.firstBlock()!.id;
+		editor.selectText(blockId, 0, 0);
+		const confirm = vi.fn();
+		const select = vi.fn();
+
+		const controller = {
+			confirm,
+			dismiss: vi.fn(),
+			items: [
+				{ type: "paragraph", display: { title: "Paragraph" } },
+				{ type: "heading", display: { title: "Heading" } },
+			],
+			open: true,
+			query: "",
+			select,
+			selectedIndex: 0,
+			setQuery: vi.fn(),
+		};
+
+		function Harness() {
+			return (
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+					<Pen.SlashMenu.Root controller={controller} editor={editor}>
+						<Pen.SlashMenu.Content>
+							<Pen.SlashMenu.List>
+								<Pen.SlashMenu.Item index={0}>
+									Paragraph
+								</Pen.SlashMenu.Item>
+								<Pen.SlashMenu.Item index={1}>
+									Heading
+								</Pen.SlashMenu.Item>
+							</Pen.SlashMenu.List>
+						</Pen.SlashMenu.Content>
+					</Pen.SlashMenu.Root>
+				</Pen.Editor.Root>
+			);
+		}
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(<Harness />);
+		});
+
+		const slashContent = container.querySelector<HTMLElement>(
+			"[data-pen-slash-menu-content]",
+		);
+		expect(slashContent).not.toBeNull();
+		expect(slashContent?.style.transform).toBe("");
+
+		const downstreamKeyDown = vi.fn();
+		container.addEventListener("keydown", downstreamKeyDown);
+		await act(async () => {
+			dispatchKey("ArrowDown", container);
+			dispatchKey("Enter", container);
+		});
+
+		expect(select).toHaveBeenCalledWith(1);
+		expect(confirm).toHaveBeenCalledWith(1);
+		expect(downstreamKeyDown).not.toHaveBeenCalled();
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("does not notify controlled open changes when confirm has no selected item", async () => {
+		const editor = createSlashMenuEditor();
+		const blockId = editor.firstBlock()!.id;
+		editor.selectText(blockId, 0, 0);
+		const onOpenChange = vi.fn();
+
+		const controller = {
+			confirm: vi.fn(() => false),
+			dismiss: vi.fn(),
+			items: [],
+			open: true,
+			query: "",
+			select: vi.fn(),
+			selectedIndex: 0,
+			setQuery: vi.fn(),
+			target: null,
+		};
+
+		function Harness() {
+			return (
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+					<Pen.SlashMenu.Root
+						controller={controller}
+						editor={editor}
+						open
+						onOpenChange={onOpenChange}
+					/>
+				</Pen.Editor.Root>
+			);
+		}
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(<Harness />);
+		});
+
+		await act(async () => {
+			dispatchKey("Enter", container);
+		});
+
+		expect(controller.confirm).toHaveBeenCalledWith(0);
+		expect(onOpenChange).not.toHaveBeenCalled();
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
 	it("opens after selection sync when slash text commits before a text selection exists", async () => {
 		const editor = createSlashMenuEditor();
 		const blockId = editor.firstBlock()!.id;
@@ -62,7 +199,9 @@ describe("@pen/react slash menu", () => {
 		});
 
 		await act(async () => {
-			editor.apply([{ type: "insert-text", blockId, offset: 0, text: "/" }]);
+			editor.apply([
+				{ type: "insert-text", blockId, offset: 0, text: "/" },
+			]);
 		});
 
 		const slashMenuBeforeSelection = slashMenuRef.current;
@@ -122,6 +261,8 @@ describe("@pen/react slash menu", () => {
 		});
 
 		expect(editor.getBlock(blockId)?.type).toBe("table");
+		expect(slashMenuRef.current?.open).toBe(false);
+		expect(slashMenuRef.current?.target).toBeNull();
 		expect(editor.getBlock(blockId)?.props.hasHeaderRow).toBe(true);
 		expect(editor.getBlock(blockId)?.tableRowCount()).toBe(2);
 		expect(editor.getBlock(blockId)?.tableColumnCount()).toBe(2);
@@ -174,11 +315,9 @@ describe("@pen/react slash menu", () => {
 			await flushAnimationFrames();
 		});
 
-		const fieldEditor = getAttachedFieldEditor(editor) as
-			| {
-				activateCell(blockId: string, row: number, col: number): void;
-			}
-			| null;
+		const fieldEditor = getAttachedFieldEditor(editor) as {
+			activateCell(blockId: string, row: number, col: number): void;
+		} | null;
 		await act(async () => {
 			fieldEditor?.activateCell(blockId, 0, 0);
 			await flushAnimationFrames();
@@ -213,7 +352,9 @@ describe("@pen/react slash menu", () => {
 			await flushAnimationFrames();
 		});
 
-		expect(editor.getBlock(blockId)?.tableCell(0, 0)?.textContent()).toBe("AB");
+		expect(editor.getBlock(blockId)?.tableCell(0, 0)?.textContent()).toBe(
+			"AB",
+		);
 
 		await act(async () => {
 			root.unmount();
@@ -282,7 +423,12 @@ describe("@pen/react slash menu", () => {
 				newType: "toggle",
 				newProps: { open: true },
 			},
-			{ type: "insert-text", blockId: toggleBlockId, offset: 0, text: "Parent" },
+			{
+				type: "insert-text",
+				blockId: toggleBlockId,
+				offset: 0,
+				text: "Parent",
+			},
 			{
 				type: "insert-block",
 				blockId: nestedToggleId,
@@ -290,7 +436,12 @@ describe("@pen/react slash menu", () => {
 				props: { open: true },
 				position: { after: toggleBlockId },
 			},
-			{ type: "insert-text", blockId: nestedToggleId, offset: 0, text: "Nested" },
+			{
+				type: "insert-text",
+				blockId: nestedToggleId,
+				offset: 0,
+				text: "Nested",
+			},
 			{
 				type: "update-block",
 				blockId: nestedToggleId,
@@ -355,7 +506,9 @@ describe("@pen/react slash menu", () => {
 
 		const insertedBlockId = insertedBlockIds[0]!;
 		expect(editor.getBlock(insertedBlockId)?.type).toBe("heading");
-		expect(editor.documentState.parentOf(insertedBlockId)).toBe(toggleBlockId);
+		expect(editor.documentState.parentOf(insertedBlockId)).toBe(
+			toggleBlockId,
+		);
 		expect(editor.documentState.blockOrder).toEqual([
 			toggleBlockId,
 			nestedToggleId,

@@ -283,7 +283,7 @@ export function applyListTabBehavior(
 		const sharesParent =
 			previousBlockId !== null &&
 			editor.documentState.parentOf(previousBlockId) ===
-				editor.documentState.parentOf(blockId);
+			editor.documentState.parentOf(blockId);
 
 		if (
 			isListBlock(previousBlock) &&

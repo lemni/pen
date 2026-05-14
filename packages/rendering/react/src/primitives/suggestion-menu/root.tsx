@@ -2,92 +2,127 @@ import React, { createContext, useContext, useEffect, useRef } from "react";
 import type { Editor } from "@pen/types";
 import { EditorContext } from "../../context/editorContext";
 import {
-	useSlashMenu,
-	type SlashMenuState,
-	type SlashMenuActions,
-} from "../../hooks/useSlashMenu";
+	useSuggestionMenu,
+	type SuggestionMenuActions,
+	type SuggestionMenuController,
+	type SuggestionMenuState,
+	type UseSuggestionMenuOptions,
+} from "../../hooks/useSuggestionMenu";
 import { renderAsChild, type AsChildProps } from "../../utils/asChild";
 import { isDevelopmentEnvironment } from "../../utils/environment";
 
-export type SlashMenuContextValue = SlashMenuState &
-	SlashMenuActions & {
-		editor?: Editor;
-	};
+export type SuggestionMenuContextValue<TItem = unknown> =
+	SuggestionMenuState<TItem> &
+		SuggestionMenuActions & {
+			editor?: Editor;
+		};
 
-const SlashMenuContext = createContext<SlashMenuContextValue | null>(null);
+const SuggestionMenuContext =
+	createContext<SuggestionMenuContextValue<unknown> | null>(null);
 
-export function useSlashMenuContext(): SlashMenuContextValue {
-	const ctx = useContext(SlashMenuContext);
-	if (!ctx) {
+export function useSuggestionMenuContext<
+	TItem = unknown,
+>(): SuggestionMenuContextValue<TItem> {
+	const context = useContext(SuggestionMenuContext);
+	if (!context) {
 		if (isDevelopmentEnvironment()) {
 			console.error(
-				"Pen: useSlashMenuContext must be used within <Pen.SlashMenu.Root>.",
+				"Pen: useSuggestionMenuContext must be used within <Pen.SuggestionMenu.Root>.",
 			);
 		}
-		throw new Error("Missing Pen.SlashMenu.Root context");
+		throw new Error("Missing Pen.SuggestionMenu.Root context");
 	}
-	return ctx;
+	return context as SuggestionMenuContextValue<TItem>;
 }
 
-export interface SlashMenuRootProps extends AsChildProps {
-	controller?: SlashMenuContextValue;
+export interface SuggestionMenuRootProps<TItem = unknown> extends AsChildProps {
+	controller?: SuggestionMenuController<TItem>;
 	editor?: Editor;
+	options?: UseSuggestionMenuOptions<TItem>;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
 	ref?: React.Ref<HTMLElement>;
 }
 
-export function SlashMenuRoot(props: SlashMenuRootProps) {
-	const { controller, editor, ...rest } = props;
+export function SuggestionMenuRoot<TItem = unknown>(
+	props: SuggestionMenuRootProps<TItem>,
+) {
+	const { controller, editor, options, ...rest } = props;
 	if (controller) {
 		return (
-			<SlashMenuRootContent
+			<SuggestionMenuRootContent
 				{...rest}
 				controller={controller}
 				editor={editor}
 			/>
 		);
 	}
+	if (options) {
+		return (
+			<UncontrolledSuggestionMenuRoot
+				{...rest}
+				editor={editor}
+				options={options}
+			/>
+		);
+	}
 
-	return <UncontrolledSlashMenuRoot {...rest} editor={editor} />;
+	if (isDevelopmentEnvironment()) {
+		console.error(
+			"Pen: <Pen.SuggestionMenu.Root> requires either controller or options.",
+		);
+	}
+	throw new Error("Missing Pen.SuggestionMenu.Root controller");
 }
 
-type UncontrolledSlashMenuRootProps = Omit<SlashMenuRootProps, "controller">;
+type UncontrolledSuggestionMenuRootProps<TItem> = Omit<
+	SuggestionMenuRootProps<TItem>,
+	"controller"
+> & {
+	options: UseSuggestionMenuOptions<TItem>;
+};
 
-function UncontrolledSlashMenuRoot(props: UncontrolledSlashMenuRootProps) {
-	const { editor: editorProp, ...rest } = props;
+function UncontrolledSuggestionMenuRoot<TItem>(
+	props: UncontrolledSuggestionMenuRootProps<TItem>,
+) {
+	const { editor: editorProp, options, ...rest } = props;
 	const editorContext = useContext(EditorContext);
-	const editor = editorProp ?? editorContext?.editor;
+	const editor = editorProp ?? options.editor ?? editorContext?.editor;
 
 	if (!editor) {
 		if (isDevelopmentEnvironment()) {
 			console.error(
-				"Pen: <Pen.SlashMenu.Root> must be used within <Pen.Editor.Root> or receive an editor prop.",
+				"Pen: <Pen.SuggestionMenu.Root> must be used within <Pen.Editor.Root>, receive editor, or receive options.editor.",
 			);
 		}
-		throw new Error("Missing editor for Pen.SlashMenu.Root");
+		throw new Error("Missing editor for Pen.SuggestionMenu.Root");
 	}
 
-	const menuState = useSlashMenu(editor);
+	const controller = useSuggestionMenu({
+		...options,
+		editor,
+	});
 
 	return (
-		<SlashMenuRootContent
+		<SuggestionMenuRootContent
 			{...rest}
-			controller={menuState}
+			controller={controller}
 			editor={editor}
 		/>
 	);
 }
 
-type SlashMenuRootContentProps = Omit<
-	SlashMenuRootProps,
-	"controller" | "editor"
+type SuggestionMenuRootContentProps<TItem> = Omit<
+	SuggestionMenuRootProps<TItem>,
+	"controller" | "editor" | "options"
 > & {
-	controller: SlashMenuContextValue;
+	controller: SuggestionMenuController<TItem>;
 	editor?: Editor;
 };
 
-function SlashMenuRootContent(props: SlashMenuRootContentProps) {
+function SuggestionMenuRootContent<TItem>(
+	props: SuggestionMenuRootContentProps<TItem>,
+) {
 	const {
 		controller,
 		editor: editorProp,
@@ -96,11 +131,10 @@ function SlashMenuRootContent(props: SlashMenuRootContentProps) {
 		...rest
 	} = props;
 	const editorContext = useContext(EditorContext);
-	const editor = editorProp ?? controller.editor ?? editorContext?.editor;
-
+	const editor = editorProp ?? editorContext?.editor;
 	const isOpen = controlledOpen ?? controller.open;
 
-	const wrappedState: SlashMenuContextValue = {
+	const wrappedState: SuggestionMenuContextValue<TItem> = {
 		...controller,
 		editor,
 		open: isOpen,
@@ -120,7 +154,9 @@ function SlashMenuRootContent(props: SlashMenuRootContentProps) {
 	wrappedStateRef.current = wrappedState;
 
 	useEffect(() => {
-		if (!isOpen) return;
+		if (!isOpen) {
+			return;
+		}
 
 		const handleKeyDown = (event: KeyboardEvent) => {
 			const currentState = wrappedStateRef.current;
@@ -176,21 +212,25 @@ function SlashMenuRootContent(props: SlashMenuRootContentProps) {
 		};
 
 		document.addEventListener("keydown", handleKeyDown, true);
-		return () =>
+		return () => {
 			document.removeEventListener("keydown", handleKeyDown, true);
+		};
 	}, [isOpen]);
 
 	const primitiveProps: Record<string, unknown> = {
 		role: "dialog",
-		"data-pen-slash-menu": "",
+		"data-pen-suggestion-menu": "",
 		"data-open": isOpen || undefined,
+		"data-trigger": controller.target?.trigger,
 	};
 
 	return (
-		<SlashMenuContext.Provider value={wrappedState}>
+		<SuggestionMenuContext.Provider
+			value={wrappedState as SuggestionMenuContextValue<unknown>}
+		>
 			{renderAsChild(rest, "div", primitiveProps)}
-		</SlashMenuContext.Provider>
+		</SuggestionMenuContext.Provider>
 	);
 }
 
-export { SlashMenuContext };
+export { SuggestionMenuContext };
