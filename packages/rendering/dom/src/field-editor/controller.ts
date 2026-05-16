@@ -26,11 +26,24 @@ export interface FieldEditorRootHandle {
 		anchorOffset: number,
 		focusOffset: number,
 	): void;
+	commitProgrammaticTextSelection(
+		blockId: string,
+		anchorOffset: number,
+		focusOffset: number,
+	): void;
 }
 
 export interface FieldEditorDomController extends FieldEditorSelectionState {
 	setComposing(composing: boolean): void;
 	shouldHandleDomSelectionChange(isApplyingSelection: number): boolean;
+	resolveProgrammaticInputRange(
+		blockId: string | null,
+		liveRange: { start: number; end: number } | null,
+	): { start: number; end: number } | null;
+	shouldIgnoreDomTextSelection(
+		anchor: { blockId: string; offset: number },
+		focus: { blockId: string; offset: number },
+	): boolean;
 	applyDocumentTextSelection(
 		anchor: { blockId: string; offset: number },
 		focus: { blockId: string; offset: number },
@@ -52,6 +65,11 @@ export interface FieldEditorDomController extends FieldEditorSelectionState {
 		focusOffset: number,
 	): void;
 	activateTextSelection(
+		blockId: string,
+		anchorOffset: number,
+		focusOffset: number,
+	): void;
+	commitProgrammaticTextSelection(
 		blockId: string,
 		anchorOffset: number,
 		focusOffset: number,

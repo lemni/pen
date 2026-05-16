@@ -18,9 +18,7 @@ import { FakeEditContext } from "./utils/fakeEditContext";
 	globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-function createEditor(
-	options: Parameters<typeof createCoreEditor>[0] = {},
-) {
+function createEditor(options: Parameters<typeof createCoreEditor>[0] = {}) {
 	const { without: _without, ...restOptions } = options;
 	return createCoreEditor({
 		...restOptions,
@@ -1496,9 +1494,9 @@ describe("@pen/react escape key handling", () => {
 			activeBlockIds: [firstBlockId, secondBlockId],
 			mode: "expanded",
 		});
-		expect(
-			blocksHost?.hasAttribute("data-pen-field-editor-surface"),
-		).toBe(true);
+		expect(blocksHost?.hasAttribute("data-pen-field-editor-surface")).toBe(
+			true,
+		);
 		expect(
 			blocksHost?.hasAttribute("data-pen-field-editor-active-surface"),
 		).toBe(true);
@@ -1964,7 +1962,10 @@ describe("@pen/react escape key handling", () => {
 		try {
 			(
 				document as Document & {
-					caretRangeFromPoint?: (x: number, y: number) => Range | null;
+					caretRangeFromPoint?: (
+						x: number,
+						y: number,
+					) => Range | null;
 				}
 			).caretRangeFromPoint = (_x, y) => {
 				const range = document.createRange();
@@ -2015,7 +2016,10 @@ describe("@pen/react escape key handling", () => {
 		} finally {
 			(
 				document as Document & {
-					caretRangeFromPoint?: (x: number, y: number) => Range | null;
+					caretRangeFromPoint?: (
+						x: number,
+						y: number,
+					) => Range | null;
 				}
 			).caretRangeFromPoint = originalCaretRangeFromPoint;
 		}
@@ -2097,7 +2101,10 @@ describe("@pen/react escape key handling", () => {
 		try {
 			(
 				document as Document & {
-					caretRangeFromPoint?: (x: number, y: number) => Range | null;
+					caretRangeFromPoint?: (
+						x: number,
+						y: number,
+					) => Range | null;
 				}
 			).caretRangeFromPoint = (_x, y) => {
 				const range = document.createRange();
@@ -2146,7 +2153,10 @@ describe("@pen/react escape key handling", () => {
 		} finally {
 			(
 				document as Document & {
-					caretRangeFromPoint?: (x: number, y: number) => Range | null;
+					caretRangeFromPoint?: (
+						x: number,
+						y: number,
+					) => Range | null;
 				}
 			).caretRangeFromPoint = originalCaretRangeFromPoint;
 		}
@@ -2225,7 +2235,10 @@ describe("@pen/react escape key handling", () => {
 		try {
 			(
 				document as Document & {
-					caretRangeFromPoint?: (x: number, y: number) => Range | null;
+					caretRangeFromPoint?: (
+						x: number,
+						y: number,
+					) => Range | null;
 				}
 			).caretRangeFromPoint = (_x, y) => {
 				const range = document.createRange();
@@ -2274,7 +2287,10 @@ describe("@pen/react escape key handling", () => {
 		} finally {
 			(
 				document as Document & {
-					caretRangeFromPoint?: (x: number, y: number) => Range | null;
+					caretRangeFromPoint?: (
+						x: number,
+						y: number,
+					) => Range | null;
 				}
 			).caretRangeFromPoint = originalCaretRangeFromPoint;
 		}
@@ -2352,7 +2368,10 @@ describe("@pen/react escape key handling", () => {
 		try {
 			(
 				document as Document & {
-					caretRangeFromPoint?: (x: number, y: number) => Range | null;
+					caretRangeFromPoint?: (
+						x: number,
+						y: number,
+					) => Range | null;
 				}
 			).caretRangeFromPoint = (_x, y) => {
 				const range = document.createRange();
@@ -2395,7 +2414,10 @@ describe("@pen/react escape key handling", () => {
 		} finally {
 			(
 				document as Document & {
-					caretRangeFromPoint?: (x: number, y: number) => Range | null;
+					caretRangeFromPoint?: (
+						x: number,
+						y: number,
+					) => Range | null;
 				}
 			).caretRangeFromPoint = originalCaretRangeFromPoint;
 		}
@@ -2799,6 +2821,182 @@ describe("@pen/react escape key handling", () => {
 		});
 		container.remove();
 		editor.destroy();
+	});
+
+	it("uses the programmatic post-commit caret when a stale selectionchange arrives before typing", async () => {
+		const editor = createEditor();
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Hel" },
+		]);
+
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		const fieldEditor = getFieldEditor(editor);
+		const inlineElement = container.querySelector(
+			"[data-pen-inline-content]",
+		) as HTMLElement | null;
+
+		expect(inlineElement).not.toBeNull();
+
+		await act(async () => {
+			fieldEditor.activateTextSelection(blockId, 3, 3);
+			fieldEditor.focus();
+			fieldEditor.setFocused(true);
+			await flushAnimationFrames(2);
+		});
+
+		await act(async () => {
+			editor.apply(
+				[
+					{
+						type: "insert-text",
+						blockId,
+						offset: 3,
+						text: "lo world",
+					},
+				],
+				{ origin: "ai" },
+			);
+			fieldEditor.commitProgrammaticTextSelection(blockId, 11, 11);
+			await flushAnimationFrames(2);
+		});
+
+		await act(async () => {
+			setNativeSelectionRange(inlineElement!, 11, inlineElement!, 11);
+			document.dispatchEvent(new Event("selectionchange"));
+			setNativeSelectionRange(inlineElement!, 3, inlineElement!, 3);
+			document.dispatchEvent(new Event("selectionchange"));
+			inlineElement?.dispatchEvent(
+				new InputEvent("beforeinput", {
+					bubbles: true,
+					cancelable: true,
+					inputType: "insertText",
+					data: "!",
+				}),
+			);
+			await flushAnimationFrames(2);
+		});
+
+		expect(editor.getBlock(blockId)?.textContent()).toBe("Hello world!");
+		expect(editor.selection).toMatchObject({
+			type: "text",
+			anchor: { blockId, offset: 12 },
+			focus: { blockId, offset: 12 },
+			isCollapsed: true,
+		});
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		editor.destroy();
+	});
+
+	it("uses the programmatic post-commit caret for stale EditContext text updates", async () => {
+		const originalEditContext = (
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext;
+		(
+			globalThis as typeof globalThis & {
+				EditContext?: typeof FakeEditContext;
+			}
+		).EditContext = FakeEditContext;
+
+		try {
+			const editor = createEditor();
+			const blockId = editor.firstBlock()!.id;
+
+			editor.apply([
+				{ type: "insert-text", blockId, offset: 0, text: "Hel" },
+			]);
+
+			const container = document.createElement("div");
+			document.body.appendChild(container);
+			const root = createRoot(container);
+
+			await act(async () => {
+				root.render(
+					<Pen.Editor.Root editor={editor}>
+						<Pen.Editor.Content />
+					</Pen.Editor.Root>,
+				);
+			});
+
+			const fieldEditor = getFieldEditor(editor);
+			const inlineElement = container.querySelector(
+				"[data-pen-inline-content]",
+			) as (HTMLElement & { editContext?: FakeEditContext }) | null;
+
+			expect(inlineElement).not.toBeNull();
+
+			await act(async () => {
+				fieldEditor.activateTextSelection(blockId, 3, 3);
+				await flushAnimationFrames(2);
+			});
+
+			await act(async () => {
+				editor.apply(
+					[
+						{
+							type: "insert-text",
+							blockId,
+							offset: 3,
+							text: "lo world",
+						},
+					],
+					{ origin: "ai" },
+				);
+				fieldEditor.commitProgrammaticTextSelection(blockId, 11, 11);
+				await flushAnimationFrames(2);
+			});
+
+			await act(async () => {
+				inlineElement?.editContext?.emit("textupdate", {
+					updateRangeStart: 3,
+					updateRangeEnd: 3,
+					text: "!",
+					selectionStart: 4,
+					selectionEnd: 4,
+				});
+				await flushAnimationFrames(2);
+			});
+
+			expect(editor.getBlock(blockId)?.textContent()).toBe(
+				"Hello world!",
+			);
+			expect(editor.selection).toMatchObject({
+				type: "text",
+				anchor: { blockId, offset: 12 },
+				focus: { blockId, offset: 12 },
+				isCollapsed: true,
+			});
+
+			await act(async () => {
+				root.unmount();
+			});
+			container.remove();
+			editor.destroy();
+		} finally {
+			(
+				globalThis as typeof globalThis & {
+					EditContext?: typeof FakeEditContext;
+				}
+			).EditContext = originalEditContext;
+		}
 	});
 
 	it("snaps delegated block drag targets to legal block boundaries", async () => {

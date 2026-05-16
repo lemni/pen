@@ -149,9 +149,9 @@ export function fullReconcileToDOM(
 	const renderedDeltas =
 		options?.inlineDecorations && options.inlineDecorations.length > 0
 			? applyInlineDecorationsToDeltas(
-					textDeltas,
-					options.inlineDecorations,
-				)
+				textDeltas,
+				options.inlineDecorations,
+			)
 			: textDeltas;
 	fullReconcileDeltasToDOM(renderedDeltas, element, registry, options);
 }

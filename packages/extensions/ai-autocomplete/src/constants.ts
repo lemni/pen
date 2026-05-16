@@ -1,4 +1,4 @@
-export const DEFAULT_DEBOUNCE_MS = 80;
+export const DEFAULT_DEBOUNCE_MS = 100;
 export const DEFAULT_MAX_PREFIX_CHARS = 400;
 export const DEFAULT_MAX_SUFFIX_CHARS = 200;
 export const DEFAULT_MAX_NEIGHBOR_CHARS = 160;

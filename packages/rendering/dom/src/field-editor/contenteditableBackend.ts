@@ -685,6 +685,21 @@ export class ContentEditableBackend implements InputBackend {
 		}
 	};
 
+	resolveCurrentInputRange(): {
+		start: number;
+		end: number;
+	} | null {
+		const liveRange = this.element
+			? getSelectionOffsets(this.element)
+			: null;
+		return (
+			this.fieldEditor.resolveProgrammaticInputRange(
+				this.fieldEditor.focusBlockId,
+				liveRange,
+			) ?? liveRange
+		);
+	}
+
 	private handleSelectionChange = (): void => {
 		if (!this.element) return;
 		if (
@@ -724,6 +739,16 @@ export class ContentEditableBackend implements InputBackend {
 				type: "block",
 				blockIds: normalizedSelection.blockIds,
 			});
+			return;
+		}
+
+		if (
+			this.fieldEditor.shouldIgnoreDomTextSelection(
+				normalizedSelection.anchor,
+				normalizedSelection.focus,
+			)
+		) {
+			this.restoreDOMSelectionFromEditor();
 			return;
 		}
 
@@ -775,7 +800,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 		}
 		const blockId = fe.focusBlockId;
 		if (!blockId) return;
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 		if (backend.applyListInputRule({ blockId, range, text })) {
 			return;
@@ -801,7 +826,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 		const targetRanges = event.getTargetRanges?.();
 		const range = targetRanges?.length
 			? staticRangeToOffsets(targetRanges[0], element)
-			: getSelectionOffsets(element);
+			: backend.resolveCurrentInputRange();
 		if (!range) return;
 		if (backend.applyListInputRule({ blockId, range, text })) {
 			return;
@@ -820,7 +845,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 			editor.deleteSelection();
 			return;
 		}
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 
 		const target = applyDeleteBehavior(editor, {
@@ -866,7 +891,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 			editor.deleteSelection();
 			return;
 		}
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 
 		const target = applyDeleteBehavior(editor, {
@@ -903,7 +928,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 			editor.deleteSelection();
 			return;
 		}
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range || range.start === range.end) return;
 
 		backend.applyInlineTextEdit({
@@ -914,7 +939,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 	},
 
 	deleteWordBackward: (_event, editor, ytext, fe, element, backend) => {
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 
 		if (range.start !== range.end) {
@@ -940,7 +965,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 	},
 
 	deleteWordForward: (_event, editor, ytext, fe, element, backend) => {
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 
 		if (range.start !== range.end) {
@@ -965,14 +990,14 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 		}
 	},
 
-	insertParagraph: (_event, editor, ytext, fe, element) => {
+	insertParagraph: (_event, editor, ytext, fe, element, backend) => {
 		const blockId = fe.focusBlockId;
 		if (!blockId) return;
 		const target = applyEnterBehavior(editor, {
 			blockId,
 			inputMode: fe.inputMode,
 			ytext,
-			range: getSelectionOffsets(element),
+			range: backend.resolveCurrentInputRange(),
 		});
 		if (!target) return;
 
@@ -984,7 +1009,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 	},
 
 	insertLineBreak: (_event, _editor, ytext, fe, element, backend) => {
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 		const blockId = fe.focusBlockId;
 		if (!blockId) return;

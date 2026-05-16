@@ -425,6 +425,11 @@ export class EditContextBackend implements InputBackend {
 		const isCollapsedInsert =
 			input.text.length > 0 &&
 			input.updateRangeStart === input.updateRangeEnd;
+		const programmaticInputRange =
+			this.fieldEditor.resolveProgrammaticInputRange(input.blockId, {
+				start: input.updateRangeStart,
+				end: input.updateRangeEnd,
+			});
 		const editContextCaret = collapsedSelectionOffset(
 			this.editContextSelection,
 			input.blockId,
@@ -453,20 +458,24 @@ export class EditContextBackend implements InputBackend {
 				input.updateRangeEnd !== editorSelectionRange.end);
 		const shouldClampEmptyRange =
 			isLogicallyEmpty && authoritativeInputCaret == null;
-		const rangeStart = shouldUseEditorSelectionRange
-			? editorSelectionRange.start
-			: shouldClampEmptyRange
-				? 0
-				: shouldUseTrustedCaret
-					? trustedCaret
-					: input.updateRangeStart;
-		const rangeEnd = shouldUseEditorSelectionRange
-			? editorSelectionRange.end
-			: shouldClampEmptyRange
-				? 0
-				: shouldUseTrustedCaret
-					? trustedCaret
-					: input.updateRangeEnd;
+		const rangeStart = programmaticInputRange
+			? programmaticInputRange.start
+			: shouldUseEditorSelectionRange
+				? editorSelectionRange.start
+				: shouldClampEmptyRange
+					? 0
+					: shouldUseTrustedCaret
+						? trustedCaret
+						: input.updateRangeStart;
+		const rangeEnd = programmaticInputRange
+			? programmaticInputRange.end
+			: shouldUseEditorSelectionRange
+				? editorSelectionRange.end
+				: shouldClampEmptyRange
+					? 0
+					: shouldUseTrustedCaret
+						? trustedCaret
+						: input.updateRangeEnd;
 		const hasCollapsedEventSelection =
 			typeof input.selectionStart !== "number" ||
 			typeof input.selectionEnd !== "number" ||
@@ -1085,7 +1094,10 @@ export class EditContextBackend implements InputBackend {
 			};
 		}
 
-		if (liveDomOffsets && this.shouldUseLiveDomSelection(blockId, liveDomOffsets)) {
+		if (
+			liveDomOffsets &&
+			this.shouldUseLiveDomSelection(blockId, liveDomOffsets)
+		) {
 			return {
 				range: directionalSelectionToRange(liveDomOffsets),
 				nextSelection: {
@@ -1427,10 +1439,7 @@ function rangeToSelection(
 	};
 }
 
-function rangesEqual(
-	left: EditContextRange,
-	right: EditContextRange,
-): boolean {
+function rangesEqual(left: EditContextRange, right: EditContextRange): boolean {
 	return left.start === right.start && left.end === right.end;
 }
 
