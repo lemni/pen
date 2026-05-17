@@ -308,6 +308,9 @@ export type {
 } from "./persistence";
 
 // ── Decorations ─────────────────────────────────────────────
+export {
+	INLINE_COMPLETION_VISIBLE_BLOCK_ATTRIBUTE,
+} from "../constants/decorations";
 export type {
 	Decoration,
 	InlineDecoration,

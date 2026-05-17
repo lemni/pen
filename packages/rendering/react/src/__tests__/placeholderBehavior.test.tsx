@@ -3,7 +3,7 @@
 import React, { act } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
-import { createEditor } from "@pen/core";
+import { createEditor, ensureInlineCompletionController } from "@pen/core";
 import type { BlockHandle, BlockRenderContext } from "@pen/types";
 import { defaultPreset } from "@pen/preset-default";
 import { InlineContent } from "../primitives/editor/inlineContent";
@@ -29,7 +29,7 @@ function PlaceholderParagraphRenderer(
 		>
 			<InlineContent
 				blockId={block.id}
-				placeholder="Type / for commands"
+				placeholder="Type ⌘I for AI Agent, or / for commands"
 			/>
 		</div>
 	);
@@ -75,6 +75,187 @@ describe("@pen/react placeholder behavior", () => {
 			root.unmount();
 		});
 		container.remove();
+		editor.destroy();
+	});
+
+	it("hides the document empty placeholder while an inline completion is visible", async () => {
+		registerRenderer("paragraph", PlaceholderParagraphRenderer);
+
+		const editor = createEditor({
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
+		});
+		const blockId = editor.firstBlock()!.id;
+		const inlineCompletion = ensureInlineCompletionController(editor);
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content emptyPlaceholder="Start writing..." />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		expect(
+			container.querySelectorAll("[data-placeholder-visible]"),
+		).toHaveLength(1);
+
+		await act(async () => {
+			inlineCompletion.controller.showSuggestion({
+				id: "suggestion-1",
+				blockId,
+				offset: 0,
+				text: "",
+				type: "inline",
+				previewBlocks: [
+					{
+						id: "preview-1",
+						text: "A suggested opening",
+						blockType: "paragraph",
+					},
+				],
+			});
+		});
+
+		expect(
+			container.querySelectorAll("[data-placeholder-visible]"),
+		).toHaveLength(0);
+
+		await act(async () => {
+			inlineCompletion.controller.dismissSuggestion();
+		});
+
+		expect(
+			container.querySelectorAll("[data-placeholder-visible]"),
+		).toHaveLength(1);
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		inlineCompletion.release();
+		editor.destroy();
+	});
+
+	it("hides schema placeholders while an inline completion is visible", async () => {
+		const editor = createEditor({
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
+		});
+		const blockId = editor.firstBlock()!.id;
+		const inlineCompletion = ensureInlineCompletionController(editor);
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		await act(async () => {
+			editor.selectText(blockId, 0, 0);
+		});
+
+		const placeholders = container.querySelectorAll("[data-placeholder-visible]");
+		expect(placeholders).toHaveLength(1);
+		expect(placeholders[0]?.getAttribute("data-placeholder")).toContain(
+			"/ for commands",
+		);
+
+		await act(async () => {
+			inlineCompletion.controller.showSuggestion({
+				id: "suggestion-1",
+				blockId,
+				offset: 0,
+				text: "",
+				type: "inline",
+				previewBlocks: [
+					{
+						id: "preview-1",
+						text: "A suggested opening",
+						blockType: "paragraph",
+					},
+				],
+			});
+		});
+
+		expect(
+			container.querySelectorAll("[data-placeholder-visible]"),
+		).toHaveLength(0);
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		inlineCompletion.release();
+		editor.destroy();
+	});
+
+	it("renders inline completion text on an empty block surface", async () => {
+		const editor = createEditor({
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
+		});
+		const blockId = editor.firstBlock()!.id;
+		const inlineCompletion = ensureInlineCompletionController(editor);
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content emptyPlaceholder="Start writing..." />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		await act(async () => {
+			editor.selectText(blockId, 0, 0);
+			inlineCompletion.controller.showSuggestion({
+				id: "suggestion-1",
+				blockId,
+				offset: 0,
+				text: "Thanks for the update.",
+				type: "inline",
+			});
+		});
+
+		const suggestionSurface = container.querySelector(".pen-ephemeral-suggestion");
+		expect(suggestionSurface?.getAttribute("data-suggestion-id")).toBe(
+			"suggestion-1",
+		);
+		expect(suggestionSurface?.getAttribute("data-suggestion-text")).toBe(
+			"Thanks for the update.",
+		);
+		expect(suggestionSurface?.getAttribute("data-suggestion-placement")).toBe(
+			"after",
+		);
+		expect(
+			container.querySelectorAll("[data-placeholder-visible]"),
+		).toHaveLength(0);
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		inlineCompletion.release();
 		editor.destroy();
 	});
 
@@ -213,7 +394,7 @@ describe("@pen/react placeholder behavior", () => {
 		const placeholders = container.querySelectorAll("[data-placeholder-visible]");
 		expect(placeholders).toHaveLength(1);
 		expect(placeholders[0]?.getAttribute("data-placeholder")).toBe(
-			"Type / for commands",
+			"Type ⌘I for AI Agent, or / for commands",
 		);
 		expect(
 			placeholders[0]?.closest("[data-block-id]")?.getAttribute("data-block-id"),
@@ -223,6 +404,77 @@ describe("@pen/react placeholder behavior", () => {
 			root.unmount();
 		});
 		container.remove();
+		editor.destroy();
+	});
+
+	it("hides active empty block placeholders while any inline completion is visible", async () => {
+		registerRenderer("paragraph", PlaceholderParagraphRenderer);
+
+		const editor = createEditor({
+			preset: defaultPreset({
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+			}),
+		});
+		const firstBlockId = editor.firstBlock()!.id;
+		const secondBlockId = crypto.randomUUID();
+		const inlineCompletion = ensureInlineCompletionController(editor);
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		const root = createRoot(container);
+
+		editor.apply([
+			{
+				type: "insert-text",
+				blockId: firstBlockId,
+				offset: 0,
+				text: "Hello",
+			},
+			{
+				type: "insert-block",
+				blockId: secondBlockId,
+				blockType: "paragraph",
+				props: {},
+				position: { after: firstBlockId },
+			},
+		]);
+
+		await act(async () => {
+			root.render(
+				<Pen.Editor.Root editor={editor}>
+					<Pen.Editor.Content emptyPlaceholder="Start writing..." />
+				</Pen.Editor.Root>,
+			);
+		});
+
+		await act(async () => {
+			editor.selectText(secondBlockId, 0, 0);
+		});
+
+		expect(
+			container.querySelectorAll("[data-placeholder-visible]"),
+		).toHaveLength(1);
+
+		await act(async () => {
+			inlineCompletion.controller.showSuggestion({
+				id: "suggestion-1",
+				blockId: firstBlockId,
+				offset: 5,
+				text: " there",
+				type: "inline",
+			});
+		});
+
+		expect(
+			container.querySelectorAll("[data-placeholder-visible]"),
+		).toHaveLength(0);
+
+		await act(async () => {
+			root.unmount();
+		});
+		container.remove();
+		inlineCompletion.release();
 		editor.destroy();
 	});
 });

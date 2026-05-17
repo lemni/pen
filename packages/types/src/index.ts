@@ -60,3 +60,6 @@ export {
   HISTORY_CONTROLLER_SLOT,
 	HISTORY_ORIGIN_TAG,
 } from "./constants/slots";
+export {
+	INLINE_COMPLETION_VISIBLE_BLOCK_ATTRIBUTE,
+} from "./constants/decorations";
