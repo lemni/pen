@@ -59,6 +59,7 @@ class InlineCompletionControllerImpl implements InlineCompletionController {
 		};
 
 		if (suggestion.type === "inline") {
+			const nextOffset = suggestion.offset + suggestion.text.length;
 			this._editor.apply(
 				[{
 					type: "insert-text",
@@ -68,6 +69,7 @@ class InlineCompletionControllerImpl implements InlineCompletionController {
 				}],
 				{ origin: "ai", undoGroup: true },
 			);
+			this._editor.selectText(suggestion.blockId, nextOffset, nextOffset);
 			this._emit();
 			return true;
 		}
@@ -90,6 +92,11 @@ class InlineCompletionControllerImpl implements InlineCompletionController {
 				},
 			],
 			{ origin: "ai", undoGroup: true },
+		);
+		this._editor.selectText(
+			blockId,
+			suggestion.text.length,
+			suggestion.text.length,
 		);
 		this._emit();
 		return true;

@@ -21,6 +21,8 @@ export const DATA_ATTRS = {
 	viewId: "data-pen-view-id",
 	editorBlock: "data-pen-editor-block",
 	inlineContent: "data-pen-inline-content",
+	inlineAtom: "data-pen-inline-atom",
+	inlineAtomType: "data-pen-inline-atom-type",
 	fieldEditorSurface: "data-pen-field-editor-surface",
 	fieldEditorActiveSurface: "data-pen-field-editor-active-surface",
 	fieldEditor: "data-pen-field-editor",

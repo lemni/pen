@@ -3,7 +3,10 @@ import {
 	ensureInlineCompletionController,
 	getInlineCompletionController as getInlineCompletionControllerFromCore,
 } from "@pen/core";
-import { buildDocumentWriteOps, getDocumentToolRuntime } from "@pen/document-ops";
+import {
+	buildDocumentWriteOps,
+	getDocumentToolRuntime,
+} from "@pen/document-ops";
 import type {
 	Decoration,
 	DocumentOp,
@@ -14,6 +17,7 @@ import type {
 	ModelAdapter,
 	ModelOperationScopedRangeTarget,
 	ModelOperationSelectionTarget,
+	OpOrigin,
 	SelectionState,
 	StreamingTarget,
 	TextSelection,
@@ -28,6 +32,7 @@ import {
 	AI_REVIEW_CONTROLLER_SLOT as CORE_AI_REVIEW_CONTROLLER_SLOT,
 	INLINE_COMPLETION_SLOT as CORE_INLINE_COMPLETION_SLOT,
 	defineExtension,
+	getOpOriginType,
 	isScopedSelectionTarget,
 	renderSelectionTargetBlockText,
 	resolveSelectionTargetBlockIds,
@@ -178,14 +183,14 @@ const AI_SHORTCUT_KEY_BINDINGS: readonly KeyBinding[] = [
 
 type GenerationTarget =
 	| {
-		type: "block";
-		blockId: string;
-		offset: number;
-	}
+			type: "block";
+			blockId: string;
+			offset: number;
+	  }
 	| {
-		type: "selection";
-		selection: TextSelection;
-	};
+			type: "selection";
+			selection: TextSelection;
+	  };
 
 interface GenerationExecutionContext {
 	sessionId?: string;
@@ -231,21 +236,17 @@ function isLocalRequestedOperation(
 		operation?.kind === "rewrite-selection" ||
 		operation?.kind === "rewrite-block" ||
 		operation?.kind === "continue-block" ||
-		(
-			operation?.kind === "document-transform" &&
+		(operation?.kind === "document-transform" &&
 			operation.target.kind === "document" &&
-			(
-				operation.target.transform === "rewrite" ||
+			(operation.target.transform === "rewrite" ||
 				operation.target.transform === "remove" ||
-				operation.target.placement === "replace-blocks"
-			)
-		)
+				operation.target.placement === "replace-blocks"))
 	);
 }
 
 const EMPTY_TOOL_RUNTIME: ToolRuntime = {
-	registerTool(_def: ToolDefinition): void { },
-	unregisterTool(_name: string): void { },
+	registerTool(_def: ToolDefinition): void {},
+	unregisterTool(_name: string): void {},
 	listTools(): readonly ToolDefinition[] {
 		return [];
 	},
@@ -296,7 +297,7 @@ class AIInlineHistoryService implements AIInlineHistoryController {
 			undoInlineHistory: () => boolean;
 			redoInlineHistory: () => boolean;
 		},
-	) { }
+	) {}
 
 	canUndoInlineHistory(): boolean {
 		return this._handlers.canUndoInlineHistory();
@@ -332,7 +333,7 @@ class AIReviewService implements AIReviewController {
 			acceptAllSuggestions: () => void;
 			rejectAllSuggestions: () => void;
 		},
-	) { }
+	) {}
 
 	getSuggestions(): readonly PersistentSuggestion[] {
 		return this._handlers.getSuggestions();
@@ -382,8 +383,10 @@ class AIControllerImpl implements AIController {
 	private readonly _undoHistoryMetadata: UndoHistoryMetadataController | null;
 	private _inlineHistory: AIInlineHistorySnapshot[] = [];
 	private _inlineHistoryIndex = -1;
-	private _pendingInlineHistoryRestore: AIInlineHistoryRestoreRequest | null = null;
-	private _queuedInlineHistoryShortcutDirections: AIInlineHistoryDirection[] = [];
+	private _pendingInlineHistoryRestore: AIInlineHistoryRestoreRequest | null =
+		null;
+	private _queuedInlineHistoryShortcutDirections: AIInlineHistoryDirection[] =
+		[];
 	private _queuedInlineHistoryShortcutFlushScheduled = false;
 	private _isRestoringInlineHistory = false;
 	private _handledUndoHistoryRequestId: number | null = null;
@@ -427,14 +430,19 @@ class AIControllerImpl implements AIController {
 
 		this._syncSuggestionsFromDocument();
 
-		this._unsubscribeInlineCompletion = this._inlineCompletion.subscribe(() => {
-			this._setState({
-				ephemeralSuggestion: this._inlineCompletion.getState().visibleSuggestion,
-			});
-		});
-		this._unsubscribeHistoryApplied = this._editor.onHistoryApplied((event) => {
-			this._handleHistoryApplied(event);
-		});
+		this._unsubscribeInlineCompletion = this._inlineCompletion.subscribe(
+			() => {
+				this._setState({
+					ephemeralSuggestion:
+						this._inlineCompletion.getState().visibleSuggestion,
+				});
+			},
+		);
+		this._unsubscribeHistoryApplied = this._editor.onHistoryApplied(
+			(event) => {
+				this._handleHistoryApplied(event);
+			},
+		);
 		this._unsubscribeUndoHistoryMetadata =
 			this._undoHistoryMetadata?.registerMetadataRestorer<AIInlineHistorySnapshot>(
 				AI_UNDO_HISTORY_METADATA_KEY,
@@ -475,7 +483,11 @@ class AIControllerImpl implements AIController {
 		if (!activeSessionId) {
 			return null;
 		}
-		return this._state.sessions.find((session) => session.id === activeSessionId) ?? null;
+		return (
+			this._state.sessions.find(
+				(session) => session.id === activeSessionId,
+			) ?? null
+		);
 	}
 
 	subscribeSessions(listener: () => void): () => void {
@@ -506,7 +518,9 @@ class AIControllerImpl implements AIController {
 				selection?.type === "text"
 					? resolveSelectionText(this._editor, selection)
 					: "",
-			blockType: blockId ? this._editor.getBlock(blockId)?.type ?? null : null,
+			blockType: blockId
+				? (this._editor.getBlock(blockId)?.type ?? null)
+				: null,
 			blockId,
 		};
 	}
@@ -553,7 +567,10 @@ class AIControllerImpl implements AIController {
 		target?: "auto" | "selection" | "block" | "document";
 	}): AISession | null {
 		const surface = input?.surface ?? "inline-edit";
-		const target = resolveSessionTarget(this._editor, input?.target ?? "selection");
+		const target = resolveSessionTarget(
+			this._editor,
+			input?.target ?? "selection",
+		);
 		if (surface === "inline-edit" && target.kind !== "selection") {
 			return null;
 		}
@@ -602,7 +619,9 @@ class AIControllerImpl implements AIController {
 	}
 
 	updateContextualPromptDraft(sessionId: string, draftPrompt: string): void {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (!session?.contextualPrompt) {
 			return;
 		}
@@ -621,7 +640,9 @@ class AIControllerImpl implements AIController {
 		sessionId: string,
 		rect: AIContextualPromptRect | null,
 	): void {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (!session?.contextualPrompt) {
 			return;
 		}
@@ -657,9 +678,13 @@ class AIControllerImpl implements AIController {
 		prompt: string,
 		options?: AICommandExecutionOptions,
 	): Promise<GenerationState> {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (!session) {
-			return Promise.reject(new Error(`Unknown AI session "${sessionId}"`));
+			return Promise.reject(
+				new Error(`Unknown AI session "${sessionId}"`),
+			);
 		}
 		this._recordInlinePromptSubmissionCheckpoint(sessionId, prompt);
 
@@ -673,41 +698,51 @@ class AIControllerImpl implements AIController {
 				this._documentVersion,
 			);
 		if (operation.kind === "rewrite-selection") {
-			const selection = resolveSelectionForRequestedOperation(this._editor, operation);
+			const selection = resolveSelectionForRequestedOperation(
+				this._editor,
+				operation,
+			);
 			if (!selection) {
 				return Promise.reject(
-					new Error("Cannot run a session prompt without a valid text selection"),
+					new Error(
+						"Cannot run a session prompt without a valid text selection",
+					),
 				);
 			}
-			return this._runSelectionGeneration(prompt, selection, undefined, options?.maxSteps, {
-				sessionId,
-				surface: session.surface,
-				operation,
-			});
-		}
-		if (operation.kind === "document-transform") {
-			const targetBlockIds =
-				operation.target.kind === "document" &&
-					(operation.target.blockIds?.length ?? 0) > 0
-					? [...(operation.target.blockIds ?? [])]
-					: undefined;
-			const replacePreviousGeneratedBlocks = shouldReplacePreviousGeneratedBlocks(
-				session,
+			return this._runSelectionGeneration(
 				prompt,
-			);
-			return this._runDocumentGeneration(
-				prompt,
-				options?.blockId ??
-				(operation.target.kind === "document"
-					? operation.target.activeBlockId
-					: null),
+				selection,
 				undefined,
 				options?.maxSteps,
 				{
 					sessionId,
 					surface: session.surface,
 					operation,
-					replaceBlockIds: targetBlockIds ??
+				},
+			);
+		}
+		if (operation.kind === "document-transform") {
+			const targetBlockIds =
+				operation.target.kind === "document" &&
+				(operation.target.blockIds?.length ?? 0) > 0
+					? [...(operation.target.blockIds ?? [])]
+					: undefined;
+			const replacePreviousGeneratedBlocks =
+				shouldReplacePreviousGeneratedBlocks(session, prompt);
+			return this._runDocumentGeneration(
+				prompt,
+				options?.blockId ??
+					(operation.target.kind === "document"
+						? operation.target.activeBlockId
+						: null),
+				undefined,
+				options?.maxSteps,
+				{
+					sessionId,
+					surface: session.surface,
+					operation,
+					replaceBlockIds:
+						targetBlockIds ??
 						(replacePreviousGeneratedBlocks
 							? resolvePreviousGeneratedBlockIds(session)
 							: undefined),
@@ -715,12 +750,15 @@ class AIControllerImpl implements AIController {
 			);
 		}
 		const blockId =
-			options?.blockId ?? resolveBlockIdForRequestedOperation(operation) ??
+			options?.blockId ??
+			resolveBlockIdForRequestedOperation(operation) ??
 			this._editor.lastBlock()?.id ??
 			this._editor.firstBlock()?.id;
 		if (!blockId) {
 			return Promise.reject(
-				new Error("Cannot run an AI session prompt without a target block"),
+				new Error(
+					"Cannot run an AI session prompt without a target block",
+				),
 			);
 		}
 		return this._runBlockGeneration(
@@ -741,7 +779,9 @@ class AIControllerImpl implements AIController {
 		prompt: string,
 		options?: AICommandExecutionOptions,
 	): boolean {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (!session) {
 			return false;
 		}
@@ -757,11 +797,19 @@ class AIControllerImpl implements AIController {
 				options,
 				this._documentVersion,
 			);
-		return canReuseBottomChatSessionOperation(session.operation, nextOperation);
+		return canReuseBottomChatSessionOperation(
+			session.operation,
+			nextOperation,
+		);
 	}
 
-	resolveSession(sessionId: string, resolution: AISessionResolution): boolean {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+	resolveSession(
+		sessionId: string,
+		resolution: AISessionResolution,
+	): boolean {
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (!session) {
 			return false;
 		}
@@ -774,7 +822,8 @@ class AIControllerImpl implements AIController {
 		}
 		if (resolved) {
 			const nextSession =
-				this._state.sessions.find((item) => item.id === sessionId) ?? session;
+				this._state.sessions.find((item) => item.id === sessionId) ??
+				session;
 			this._updateSession(sessionId, {
 				status: "complete",
 				pendingSuggestionIds: [],
@@ -797,18 +846,20 @@ class AIControllerImpl implements AIController {
 		if (this._state.activeGeneration?.sessionId === sessionId) {
 			this.cancelActiveGeneration();
 		}
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		this._updateSession(sessionId, {
 			status: "cancelled",
 			contextualPrompt: session?.contextualPrompt
 				? {
-					...session.contextualPrompt,
-					composer: {
-						...session.contextualPrompt.composer,
-						isOpen: false,
-						isSubmitting: false,
-					},
-				}
+						...session.contextualPrompt,
+						composer: {
+							...session.contextualPrompt.composer,
+							isOpen: false,
+							isSubmitting: false,
+						},
+					}
 				: undefined,
 		});
 	}
@@ -828,7 +879,10 @@ class AIControllerImpl implements AIController {
 	}
 
 	canRedoInlineHistory(): boolean {
-		return this._inlineHistoryIndex >= 0 && this._inlineHistoryIndex < this._inlineHistory.length - 1;
+		return (
+			this._inlineHistoryIndex >= 0 &&
+			this._inlineHistoryIndex < this._inlineHistory.length - 1
+		);
 	}
 
 	undoInlineHistory(): boolean {
@@ -845,12 +899,12 @@ class AIControllerImpl implements AIController {
 		if (this._pendingInlineHistoryRestore) {
 			return true;
 		}
-		return this._canHandleInlineHistoryShortcut(direction, { shortcutOnly: true });
+		return this._canHandleInlineHistoryShortcut(direction, {
+			shortcutOnly: true,
+		});
 	}
 
-	handleInlineHistoryShortcut(
-		direction: AIInlineHistoryDirection,
-	): boolean {
+	handleInlineHistoryShortcut(direction: AIInlineHistoryDirection): boolean {
 		if (this._pendingInlineHistoryRestore) {
 			this._queuedInlineHistoryShortcutDirections.push(direction);
 			return true;
@@ -868,15 +922,26 @@ class AIControllerImpl implements AIController {
 			throw new Error(`Unknown AI command "${commandId}"`);
 		}
 		if (command.guard && !command.guard(ctx)) {
-			throw new Error(`AI command "${command.label}" is not available in this context`);
+			throw new Error(
+				`AI command "${command.label}" is not available in this context`,
+			);
 		}
 
 		const prompt = this._registry.resolvePrompt(command, ctx);
 		this._lastPrompt = prompt;
 		this._lastCommandId = command.id;
 
-		if (command.target === "selection" && ctx.selection?.type === "text" && !ctx.selection.isCollapsed) {
-			return this._runSelectionGeneration(prompt, ctx.selection, command.id, options?.maxSteps);
+		if (
+			command.target === "selection" &&
+			ctx.selection?.type === "text" &&
+			!ctx.selection.isCollapsed
+		) {
+			return this._runSelectionGeneration(
+				prompt,
+				ctx.selection,
+				command.id,
+				options?.maxSteps,
+			);
 		}
 
 		const targetBlockId =
@@ -887,7 +952,12 @@ class AIControllerImpl implements AIController {
 		if (!targetBlockId) {
 			throw new Error("Cannot run AI command without a target block");
 		}
-		return this._runBlockGeneration(prompt, targetBlockId, command.id, options?.maxSteps);
+		return this._runBlockGeneration(
+			prompt,
+			targetBlockId,
+			command.id,
+			options?.maxSteps,
+		);
 	}
 
 	async runPrompt(
@@ -896,13 +966,23 @@ class AIControllerImpl implements AIController {
 	): Promise<GenerationState> {
 		this._lastPrompt = prompt;
 		this._lastCommandId = null;
-		const promptTarget = resolvePromptTarget(this._editor.selection, options?.target);
+		const promptTarget = resolvePromptTarget(
+			this._editor.selection,
+			options?.target,
+		);
 		if (promptTarget === "selection") {
 			const selection = this._editor.selection;
 			if (selection?.type !== "text" || selection.isCollapsed) {
-				throw new Error("Cannot run a selection prompt without selected text");
+				throw new Error(
+					"Cannot run a selection prompt without selected text",
+				);
 			}
-			return this._runSelectionGeneration(prompt, selection, undefined, options?.maxSteps);
+			return this._runSelectionGeneration(
+				prompt,
+				selection,
+				undefined,
+				options?.maxSteps,
+			);
 		}
 		if (promptTarget === "document") {
 			return this._runDocumentGeneration(
@@ -920,7 +1000,12 @@ class AIControllerImpl implements AIController {
 		if (!blockId) {
 			throw new Error("Cannot run AI prompt without a target block");
 		}
-		return this._runBlockGeneration(prompt, blockId, undefined, options?.maxSteps);
+		return this._runBlockGeneration(
+			prompt,
+			blockId,
+			undefined,
+			options?.maxSteps,
+		);
 	}
 
 	async retryActiveGeneration(): Promise<GenerationState | null> {
@@ -941,7 +1026,7 @@ class AIControllerImpl implements AIController {
 			const retryTarget =
 				activeSession?.target.kind === "document"
 					? "document"
-					: active?.target ?? "block";
+					: (active?.target ?? "block");
 			return this.runSessionPrompt(active.sessionId, prompt, {
 				blockId: retryTarget === "document" ? null : blockId,
 				target: retryTarget,
@@ -966,26 +1051,32 @@ class AIControllerImpl implements AIController {
 			const existingSession =
 				generation.sessionId != null
 					? (this._state.sessions.find(
-						(session) => session.id === generation.sessionId,
-					) ?? null)
+							(session) => session.id === generation.sessionId,
+						) ?? null)
 					: null;
 			const existingTurn =
 				generation.turnId != null
-					? (existingSession?.turns.find((turn) => turn.id === generation.turnId) ?? null)
+					? (existingSession?.turns.find(
+							(turn) => turn.id === generation.turnId,
+						) ?? null)
 					: null;
-			const refreshSuggestionIds =
-				existingTurn?.suggestionIds.length
-					? existingTurn.suggestionIds
-					: generation.suggestionIds;
+			const refreshSuggestionIds = existingTurn?.suggestionIds.length
+				? existingTurn.suggestionIds
+				: generation.suggestionIds;
 			const refreshedInlineSelectionTarget =
 				generation.surface === "inline-edit"
-					? resolveAcceptedInlineSelectionTarget(
+					? (resolveAcceptedInlineSelectionTarget(
 							this._editor,
-							existingTurn?.operation ?? generation.operation ?? undefined,
+							existingTurn?.operation ??
+								generation.operation ??
+								undefined,
 							refreshSuggestionIds,
-						) ?? resolveLiveInlineSelectionTarget(this._editor)
+						) ?? resolveLiveInlineSelectionTarget(this._editor))
 					: null;
-			const accepted = acceptSuggestions(this._editor, generation.suggestionIds);
+			const accepted = acceptSuggestions(
+				this._editor,
+				generation.suggestionIds,
+			);
 			if (accepted) {
 				this._resolveActiveGeneration({
 					suggestionIds: [],
@@ -993,19 +1084,25 @@ class AIControllerImpl implements AIController {
 				});
 				if (generation.sessionId) {
 					if (generation.turnId) {
-						this._updateSessionTurn(generation.sessionId, generation.turnId, {
-							status: "accepted",
-							suggestionIds: [],
-							structuredPreview: null,
-							anchor: refreshedInlineSelectionTarget
-								? resolveSessionAnchor(refreshedInlineSelectionTarget.selection)
-								: undefined,
-							selection: refreshedInlineSelectionTarget
-								? resolveSessionSelectionSnapshot(
-										refreshedInlineSelectionTarget.selection,
-									)
-								: undefined,
-						});
+						this._updateSessionTurn(
+							generation.sessionId,
+							generation.turnId,
+							{
+								status: "accepted",
+								suggestionIds: [],
+								structuredPreview: null,
+								anchor: refreshedInlineSelectionTarget
+									? resolveSessionAnchor(
+											refreshedInlineSelectionTarget.selection,
+										)
+									: undefined,
+								selection: refreshedInlineSelectionTarget
+									? resolveSessionSelectionSnapshot(
+											refreshedInlineSelectionTarget.selection,
+										)
+									: undefined,
+							},
+						);
 					}
 					this._updateSession(generation.sessionId, {
 						status: "complete",
@@ -1016,14 +1113,15 @@ class AIControllerImpl implements AIController {
 									anchor: resolveSessionAnchor(
 										refreshedInlineSelectionTarget.selection,
 									),
-									contextualPrompt: existingSession?.contextualPrompt
-										? {
-												...existingSession.contextualPrompt,
-												anchor: resolveContextualPromptAnchor(
-													refreshedInlineSelectionTarget,
-												),
-											}
-										: undefined,
+									contextualPrompt:
+										existingSession?.contextualPrompt
+											? {
+													...existingSession.contextualPrompt,
+													anchor: resolveContextualPromptAnchor(
+														refreshedInlineSelectionTarget,
+													),
+												}
+											: undefined,
 								}
 							: {}),
 					});
@@ -1054,11 +1152,15 @@ class AIControllerImpl implements AIController {
 		});
 		if (generation.sessionId) {
 			if (generation.turnId) {
-				this._updateSessionTurn(generation.sessionId, generation.turnId, {
-					status: "accepted",
-					reviewItemIds: [],
-					structuredPreview: null,
-				});
+				this._updateSessionTurn(
+					generation.sessionId,
+					generation.turnId,
+					{
+						status: "accepted",
+						reviewItemIds: [],
+						structuredPreview: null,
+					},
+				);
 			}
 			this._updateSession(generation.sessionId, {
 				status: "complete",
@@ -1073,7 +1175,10 @@ class AIControllerImpl implements AIController {
 		if (!generation) return false;
 
 		if (generation.suggestionIds && generation.suggestionIds.length > 0) {
-			const rejected = rejectSuggestions(this._editor, generation.suggestionIds);
+			const rejected = rejectSuggestions(
+				this._editor,
+				generation.suggestionIds,
+			);
 			if (rejected) {
 				this._resolveActiveGeneration({
 					suggestionIds: [],
@@ -1082,11 +1187,15 @@ class AIControllerImpl implements AIController {
 				});
 				if (generation.sessionId) {
 					if (generation.turnId) {
-						this._updateSessionTurn(generation.sessionId, generation.turnId, {
-							status: "rejected",
-							suggestionIds: [],
-							structuredPreview: null,
-						});
+						this._updateSessionTurn(
+							generation.sessionId,
+							generation.turnId,
+							{
+								status: "rejected",
+								suggestionIds: [],
+								structuredPreview: null,
+							},
+						);
 					}
 					this._updateSession(generation.sessionId, {
 						status: "complete",
@@ -1105,11 +1214,15 @@ class AIControllerImpl implements AIController {
 			});
 			if (generation.sessionId) {
 				if (generation.turnId) {
-					this._updateSessionTurn(generation.sessionId, generation.turnId, {
-						status: "rejected",
-						reviewItemIds: [],
-						structuredPreview: null,
-					});
+					this._updateSessionTurn(
+						generation.sessionId,
+						generation.turnId,
+						{
+							status: "rejected",
+							reviewItemIds: [],
+							structuredPreview: null,
+						},
+					);
 				}
 				this._updateSession(generation.sessionId, {
 					status: "complete",
@@ -1156,7 +1269,10 @@ class AIControllerImpl implements AIController {
 			return false;
 		}
 
-		const reviewItems = resolveOrderedReviewItems(generation.reviewItems, ids);
+		const reviewItems = resolveOrderedReviewItems(
+			generation.reviewItems,
+			ids,
+		);
 		if (reviewItems.length === 0) {
 			return false;
 		}
@@ -1169,20 +1285,19 @@ class AIControllerImpl implements AIController {
 				return false;
 			}
 			const resolvedSelectedPlans = selectedPlans.filter(
-				(
-					plan,
-				): plan is NonNullable<(typeof selectedPlans)[number]> => plan != null,
+				(plan): plan is NonNullable<(typeof selectedPlans)[number]> =>
+					plan != null,
 			);
 
 			const selectedPlan =
 				resolvedSelectedPlans.length === 1
 					? resolvedSelectedPlans[0]!
 					: {
-						kind: "review_bundle" as const,
-						label: "Bulk review selection",
-						reason: "Apply selected review items together.",
-						plans: resolvedSelectedPlans,
-					};
+							kind: "review_bundle" as const,
+							label: "Bulk review selection",
+							reason: "Apply selected review items together.",
+							plans: resolvedSelectedPlans,
+						};
 			const execution = buildDocumentMutationPlanExecution(
 				this._editor,
 				selectedPlan,
@@ -1191,7 +1306,10 @@ class AIControllerImpl implements AIController {
 				return false;
 			}
 
-			this._editor.apply(execution.ops, { origin: "ai", undoGroup: true });
+			this._editor.apply(execution.ops, {
+				origin: "ai",
+				undoGroup: true,
+			});
 		}
 
 		let nextPlan: GenerationState["plan"] = generation.plan;
@@ -1206,23 +1324,37 @@ class AIControllerImpl implements AIController {
 			: [];
 		this._resolveActiveGeneration({
 			status:
-				nextPlan || action === "accept" ? generation.status : "cancelled",
-			planState: nextPlan ? "validated" : action === "accept" ? "none" : "rejected",
+				nextPlan || action === "accept"
+					? generation.status
+					: "cancelled",
+			planState: nextPlan
+				? "validated"
+				: action === "accept"
+					? "none"
+					: "rejected",
 			plan: nextPlan,
 			reviewItems: nextReviewItems,
 			structuredPreview: nextPlan
 				? buildGenerationStructuredPreviewState(this._editor, {
-					planState: "validated",
-					plan: nextPlan,
-				})
+						planState: "validated",
+						plan: nextPlan,
+					})
 				: null,
 		});
 		if (generation.sessionId) {
 			if (generation.turnId) {
-				this._updateSessionTurn(generation.sessionId, generation.turnId, {
-					status: nextPlan ? "review" : action === "accept" ? "accepted" : "rejected",
-					reviewItemIds: nextReviewItems.map((item) => item.id),
-				});
+				this._updateSessionTurn(
+					generation.sessionId,
+					generation.turnId,
+					{
+						status: nextPlan
+							? "review"
+							: action === "accept"
+								? "accepted"
+								: "rejected",
+						reviewItemIds: nextReviewItems.map((item) => item.id),
+					},
+				);
 			}
 			this._updateSession(generation.sessionId, {
 				status:
@@ -1278,7 +1410,9 @@ class AIControllerImpl implements AIController {
 	}
 
 	showEphemeralSuggestion(
-		suggestion: Parameters<AIInlineCompletionController["showSuggestion"]>[0],
+		suggestion: Parameters<
+			AIInlineCompletionController["showSuggestion"]
+		>[0],
 	): void {
 		this._inlineCompletion.showSuggestion(suggestion);
 	}
@@ -1295,7 +1429,12 @@ class AIControllerImpl implements AIController {
 		return this._suggestions;
 	}
 
-	handleDocumentChange(events: readonly { origin: string; affectedBlocks: readonly string[] }[]): void {
+	handleDocumentChange(
+		events: readonly {
+			origin: OpOrigin;
+			affectedBlocks: readonly string[];
+		}[],
+	): void {
 		if (events.length > 0) {
 			this._documentVersion += 1;
 		}
@@ -1373,7 +1512,12 @@ class AIControllerImpl implements AIController {
 		return decorations;
 	}
 
-	handleExternalCommit(events: readonly { origin: string; affectedBlocks: readonly string[] }[]): void {
+	handleExternalCommit(
+		events: readonly {
+			origin: OpOrigin;
+			affectedBlocks: readonly string[];
+		}[],
+	): void {
 		const active = this._state.activeGeneration;
 		if (!active || active.status !== "streaming") return;
 		if (
@@ -1383,13 +1527,16 @@ class AIControllerImpl implements AIController {
 		) {
 			return;
 		}
-		const touched = events.some((event) =>
-			event.origin !== "ai" &&
-			event.origin !== AI_SESSION_SUGGESTION_ORIGIN &&
-			event.origin !== "system" &&
-			event.origin !== "extension" &&
-			event.affectedBlocks.includes(active.blockId),
-		);
+		const touched = events.some((event) => {
+			const originType = getOpOriginType(event.origin);
+			return (
+				originType !== "ai" &&
+				originType !== AI_SESSION_SUGGESTION_ORIGIN &&
+				originType !== "system" &&
+				originType !== "extension" &&
+				event.affectedBlocks.includes(active.blockId)
+			);
+		});
 		if (!touched) return;
 		this.cancelActiveGeneration();
 	}
@@ -1411,7 +1558,13 @@ class AIControllerImpl implements AIController {
 			blockId,
 			offset: resolveBlockInsertionOffset(this._editor, blockId),
 		};
-		return this._executeGeneration(prompt, target, commandId, maxSteps, context);
+		return this._executeGeneration(
+			prompt,
+			target,
+			commandId,
+			maxSteps,
+			context,
+		);
 	}
 
 	private async _runDocumentGeneration(
@@ -1438,7 +1591,9 @@ class AIControllerImpl implements AIController {
 				null,
 		});
 		if (!insertionAnchor) {
-			throw new Error("Cannot run an AI document prompt without an insertion anchor");
+			throw new Error(
+				"Cannot run an AI document prompt without an insertion anchor",
+			);
 		}
 
 		return this._runBlockGeneration(
@@ -1494,7 +1649,9 @@ class AIControllerImpl implements AIController {
 			baselineSuggestionIds,
 			operation,
 		} = input;
-		const sessionTurnId = context?.sessionId ? crypto.randomUUID() : undefined;
+		const sessionTurnId = context?.sessionId
+			? crypto.randomUUID()
+			: undefined;
 		const mutationMode: NonNullable<GenerationState["mutationMode"]> =
 			"persistent-suggestions";
 		const contentFormat = resolveLocalOperationContentFormat(
@@ -1508,18 +1665,14 @@ class AIControllerImpl implements AIController {
 			contentFormat === "markdown" &&
 			operation.target.blockIds.length > 0;
 		const applyStrategy: AIApplyStrategy | undefined =
-			(
-				operation.kind === "rewrite-block" ||
+			(operation.kind === "rewrite-block" ||
 				streamsMarkdownSelectionPreview ||
-				(
-					operation.kind === "document-transform" &&
+				(operation.kind === "document-transform" &&
 					operation.target.kind === "document" &&
-					(
-						operation.target.placement === "replace-blocks" ||
-						operation.target.placement === "replace-empty-block"
-					)
-				)
-			) && contentFormat === "markdown"
+					(operation.target.placement === "replace-blocks" ||
+						operation.target.placement ===
+							"replace-empty-block"))) &&
+			contentFormat === "markdown"
 				? "markdown-full-replace"
 				: undefined;
 		const seedGeneration: GenerationState = {
@@ -1570,10 +1723,13 @@ class AIControllerImpl implements AIController {
 		const existingSession =
 			context?.sessionId != null
 				? (this._state.sessions.find(
-					(session) => session.id === context.sessionId,
-				) ?? null)
+						(session) => session.id === context.sessionId,
+					) ?? null)
 				: null;
-		const executionPrompt = buildSessionExecutionPrompt(existingSession, prompt);
+		const executionPrompt = buildSessionExecutionPrompt(
+			existingSession,
+			prompt,
+		);
 
 		if (context?.sessionId) {
 			const nextSelectionSnapshot =
@@ -1604,43 +1760,48 @@ class AIControllerImpl implements AIController {
 				],
 				turns: sessionTurnId
 					? [
-						...(existingSession?.turns ?? []),
-						{
-							id: sessionTurnId,
-							prompt,
-							createdAt: Date.now(),
-							undoGroupId: seedGeneration.undoGroupId,
-							generationId: seedGeneration.id,
-							target: target.type,
-							operation,
-							status: "streaming",
-							suggestionIds: [],
-							reviewItemIds: [],
-							generatedBlockIds: [],
-							structuredPreview: null,
-							anchor:
-								target.type === "selection"
-									? resolveSessionAnchor(target.selection)
-									: undefined,
-							selection:
-								target.type === "selection"
-									? resolveSessionSelectionSnapshot(target.selection)
-									: undefined,
-						},
-					]
+							...(existingSession?.turns ?? []),
+							{
+								id: sessionTurnId,
+								prompt,
+								createdAt: Date.now(),
+								undoGroupId: seedGeneration.undoGroupId,
+								generationId: seedGeneration.id,
+								target: target.type,
+								operation,
+								status: "streaming",
+								suggestionIds: [],
+								reviewItemIds: [],
+								generatedBlockIds: [],
+								structuredPreview: null,
+								anchor:
+									target.type === "selection"
+										? resolveSessionAnchor(target.selection)
+										: undefined,
+								selection:
+									target.type === "selection"
+										? resolveSessionSelectionSnapshot(
+												target.selection,
+											)
+										: undefined,
+							},
+						]
 					: existingSession?.turns,
-				contextualPrompt:
-					existingSession?.contextualPrompt
-						? {
+				contextualPrompt: existingSession?.contextualPrompt
+					? {
 							...existingSession.contextualPrompt,
 							anchor:
 								target.type === "selection"
 									? {
-										...existingSession.contextualPrompt.anchor,
-										selectionSnapshot: nextSelectionSnapshot,
-										focusBlockId: target.selection.toRange().start.blockId,
-										status: "valid",
-									}
+											...existingSession.contextualPrompt
+												.anchor,
+											selectionSnapshot:
+												nextSelectionSnapshot,
+											focusBlockId:
+												target.selection.toRange().start
+													.blockId,
+											status: "valid",
+										}
 									: existingSession.contextualPrompt.anchor,
 							composer: {
 								...existingSession.contextualPrompt.composer,
@@ -1650,7 +1811,7 @@ class AIControllerImpl implements AIController {
 								openReason: "user",
 							},
 						}
-						: undefined,
+					: undefined,
 			});
 		}
 
@@ -1678,13 +1839,12 @@ class AIControllerImpl implements AIController {
 		let sawStructuredFinalFrame = false;
 		let streamedSelectionSuggestionIds: string[] = [];
 		let lastStreamedSelectionPreviewText = "";
-		const updatePreview = (
-			text: string,
-			phase: "preview" | "final",
-		) => {
+		const updatePreview = (text: string, phase: "preview" | "final") => {
 			currentText = text;
 			const nextStatus =
-				phase === "preview" && text.length > 0 ? "writing" : this._state.status;
+				phase === "preview" && text.length > 0
+					? "writing"
+					: this._state.status;
 			if (phase === "preview" && text.length > 0) {
 				this._setState({ status: "writing" });
 				this._appendStreamEvent(
@@ -1755,19 +1915,23 @@ class AIControllerImpl implements AIController {
 							operation.target.kind === "scoped-range"
 						) {
 							updatePreview(currentText, "preview");
-							const previewRefresh = this._refreshStreamingMarkdownBlockPreview(
-								operation.target.blockIds?.[0] ?? operation.target.anchor.blockId,
-								currentText,
-								mutationMode,
-								context?.sessionId,
-								baselineSuggestionIds,
-								streamedSelectionSuggestionIds,
-								lastStreamedSelectionPreviewText,
-								true,
-								operation.target.blockIds,
-							);
-							streamedSelectionSuggestionIds = previewRefresh.suggestionIds;
-							lastStreamedSelectionPreviewText = previewRefresh.normalizedText;
+							const previewRefresh =
+								this._refreshStreamingMarkdownBlockPreview(
+									operation.target.blockIds?.[0] ??
+										operation.target.anchor.blockId,
+									currentText,
+									mutationMode,
+									context?.sessionId,
+									baselineSuggestionIds,
+									streamedSelectionSuggestionIds,
+									lastStreamedSelectionPreviewText,
+									true,
+									operation.target.blockIds,
+								);
+							streamedSelectionSuggestionIds =
+								previewRefresh.suggestionIds;
+							lastStreamedSelectionPreviewText =
+								previewRefresh.normalizedText;
 						}
 						continue;
 					}
@@ -1785,19 +1949,23 @@ class AIControllerImpl implements AIController {
 						streamsMarkdownSelectionPreview &&
 						operation.target.kind === "scoped-range"
 					) {
-						const previewRefresh = this._refreshStreamingMarkdownBlockPreview(
-							operation.target.blockIds?.[0] ?? operation.target.anchor.blockId,
-							event.text,
-							mutationMode,
-							context?.sessionId,
-							baselineSuggestionIds,
-							streamedSelectionSuggestionIds,
-							lastStreamedSelectionPreviewText,
-							true,
-							operation.target.blockIds,
-						);
-						streamedSelectionSuggestionIds = previewRefresh.suggestionIds;
-						lastStreamedSelectionPreviewText = previewRefresh.normalizedText;
+						const previewRefresh =
+							this._refreshStreamingMarkdownBlockPreview(
+								operation.target.blockIds?.[0] ??
+									operation.target.anchor.blockId,
+								event.text,
+								mutationMode,
+								context?.sessionId,
+								baselineSuggestionIds,
+								streamedSelectionSuggestionIds,
+								lastStreamedSelectionPreviewText,
+								true,
+								operation.target.blockIds,
+							);
+						streamedSelectionSuggestionIds =
+							previewRefresh.suggestionIds;
+						lastStreamedSelectionPreviewText =
+							previewRefresh.normalizedText;
 					}
 					continue;
 				}
@@ -1812,19 +1980,22 @@ class AIControllerImpl implements AIController {
 						streamsMarkdownSelectionPreview &&
 						operation.target.kind === "scoped-range"
 					) {
-						this._rejectPreviewSuggestions(streamedSelectionSuggestionIds);
+						this._rejectPreviewSuggestions(
+							streamedSelectionSuggestionIds,
+						);
 						streamedSelectionSuggestionIds = [];
 						lastStreamedSelectionPreviewText = "";
 					}
-					currentMutationReceipt = this._commitRequestedOperationResult(
-						operation,
-						event.text,
-						context?.sessionId,
-						{
-							contentFormat,
-							applyStrategy,
-						},
-					);
+					currentMutationReceipt =
+						this._commitRequestedOperationResult(
+							operation,
+							event.text,
+							context?.sessionId,
+							{
+								contentFormat,
+								applyStrategy,
+							},
+						);
 					continue;
 				}
 
@@ -1887,7 +2058,9 @@ class AIControllerImpl implements AIController {
 					blockClass: "flow",
 					transportKind: "flow-text",
 				});
-			const finalStatus = abortController.signal.aborted ? "cancelled" : "complete";
+			const finalStatus = abortController.signal.aborted
+				? "cancelled"
+				: "complete";
 			this._setState({
 				status: "idle",
 				activeGeneration: {
@@ -1910,23 +2083,27 @@ class AIControllerImpl implements AIController {
 					const localReceiptEvidence = mutationReceipt?.evidence;
 					const localGeneratedBlockIds = localReceiptEvidence
 						? [
-							...new Set([
-								...localReceiptEvidence.affectedBlockIds,
-								...localReceiptEvidence.createdBlockIds,
-							]),
-						]
+								...new Set([
+									...localReceiptEvidence.affectedBlockIds,
+									...localReceiptEvidence.createdBlockIds,
+								]),
+							]
 						: operation.kind === "rewrite-selection" &&
-							operation.target.kind === "scoped-range"
+							  operation.target.kind === "scoped-range"
 							? [...operation.target.blockIds]
 							: [];
 					this._updateSessionTurn(context.sessionId, sessionTurnId, {
-						status: finalStatus === "cancelled" ? "cancelled" : "complete",
+						status:
+							finalStatus === "cancelled"
+								? "cancelled"
+								: "complete",
 						suggestionIds,
 						generatedBlockIds: localGeneratedBlockIds,
 					});
 				}
 				this._updateSession(context.sessionId, {
-					status: finalStatus === "cancelled" ? "cancelled" : "complete",
+					status:
+						finalStatus === "cancelled" ? "cancelled" : "complete",
 					pendingSuggestionIds: suggestionIds,
 					pendingReviewItemIds: [],
 				});
@@ -1944,17 +2121,23 @@ class AIControllerImpl implements AIController {
 				activeGeneration: {
 					...seedGeneration,
 					text: currentText,
-					status: abortController.signal.aborted ? "cancelled" : "error",
+					status: abortController.signal.aborted
+						? "cancelled"
+						: "error",
 				},
 			});
 			if (context?.sessionId) {
 				if (sessionTurnId) {
 					this._updateSessionTurn(context.sessionId, sessionTurnId, {
-						status: abortController.signal.aborted ? "cancelled" : "error",
+						status: abortController.signal.aborted
+							? "cancelled"
+							: "error",
 					});
 				}
 				this._updateSession(context.sessionId, {
-					status: abortController.signal.aborted ? "cancelled" : "error",
+					status: abortController.signal.aborted
+						? "cancelled"
+						: "error",
 				});
 			}
 			throw error;
@@ -1978,12 +2161,13 @@ class AIControllerImpl implements AIController {
 
 		this.cancelActiveGeneration();
 		const toolRuntime =
-			getDocumentToolRuntime(this._editor) ??
-			EMPTY_TOOL_RUNTIME;
+			getDocumentToolRuntime(this._editor) ?? EMPTY_TOOL_RUNTIME;
 		const abortController = new AbortController();
 		this._abortController = abortController;
 
-		const baselineSuggestionIds = new Set(this.getSuggestions().map((item) => item.id));
+		const baselineSuggestionIds = new Set(
+			this.getSuggestions().map((item) => item.id),
+		);
 		const blockId =
 			target.type === "block"
 				? target.blockId
@@ -2042,8 +2226,9 @@ class AIControllerImpl implements AIController {
 		const contentFormat = route.contentFormat;
 		let currentText = "";
 		const streamingTarget =
-			this._editor.internals.getSlot<StreamingTarget>("delta-stream:target") ??
-			null;
+			this._editor.internals.getSlot<StreamingTarget>(
+				"delta-stream:target",
+			) ?? null;
 		let blockStreamingStarted = false;
 		const shouldStreamDirectly = route.shouldStreamDirectly;
 		const selectionRange =
@@ -2057,19 +2242,15 @@ class AIControllerImpl implements AIController {
 			route.plannerMode !== "structured" &&
 			contentFormat === "text";
 		const shouldReplaceMarkdownTarget =
-			(context?.replaceTargetBlock === true) ||
-			(
-				route.plannerMode !== "structured" &&
+			context?.replaceTargetBlock === true ||
+			(route.plannerMode !== "structured" &&
 				contentFormat === "markdown" &&
 				target.type === "block" &&
-				(
-					route.targetKind === "table" ||
-					(
-						context?.surface === "bottom-chat" &&
-						shouldReplaceEmptyMarkdownTarget(this._editor.getBlock(blockId))
-					)
-				)
-			);
+				(route.targetKind === "table" ||
+					(context?.surface === "bottom-chat" &&
+						shouldReplaceEmptyMarkdownTarget(
+							this._editor.getBlock(blockId),
+						))));
 		const canStreamSelectionSuggestions =
 			shouldStreamSuggestedText &&
 			target.type === "selection" &&
@@ -2087,35 +2268,43 @@ class AIControllerImpl implements AIController {
 		let streamedSuggestionLength = 0;
 		let streamedMarkdownSuggestionIds: string[] = [];
 		let lastStreamedMarkdownPreviewText = "";
-		const sessionTurnId = context?.sessionId ? crypto.randomUUID() : undefined;
+		const sessionTurnId = context?.sessionId
+			? crypto.randomUUID()
+			: undefined;
 		const existingSession =
 			context?.sessionId != null
 				? (this._state.sessions.find(
-					(session) => session.id === context.sessionId,
-				) ?? null)
+						(session) => session.id === context.sessionId,
+					) ?? null)
 				: null;
-		const executionPrompt = buildSessionExecutionPrompt(existingSession, prompt);
+		const executionPrompt = buildSessionExecutionPrompt(
+			existingSession,
+			prompt,
+		);
 		let shouldTrimLeadingBlankBlockText =
 			target.type === "block" &&
-			shouldTrimLeadingBlankBlockGenerationText(this._editor.getBlock(blockId));
+			shouldTrimLeadingBlankBlockGenerationText(
+				this._editor.getBlock(blockId),
+			);
 		const useStructuredIntentTransport =
-			adapter.transportKind !== "flow-text" && supportsStructuredIntent(this._model);
+			adapter.transportKind !== "flow-text" &&
+			supportsStructuredIntent(this._model);
 		const generationPrompt =
 			useStructuredIntentTransport ||
-				(adapter.id === "flow-markdown" && contentFormat === "markdown")
+			(adapter.id === "flow-markdown" && contentFormat === "markdown")
 				? adapter.buildPrompt({
-					prompt: executionPrompt,
-					targetKind: route.targetKind,
-					activeBlockId: blockId,
-					workingSet,
-					applyStrategy: route.applyStrategy,
-				})
-				: route.plannerMode === "structured"
-					? buildPlannerPrompt({
 						prompt: executionPrompt,
 						targetKind: route.targetKind,
+						activeBlockId: blockId,
 						workingSet,
+						applyStrategy: route.applyStrategy,
 					})
+				: route.plannerMode === "structured"
+					? buildPlannerPrompt({
+							prompt: executionPrompt,
+							targetKind: route.targetKind,
+							workingSet,
+						})
 					: executionPrompt;
 
 		const seedGeneration: GenerationState = {
@@ -2198,43 +2387,48 @@ class AIControllerImpl implements AIController {
 				],
 				turns: sessionTurnId
 					? [
-						...(existingSession?.turns ?? []),
-						{
-							id: sessionTurnId,
-							prompt,
-							createdAt: Date.now(),
-							undoGroupId: seedGeneration.undoGroupId,
-							generationId: seedGeneration.id,
-							target: target.type,
-							operation: requestedOperation ?? undefined,
-							status: "streaming",
-							suggestionIds: [],
-							reviewItemIds: [],
-							generatedBlockIds: [],
-							structuredPreview: null,
-							anchor:
-								target.type === "selection"
-									? resolveSessionAnchor(target.selection)
-									: undefined,
-							selection:
-								target.type === "selection"
-									? resolveSessionSelectionSnapshot(target.selection)
-									: undefined,
-						},
-					]
+							...(existingSession?.turns ?? []),
+							{
+								id: sessionTurnId,
+								prompt,
+								createdAt: Date.now(),
+								undoGroupId: seedGeneration.undoGroupId,
+								generationId: seedGeneration.id,
+								target: target.type,
+								operation: requestedOperation ?? undefined,
+								status: "streaming",
+								suggestionIds: [],
+								reviewItemIds: [],
+								generatedBlockIds: [],
+								structuredPreview: null,
+								anchor:
+									target.type === "selection"
+										? resolveSessionAnchor(target.selection)
+										: undefined,
+								selection:
+									target.type === "selection"
+										? resolveSessionSelectionSnapshot(
+												target.selection,
+											)
+										: undefined,
+							},
+						]
 					: existingSession?.turns,
-				contextualPrompt:
-					existingSession?.contextualPrompt
-						? {
+				contextualPrompt: existingSession?.contextualPrompt
+					? {
 							...existingSession.contextualPrompt,
 							anchor:
 								target.type === "selection"
 									? {
-										...existingSession.contextualPrompt.anchor,
-										selectionSnapshot: nextSelectionSnapshot,
-										focusBlockId: target.selection.toRange().start.blockId,
-										status: "valid",
-									}
+											...existingSession.contextualPrompt
+												.anchor,
+											selectionSnapshot:
+												nextSelectionSnapshot,
+											focusBlockId:
+												target.selection.toRange().start
+													.blockId,
+											status: "valid",
+										}
 									: existingSession.contextualPrompt.anchor,
 							composer: {
 								...existingSession.contextualPrompt.composer,
@@ -2244,7 +2438,7 @@ class AIControllerImpl implements AIController {
 								openReason: "user",
 							},
 						}
-						: undefined,
+					: undefined,
 			});
 		}
 		this._setState({
@@ -2254,7 +2448,8 @@ class AIControllerImpl implements AIController {
 			lastRoute: route.lane,
 			activeSessionId: context?.sessionId ?? this._state.activeSessionId,
 		});
-		let currentStructuredPreview: GenerationStructuredPreviewState | null = null;
+		let currentStructuredPreview: GenerationStructuredPreviewState | null =
+			null;
 		let currentStructuredIntent: GenerationState["structuredIntent"] = null;
 		let currentMutationReceipt: AIMutationReceipt | null = null;
 		this._setStreamEvents([
@@ -2273,12 +2468,16 @@ class AIControllerImpl implements AIController {
 			const result = await runAgenticLoop({
 				model: this._model,
 				editor: this._editor,
-				toolRuntime: route.allowToolUse ? toolRuntime : EMPTY_TOOL_RUNTIME,
+				toolRuntime: route.allowToolUse
+					? toolRuntime
+					: EMPTY_TOOL_RUNTIME,
 				prompt: generationPrompt,
 				blockId,
 				generationId: seedGeneration.id,
 				zoneId: seedGeneration.zoneId,
-				maxSteps: route.allowToolUse ? (maxSteps ?? this._maxAgenticSteps) : 1,
+				maxSteps: route.allowToolUse
+					? (maxSteps ?? this._maxAgenticSteps)
+					: 1,
 				signal: abortController.signal,
 				requestMode: resolveGenerationRequestMode({
 					...context,
@@ -2288,7 +2487,13 @@ class AIControllerImpl implements AIController {
 				validateWorkingSet: (activeWorkingSet) =>
 					this._validateWorkingSet(route, target, activeWorkingSet),
 				refreshWorkingSet: async () =>
-					this._buildWorkingSet(toolRuntime, route, target, blockId, prompt),
+					this._buildWorkingSet(
+						toolRuntime,
+						route,
+						target,
+						blockId,
+						prompt,
+					),
 				onStatusChange: (status) => {
 					this._setState({ status });
 					this._appendStreamEvent(
@@ -2310,10 +2515,14 @@ class AIControllerImpl implements AIController {
 				},
 				onTextDelta: (delta) => {
 					const nextDelta =
-						target.type === "block" && shouldTrimLeadingBlankBlockText
+						target.type === "block" &&
+						shouldTrimLeadingBlankBlockText
 							? trimLeadingBlankBlockGenerationText(delta)
 							: delta;
-					if (shouldTrimLeadingBlankBlockText && nextDelta.length > 0) {
+					if (
+						shouldTrimLeadingBlankBlockText &&
+						nextDelta.length > 0
+					) {
 						shouldTrimLeadingBlankBlockText = false;
 					}
 					if (nextDelta.length === 0) {
@@ -2322,16 +2531,23 @@ class AIControllerImpl implements AIController {
 					currentText += nextDelta;
 					if (target.type === "block" && shouldStreamDirectly) {
 						streamingTarget?.appendDelta(nextDelta);
-					} else if (canStreamSelectionSuggestions && selectionRange) {
+					} else if (
+						canStreamSelectionSuggestions &&
+						selectionRange
+					) {
 						if (!streamedSuggestionInitialized) {
 							this._applySuggestedAIOps(
-								[{
-									type: "replace-text",
-									blockId: selectionRange.start.blockId,
-									offset: selectionRange.start.offset,
-									length: selectionRange.end.offset - selectionRange.start.offset,
-									text: nextDelta,
-								}],
+								[
+									{
+										type: "replace-text",
+										blockId: selectionRange.start.blockId,
+										offset: selectionRange.start.offset,
+										length:
+											selectionRange.end.offset -
+											selectionRange.start.offset,
+										text: nextDelta,
+									},
+								],
 								context?.sessionId,
 								{ undoGroupId: seedGeneration.undoGroupId },
 							);
@@ -2339,45 +2555,62 @@ class AIControllerImpl implements AIController {
 							streamedSuggestionLength = nextDelta.length;
 						} else if (nextDelta.length > 0) {
 							this._applySuggestedAIOps(
-								[{
-									type: "insert-text",
-									blockId: selectionRange.start.blockId,
-									offset: selectionRange.end.offset + streamedSuggestionLength,
-									text: nextDelta,
-								}],
+								[
+									{
+										type: "insert-text",
+										blockId: selectionRange.start.blockId,
+										offset:
+											selectionRange.end.offset +
+											streamedSuggestionLength,
+										text: nextDelta,
+									},
+								],
 								context?.sessionId,
 								{ undoGroupId: seedGeneration.undoGroupId },
 							);
 							streamedSuggestionLength += nextDelta.length;
 						}
-					} else if (canStreamBlockSuggestions && target.type === "block") {
+					} else if (
+						canStreamBlockSuggestions &&
+						target.type === "block"
+					) {
 						if (nextDelta.length > 0) {
 							this._applySuggestedAIOps(
-								[{
-									type: "insert-text",
-									blockId: target.blockId,
-									offset: target.offset + streamedSuggestionLength,
-									text: nextDelta,
-								}],
+								[
+									{
+										type: "insert-text",
+										blockId: target.blockId,
+										offset:
+											target.offset +
+											streamedSuggestionLength,
+										text: nextDelta,
+									},
+								],
 								context?.sessionId,
 								{ undoGroupId: seedGeneration.undoGroupId },
 							);
 							streamedSuggestionLength += nextDelta.length;
 						}
-					} else if (canStreamMarkdownBlockSuggestions && target.type === "block") {
-						const previewRefresh = this._refreshStreamingMarkdownBlockPreview(
-							target.blockId,
-							currentText,
-							route.mutationMode,
-							context?.sessionId,
-							baselineSuggestionIds,
-							streamedMarkdownSuggestionIds,
-							lastStreamedMarkdownPreviewText,
-							shouldReplaceMarkdownTarget,
-							context?.replaceBlockIds,
-						);
-						streamedMarkdownSuggestionIds = previewRefresh.suggestionIds;
-						lastStreamedMarkdownPreviewText = previewRefresh.normalizedText;
+					} else if (
+						canStreamMarkdownBlockSuggestions &&
+						target.type === "block"
+					) {
+						const previewRefresh =
+							this._refreshStreamingMarkdownBlockPreview(
+								target.blockId,
+								currentText,
+								route.mutationMode,
+								context?.sessionId,
+								baselineSuggestionIds,
+								streamedMarkdownSuggestionIds,
+								lastStreamedMarkdownPreviewText,
+								shouldReplaceMarkdownTarget,
+								context?.replaceBlockIds,
+							);
+						streamedMarkdownSuggestionIds =
+							previewRefresh.suggestionIds;
+						lastStreamedMarkdownPreviewText =
+							previewRefresh.normalizedText;
 					} else if (target.type === "selection") {
 						this._inlineCompletion.showSuggestion({
 							id: seedGeneration.id,
@@ -2403,38 +2636,56 @@ class AIControllerImpl implements AIController {
 							text: currentText,
 						}),
 					);
-					if (route.plannerMode === "structured" && !useStructuredIntentTransport) {
+					if (
+						route.plannerMode === "structured" &&
+						!useStructuredIntentTransport
+					) {
 						const previewResult = parseStructuredPlanPreview(
 							currentText,
 							route.targetKind,
 						);
 						if (previewResult?.plan) {
 							const nextStructuredPreview =
-								buildGenerationStructuredPreviewState(this._editor, {
-									planState: previewResult.planState === "validated"
-										? "validated"
-										: "drafted",
-									plan: previewResult.plan,
-								});
+								buildGenerationStructuredPreviewState(
+									this._editor,
+									{
+										planState:
+											previewResult.planState ===
+											"validated"
+												? "validated"
+												: "drafted",
+										plan: previewResult.plan,
+									},
+								);
 							if (
 								!areStructuredValuesEqual(
 									currentStructuredPreview,
 									nextStructuredPreview,
 								)
 							) {
-								const patches = buildStructuredPreviewPatchOperations(
-									currentStructuredPreview,
-									nextStructuredPreview,
-								);
-								currentStructuredPreview = nextStructuredPreview;
+								const patches =
+									buildStructuredPreviewPatchOperations(
+										currentStructuredPreview,
+										nextStructuredPreview,
+									);
+								currentStructuredPreview =
+									nextStructuredPreview;
 								this._resolveActiveGeneration({
 									structuredPreview: nextStructuredPreview,
 								});
 								if (context?.sessionId && sessionTurnId) {
-									this._updateSessionTurn(context.sessionId, sessionTurnId, {
-										reviewItemIds: nextStructuredPreview.reviewItems.map((item) => item.id),
-										structuredPreview: nextStructuredPreview,
-									});
+									this._updateSessionTurn(
+										context.sessionId,
+										sessionTurnId,
+										{
+											reviewItemIds:
+												nextStructuredPreview.reviewItems.map(
+													(item) => item.id,
+												),
+											structuredPreview:
+												nextStructuredPreview,
+										},
+									);
 								}
 								this._appendStreamEvent(
 									createAIStreamEvent(seedGeneration, {
@@ -2451,32 +2702,34 @@ class AIControllerImpl implements AIController {
 					if (!useStructuredIntentTransport) {
 						return;
 					}
-					const previewResult = adapter.parsePreview?.({
-						value: event.data,
-						targetKind: route.targetKind,
-						activeBlockId: blockId,
-					}) ?? null;
+					const previewResult =
+						adapter.parsePreview?.({
+							value: event.data,
+							targetKind: route.targetKind,
+							activeBlockId: blockId,
+						}) ?? null;
 					if (!previewResult?.intent) {
 						return;
 					}
 					currentStructuredIntent = previewResult.intent;
-					const compilation = compileStructuredIntentToPlan(previewResult.intent, {
-						activeBlockId: blockId,
-					});
+					const compilation = compileStructuredIntentToPlan(
+						previewResult.intent,
+						{
+							activeBlockId: blockId,
+						},
+					);
 					if (!compilation.plan) {
 						return;
 					}
-					const nextStructuredPreview = buildGenerationStructuredPreviewState(
-						this._editor,
-						{
+					const nextStructuredPreview =
+						buildGenerationStructuredPreviewState(this._editor, {
 							planState:
 								previewResult.intentState === "validated" &&
-									compilation.issues.length === 0
+								compilation.issues.length === 0
 									? "validated"
 									: "drafted",
 							plan: compilation.plan,
-						},
-					);
+						});
 					if (
 						areStructuredValuesEqual(
 							currentStructuredPreview,
@@ -2495,10 +2748,17 @@ class AIControllerImpl implements AIController {
 						structuredPreview: nextStructuredPreview,
 					});
 					if (context?.sessionId && sessionTurnId) {
-						this._updateSessionTurn(context.sessionId, sessionTurnId, {
-							reviewItemIds: nextStructuredPreview.reviewItems.map((item) => item.id),
-							structuredPreview: nextStructuredPreview,
-						});
+						this._updateSessionTurn(
+							context.sessionId,
+							sessionTurnId,
+							{
+								reviewItemIds:
+									nextStructuredPreview.reviewItems.map(
+										(item) => item.id,
+									),
+								structuredPreview: nextStructuredPreview,
+							},
+						);
 					}
 					this._appendStreamEvent(
 						createAIStreamEvent(seedGeneration, {
@@ -2558,12 +2818,22 @@ class AIControllerImpl implements AIController {
 					});
 				},
 				onStreamingStart: (zoneId, targetBlockId) => {
-					if (target.type !== "block" || !shouldStreamDirectly || blockStreamingStarted) return;
+					if (
+						target.type !== "block" ||
+						!shouldStreamDirectly ||
+						blockStreamingStarted
+					)
+						return;
 					streamingTarget?.beginStreaming(zoneId, targetBlockId);
 					blockStreamingStarted = true;
 				},
 				onStreamingEnd: (status) => {
-					if (target.type !== "block" || !shouldStreamDirectly || !blockStreamingStarted) return;
+					if (
+						target.type !== "block" ||
+						!shouldStreamDirectly ||
+						!blockStreamingStarted
+					)
+						return;
 					streamingTarget?.endStreaming(status);
 					blockStreamingStarted = false;
 				},
@@ -2622,33 +2892,39 @@ class AIControllerImpl implements AIController {
 				.map((item) => item.id)
 				.filter((id) => !baselineSuggestionIds.has(id));
 			const structuredPlanResult =
-				route.plannerMode === "structured" && !useStructuredIntentTransport
+				route.plannerMode === "structured" &&
+				!useStructuredIntentTransport
 					? parseStructuredPlanResult(currentText, route.targetKind)
 					: null;
-			const structuredIntentResolution =
-				useStructuredIntentTransport
-					? adapter.resolveResult?.({
+			const structuredIntentResolution = useStructuredIntentTransport
+				? (adapter.resolveResult?.({
 						value: currentStructuredIntent,
 						targetKind: route.targetKind,
 						activeBlockId: blockId,
-					}) ?? null
-					: null;
-			const structuredIntentResult = structuredIntentResolution?.parseResult ?? null;
+					}) ?? null)
+				: null;
+			const structuredIntentResult =
+				structuredIntentResolution?.parseResult ?? null;
 			const structuredIntentCompilation =
 				structuredIntentResolution?.compilation ?? null;
 			const resolvedStructuredPlan =
-				structuredIntentCompilation?.plan ?? structuredPlanResult?.plan ?? null;
+				structuredIntentCompilation?.plan ??
+				structuredPlanResult?.plan ??
+				null;
 			const planExecution = resolvedStructuredPlan
 				? buildDocumentMutationPlanExecution(
-					this._editor,
-					resolvedStructuredPlan,
-				)
+						this._editor,
+						resolvedStructuredPlan,
+					)
 				: null;
 			const reviewItems =
 				resolvedStructuredPlan &&
-					route.mutationMode !== "direct-stream" &&
-					(!planExecution || !planExecution.reviewSafe)
-					? buildStructuralReviewItems(this._editor, resolvedStructuredPlan)
+				route.mutationMode !== "direct-stream" &&
+				(!planExecution || !planExecution.reviewSafe)
+					? buildStructuralReviewItems(
+							this._editor,
+							resolvedStructuredPlan,
+						)
 					: [];
 
 			if (
@@ -2688,17 +2964,21 @@ class AIControllerImpl implements AIController {
 			};
 			const resolvedDebug =
 				this._state.activeGeneration?.id === seedGeneration.id
-					? (this._state.activeGeneration.debug ?? result.debug ?? seedGeneration.debug!)
+					? (this._state.activeGeneration.debug ??
+						result.debug ??
+						seedGeneration.debug!)
 					: (result.debug ?? seedGeneration.debug!);
 			const resolvedPlanState: GenerationState["planState"] =
 				planExecution && planExecution.issues.length > 0
 					? "rejected"
 					: structuredIntentResult?.intentState === "validated" &&
-						(structuredIntentCompilation?.issues.length ?? 0) === 0
+						  (structuredIntentCompilation?.issues.length ?? 0) ===
+								0
 						? "validated"
 						: structuredIntentResult?.intentState === "drafted"
 							? "drafted"
-							: structuredPlanResult?.planState ?? seedGeneration.planState;
+							: (structuredPlanResult?.planState ??
+								seedGeneration.planState);
 
 			const finalGeneration: GenerationState = {
 				...result,
@@ -2716,18 +2996,20 @@ class AIControllerImpl implements AIController {
 				planState: resolvedPlanState,
 				plan: resolvedStructuredPlan,
 				structuredIntent:
-					structuredIntentResult?.intent ?? currentStructuredIntent ?? null,
+					structuredIntentResult?.intent ??
+					currentStructuredIntent ??
+					null,
 				reviewItems,
-				structuredPreview:
-					resolvedStructuredPlan
-						? buildGenerationStructuredPreviewState(this._editor, {
+				structuredPreview: resolvedStructuredPlan
+					? buildGenerationStructuredPreviewState(this._editor, {
 							planState:
-								planExecution && planExecution.issues.length === 0
+								planExecution &&
+								planExecution.issues.length === 0
 									? "validated"
 									: "drafted",
 							plan: resolvedStructuredPlan,
 						})
-						: currentStructuredPreview,
+					: currentStructuredPreview,
 				targetKind: route.targetKind,
 				blockClass: route.blockClass,
 				adapterId: route.adapterId,
@@ -2759,22 +3041,23 @@ class AIControllerImpl implements AIController {
 				const lastStructuredPreviewEvent =
 					structuredPreviewEvents[structuredPreviewEvents.length - 1];
 				const refreshedInlineReviewSelectionTarget =
-					context?.surface === "inline-edit" && suggestionIds.length > 0
-						? resolvePendingInlineSelectionTarget(
+					context?.surface === "inline-edit" &&
+					suggestionIds.length > 0
+						? (resolvePendingInlineSelectionTarget(
 								this._editor,
 								requestedOperation ?? undefined,
 								suggestionIds,
-							) ?? resolveLiveInlineSelectionTarget(this._editor)
+							) ?? resolveLiveInlineSelectionTarget(this._editor))
 						: null;
 				if (sessionTurnId) {
 					const receiptEvidence = currentMutationReceipt?.evidence;
 					const generatedBlockIds = receiptEvidence
 						? [
-							...new Set([
-								...receiptEvidence.affectedBlockIds,
-								...receiptEvidence.createdBlockIds,
-							]),
-						]
+								...new Set([
+									...receiptEvidence.affectedBlockIds,
+									...receiptEvidence.createdBlockIds,
+								]),
+							]
 						: [];
 					this._updateSessionTurn(context.sessionId, sessionTurnId, {
 						status:
@@ -2786,7 +3069,8 @@ class AIControllerImpl implements AIController {
 						suggestionIds,
 						reviewItemIds: reviewItems.map((item) => item.id),
 						generatedBlockIds,
-						structuredPreview: finalGeneration.structuredPreview ?? null,
+						structuredPreview:
+							finalGeneration.structuredPreview ?? null,
 						anchor: refreshedInlineReviewSelectionTarget
 							? resolveSessionAnchor(
 									refreshedInlineReviewSelectionTarget.selection,
@@ -2808,27 +3092,39 @@ class AIControllerImpl implements AIController {
 					resolvedGenerationDebug?.fastApply,
 				);
 				this._updateSession(context.sessionId, {
-					status: finalGeneration.status === "complete" ? "complete" : finalGeneration.status,
+					status:
+						finalGeneration.status === "complete"
+							? "complete"
+							: finalGeneration.status,
 					pendingSuggestionIds: suggestionIds,
 					pendingReviewItemIds: reviewItems.map((item) => item.id),
 					metrics: {
-						...(this._state.sessions.find((session) => session.id === context.sessionId)
-							?.metrics ?? {
+						...(this._state.sessions.find(
+							(session) => session.id === context.sessionId,
+						)?.metrics ?? {
 							streamEventCount: 0,
 							patchCount: 0,
 							fastApply: createDefaultSessionFastApplyMetrics(),
 						}),
-						firstTokenMs: resolvedGenerationDebug?.firstVisibleTextMs ?? undefined,
-						totalMs: resolvedGenerationDebug?.messageAssemblyLatencyMs != null
-							? resolvedGenerationDebug.messageAssemblyLatencyMs +
-							(resolvedGenerationDebug.toolExecutionMs ?? 0)
-							: undefined,
-						toolMs: resolvedGenerationDebug?.toolExecutionMs ?? undefined,
+						firstTokenMs:
+							resolvedGenerationDebug?.firstVisibleTextMs ??
+							undefined,
+						totalMs:
+							resolvedGenerationDebug?.messageAssemblyLatencyMs !=
+							null
+								? resolvedGenerationDebug.messageAssemblyLatencyMs +
+									(resolvedGenerationDebug.toolExecutionMs ??
+										0)
+								: undefined,
+						toolMs:
+							resolvedGenerationDebug?.toolExecutionMs ??
+							undefined,
 						streamEventCount: this._streamEvents.filter(
 							(event) => event.sessionId === context.sessionId,
 						).length,
 						patchCount:
-							lastStructuredPreviewEvent?.type === "structured-preview"
+							lastStructuredPreviewEvent?.type ===
+							"structured-preview"
 								? lastStructuredPreviewEvent.patches.length
 								: 0,
 					},
@@ -2938,13 +3234,15 @@ class AIControllerImpl implements AIController {
 					adapterId: "flow-markdown",
 					blockClass: "flow",
 					transportKind: "flow-text",
-					issues: ["The requested selection rewrite target is no longer available."],
+					issues: [
+						"The requested selection rewrite target is no longer available.",
+					],
 				});
 			}
 			const markdownBlockIds =
 				options.contentFormat === "markdown" &&
-					operation.target.kind === "scoped-range" &&
-					operation.target.blockIds.length > 0
+				operation.target.kind === "scoped-range" &&
+				operation.target.blockIds.length > 0
 					? operation.target.blockIds
 					: null;
 			if (markdownBlockIds) {
@@ -2970,7 +3268,8 @@ class AIControllerImpl implements AIController {
 		}
 
 		if (operation.kind === "rewrite-block") {
-			const target = operation.target.kind === "block" ? operation.target : null;
+			const target =
+				operation.target.kind === "block" ? operation.target : null;
 			if (!target) {
 				return buildMutationReceipt({
 					status: "invalid",
@@ -3006,14 +3305,17 @@ class AIControllerImpl implements AIController {
 		}
 
 		if (operation.kind === "document-transform") {
-			const target = operation.target.kind === "document" ? operation.target : null;
+			const target =
+				operation.target.kind === "document" ? operation.target : null;
 			if (!target) {
 				return buildMutationReceipt({
 					status: "invalid",
 					adapterId: "flow-markdown",
 					blockClass: "flow",
 					transportKind: "flow-text",
-					issues: ["The requested document transform target is invalid."],
+					issues: [
+						"The requested document transform target is invalid.",
+					],
 				});
 			}
 			const replaceBlockIds = target.blockIds?.filter(
@@ -3024,8 +3326,9 @@ class AIControllerImpl implements AIController {
 					replaceBlockIds && replaceBlockIds.length > 0
 						? replaceBlockIds
 						: this._editor.documentState.blockOrder.filter(
-							(blockId) => this._editor.getBlock(blockId) != null,
-						);
+								(blockId) =>
+									this._editor.getBlock(blockId) != null,
+							);
 				const ops = deleteBlockIds.map((blockId) => ({
 					type: "delete-block" as const,
 					blockId,
@@ -3059,7 +3362,9 @@ class AIControllerImpl implements AIController {
 					adapterId: "flow-markdown",
 					blockClass: "flow",
 					transportKind: "flow-text",
-					issues: ["The requested document transform target is no longer available."],
+					issues: [
+						"The requested document transform target is no longer available.",
+					],
 				});
 			}
 			return this._commitBufferedBlockGeneration(
@@ -3079,7 +3384,8 @@ class AIControllerImpl implements AIController {
 			);
 		}
 
-		const target = operation.target.kind === "block" ? operation.target : null;
+		const target =
+			operation.target.kind === "block" ? operation.target : null;
 		if (!target) {
 			return buildMutationReceipt({
 				status: "invalid",
@@ -3153,12 +3459,14 @@ class AIControllerImpl implements AIController {
 		const caret = nextSelection.anchor;
 		if (text.length > 0) {
 			this._editor.apply(
-				[{
-					type: "insert-text",
-					blockId: caret.blockId,
-					offset: caret.offset,
-					text,
-				}],
+				[
+					{
+						type: "insert-text",
+						blockId: caret.blockId,
+						offset: caret.offset,
+						text,
+					},
+				],
 				{ origin: "ai" },
 			);
 		}
@@ -3202,9 +3510,7 @@ class AIControllerImpl implements AIController {
 			replaceBlockIds?: readonly string[];
 		},
 	): AIMutationReceipt {
-		let fastApplyFallbackMode:
-			| "plain-markdown"
-			| null = null;
+		let fastApplyFallbackMode: "plain-markdown" | null = null;
 		if (
 			contentFormat === "markdown" &&
 			options?.applyStrategy === "markdown-fast-apply" &&
@@ -3230,7 +3536,9 @@ class AIControllerImpl implements AIController {
 					adapterId: "flow-markdown",
 					blockClass: "flow",
 					transportKind: "flow-text",
-					issues: ["Fast apply contract could not be compiled safely."],
+					issues: [
+						"Fast apply contract could not be compiled safely.",
+					],
 				});
 			}
 		}
@@ -3241,11 +3549,11 @@ class AIControllerImpl implements AIController {
 				: text;
 		const scopedReplaceBlockIds =
 			contentFormat === "markdown"
-				? options?.replaceBlockIds?.filter(
-					(candidateBlockId, index, allBlockIds) =>
-						allBlockIds.indexOf(candidateBlockId) === index &&
-						this._editor.getBlock(candidateBlockId) != null,
-				) ?? []
+				? (options?.replaceBlockIds?.filter(
+						(candidateBlockId, index, allBlockIds) =>
+							allBlockIds.indexOf(candidateBlockId) === index &&
+							this._editor.getBlock(candidateBlockId) != null,
+					) ?? [])
 				: [];
 		if (contentFormat === "markdown" && scopedReplaceBlockIds.length > 0) {
 			if (normalizedText.trim().length > 0) {
@@ -3259,7 +3567,9 @@ class AIControllerImpl implements AIController {
 						adapterId: "flow-markdown",
 						blockClass: "flow",
 						transportKind: "flow-text",
-						issues: ["Scoped markdown replacement could not be verified safely."],
+						issues: [
+							"Scoped markdown replacement could not be verified safely.",
+						],
 					});
 				}
 			}
@@ -3267,11 +3577,12 @@ class AIControllerImpl implements AIController {
 				scopedReplaceBlockIds,
 				normalizedText,
 			);
-			const scopedReplacementFallback = this._summarizeFastApplyFallbackOps(
-				"scoped-replacement",
-				ops,
-				scopedReplaceBlockIds.length,
-			);
+			const scopedReplacementFallback =
+				this._summarizeFastApplyFallbackOps(
+					"scoped-replacement",
+					ops,
+					scopedReplaceBlockIds.length,
+				);
 			if (
 				mutationMode === "persistent-suggestions" ||
 				mutationMode === "streaming-suggestions" ||
@@ -3336,16 +3647,16 @@ class AIControllerImpl implements AIController {
 		const ops =
 			contentFormat === "markdown"
 				? this._buildMarkdownBlockGenerationOps(
-					blockId,
-					normalizedText,
-					options?.replaceTargetBlock,
-					options?.replaceBlockIds,
-				)
+						blockId,
+						normalizedText,
+						options?.replaceTargetBlock,
+						options?.replaceBlockIds,
+					)
 				: this._buildTextBlockGenerationOps(
-					blockId,
-					normalizedText,
-					options?.insertionOffset,
-				);
+						blockId,
+						normalizedText,
+						options?.insertionOffset,
+					);
 		if (ops.length === 0) {
 			if (fastApplyFallbackMode) {
 				this._recordFastApplyDebug({
@@ -3413,7 +3724,10 @@ class AIControllerImpl implements AIController {
 		sessionId: string | undefined,
 		workingSet: AIWorkingSetEnvelope | null,
 	): AIMutationReceipt | null {
-		const fastApplyScope = this._resolveMarkdownFastApplyScope(blockId, workingSet);
+		const fastApplyScope = this._resolveMarkdownFastApplyScope(
+			blockId,
+			workingSet,
+		);
 		if (!fastApplyScope) {
 			this._recordFastApplyDebug({
 				attempted: true,
@@ -3427,7 +3741,10 @@ class AIControllerImpl implements AIController {
 		if (patchPlan) {
 			const validation = validateDocumentMutationPlanShape(
 				patchPlan,
-				this._buildPlanValidationContext(blockId, fastApplyScope.blockIds),
+				this._buildPlanValidationContext(
+					blockId,
+					fastApplyScope.blockIds,
+				),
 			);
 			if (!validation.valid) {
 				this._recordFastApplyDebug({
@@ -3440,7 +3757,10 @@ class AIControllerImpl implements AIController {
 				return null;
 			}
 
-			const execution = buildDocumentMutationPlanExecution(this._editor, patchPlan);
+			const execution = buildDocumentMutationPlanExecution(
+				this._editor,
+				patchPlan,
+			);
 			if (execution.issues.length > 0) {
 				this._recordFastApplyDebug({
 					attempted: true,
@@ -3467,7 +3787,8 @@ class AIControllerImpl implements AIController {
 					diffChars: text.length,
 					fallbackReason: "verification-failed",
 					verificationFailureReason: verification.reason,
-					untouchedBlockMutationCount: verification.untouchedBlockMutationCount,
+					untouchedBlockMutationCount:
+						verification.untouchedBlockMutationCount,
 					alignment: execution.metrics?.flowPatchAlignment,
 					executionPath: "native-fast-apply",
 				});
@@ -3481,7 +3802,8 @@ class AIControllerImpl implements AIController {
 					contextChars: fastApplyScope.markdown.length,
 					diffChars: text.length,
 					confidence: patchPlan.confidence?.score,
-					untouchedBlockMutationCount: verification.untouchedBlockMutationCount,
+					untouchedBlockMutationCount:
+						verification.untouchedBlockMutationCount,
 					alignment: execution.metrics?.flowPatchAlignment,
 					executionPath: "native-fast-apply",
 				});
@@ -3506,7 +3828,8 @@ class AIControllerImpl implements AIController {
 					contextChars: fastApplyScope.markdown.length,
 					diffChars: text.length,
 					confidence: patchPlan.confidence?.score,
-					untouchedBlockMutationCount: verification.untouchedBlockMutationCount,
+					untouchedBlockMutationCount:
+						verification.untouchedBlockMutationCount,
 					alignment: execution.metrics?.flowPatchAlignment,
 					executionPath: "native-fast-apply",
 				});
@@ -3519,14 +3842,18 @@ class AIControllerImpl implements AIController {
 				});
 			}
 
-			this._editor.apply(execution.ops, { origin: "ai", undoGroup: true });
+			this._editor.apply(execution.ops, {
+				origin: "ai",
+				undoGroup: true,
+			});
 			this._recordFastApplyDebug({
 				attempted: true,
 				succeeded: true,
 				contextChars: fastApplyScope.markdown.length,
 				diffChars: text.length,
 				confidence: patchPlan.confidence?.score,
-				untouchedBlockMutationCount: verification.untouchedBlockMutationCount,
+				untouchedBlockMutationCount:
+					verification.untouchedBlockMutationCount,
 				alignment: execution.metrics?.flowPatchAlignment,
 				executionPath: "native-fast-apply",
 			});
@@ -3665,12 +3992,12 @@ class AIControllerImpl implements AIController {
 		const context =
 			workingSet?.context && typeof workingSet.context === "object"
 				? (workingSet.context as {
-					markdown?: string | null;
-					retrievedSpan?: AIWorkingSetRetrievedSpan | null;
-					markdownWindow?: {
-						blockIds?: string[];
-					} | null;
-				})
+						markdown?: string | null;
+						retrievedSpan?: AIWorkingSetRetrievedSpan | null;
+						markdownWindow?: {
+							blockIds?: string[];
+						} | null;
+					})
 				: null;
 		const markdown = context?.markdown?.trim() ?? "";
 		const blockIds = context?.retrievedSpan?.blockIds?.length
@@ -3694,7 +4021,10 @@ class AIControllerImpl implements AIController {
 		const knownBlockTypes = this._editor.schema
 			.allBlocks()
 			.filter((schema) =>
-				shouldExposeBlockInTooling(this._editor.documentProfile, schema),
+				shouldExposeBlockInTooling(
+					this._editor.documentProfile,
+					schema,
+				),
 			)
 			.map((schema) => schema.type);
 		const editableTargetBlockIds = scopeBlockIds.filter((targetBlockId) => {
@@ -3703,7 +4033,10 @@ class AIControllerImpl implements AIController {
 				return false;
 			}
 			const schema = this._editor.schema.resolve(block.type);
-			return shouldExposeBlockInTooling(this._editor.documentProfile, schema);
+			return shouldExposeBlockInTooling(
+				this._editor.documentProfile,
+				schema,
+			);
 		});
 
 		return {
@@ -3741,13 +4074,20 @@ class AIControllerImpl implements AIController {
 			surface: "ai-markdown-fast-apply-verify",
 		});
 		if (verificationResult.blocks.length === 0) {
-			return { valid: false, reason: "markdown-parse-produced-no-blocks" };
+			return {
+				valid: false,
+				reason: "markdown-parse-produced-no-blocks",
+			};
 		}
 		return { valid: true };
 	}
 
 	private _verifyFlowPatchPlanResult(
-		plan: { edits: Array<{ locator: { blockId?: string; blockIds?: string[] } }> },
+		plan: {
+			edits: Array<{
+				locator: { blockId?: string; blockIds?: string[] };
+			}>;
+		},
 		ops: readonly DocumentOp[],
 		scopeBlockIds: readonly string[],
 	): {
@@ -3773,7 +4113,10 @@ class AIControllerImpl implements AIController {
 			for (const blockId of this._readBlockIdsFromOp(op)) {
 				if (scopeSet.has(blockId)) {
 					mutatedExistingBlockIds.add(blockId);
-				} else if (!createdBlockIds.has(blockId) && op.type !== "insert-block") {
+				} else if (
+					!createdBlockIds.has(blockId) &&
+					op.type !== "insert-block"
+				) {
 					outOfScopeMutations.add(blockId);
 				}
 			}
@@ -3816,10 +4159,13 @@ class AIControllerImpl implements AIController {
 		});
 		return [
 			...ops,
-			...blockIds.map((currentBlockId) => ({
-				type: "delete-block",
-				blockId: currentBlockId,
-			}) satisfies DocumentOp),
+			...blockIds.map(
+				(currentBlockId) =>
+					({
+						type: "delete-block",
+						blockId: currentBlockId,
+					}) satisfies DocumentOp,
+			),
 		];
 	}
 
@@ -3867,7 +4213,9 @@ class AIControllerImpl implements AIController {
 	}
 
 	private _recordFastApplyDebug(
-		overrides: Partial<NonNullable<NonNullable<GenerationState["debug"]>["fastApply"]>>,
+		overrides: Partial<
+			NonNullable<NonNullable<GenerationState["debug"]>["fastApply"]>
+		>,
 	): void {
 		const activeGeneration = this._state.activeGeneration;
 		if (!activeGeneration?.debug) {
@@ -3973,7 +4321,9 @@ class AIControllerImpl implements AIController {
 		return {
 			suggestionIds: this.getSuggestions()
 				.map((item) => item.id)
-				.filter((suggestionId) => !baselineSuggestionIds.has(suggestionId)),
+				.filter(
+					(suggestionId) => !baselineSuggestionIds.has(suggestionId),
+				),
 			normalizedText,
 		};
 	}
@@ -4075,9 +4425,13 @@ class AIControllerImpl implements AIController {
 		blockId: string,
 		prompt: string,
 	): Promise<AIWorkingSetEnvelope | null> {
-		const selectionSignature = this._createSelectionSignature(this._editor.selection);
+		const selectionSignature = this._createSelectionSignature(
+			this._editor.selection,
+		);
 		if (target.type === "selection") {
-			const trackedBlockIds = [...new Set(target.selection.toRange().blockRange)];
+			const trackedBlockIds = [
+				...new Set(target.selection.toRange().blockRange),
+			];
 			return {
 				documentVersion: this._documentVersion,
 				viewMode: this._state.suggestMode ? "raw" : "resolved",
@@ -4085,7 +4439,10 @@ class AIControllerImpl implements AIController {
 				routeConfidence: route.confidence,
 				context: {
 					selection: target.selection,
-					selectedText: resolveSelectionText(this._editor, target.selection),
+					selectedText: resolveSelectionText(
+						this._editor,
+						target.selection,
+					),
 				},
 				trackedBlockIds,
 				blockRevisions: this._captureBlockRevisions(trackedBlockIds),
@@ -4094,14 +4451,18 @@ class AIControllerImpl implements AIController {
 		}
 
 		if (route.useCursorContext) {
-			const retrievedSpan = await this._resolveMarkdownFastApplyRetrievedSpan(
-				toolRuntime,
-				route,
-				blockId,
-				prompt,
-			);
-			if (route.applyStrategy === "markdown-fast-apply" && retrievedSpan) {
-				const context = await toolRuntime.executeTool(
+			const retrievedSpan =
+				await this._resolveMarkdownFastApplyRetrievedSpan(
+					toolRuntime,
+					route,
+					blockId,
+					prompt,
+				);
+			if (
+				route.applyStrategy === "markdown-fast-apply" &&
+				retrievedSpan
+			) {
+				const context = (await toolRuntime.executeTool(
 					"get_context",
 					{
 						format: "markdown",
@@ -4110,7 +4471,7 @@ class AIControllerImpl implements AIController {
 						range: retrievedSpan.range,
 					},
 					{} as never,
-				) as {
+				)) as {
 					activeBlockType?: string | null;
 					markdown?: string | null;
 					surroundingBlocks?: Array<{ id: string }>;
@@ -4133,18 +4494,21 @@ class AIControllerImpl implements AIController {
 						surroundingBlockCount: retrievedSpan.blockIds.length,
 						selectedTextLength: context.selectedText?.length ?? 0,
 						activeBlockType: context.activeBlockType ?? null,
-						structuredTargetKind: context.structuredTarget?.target?.kind ?? null,
+						structuredTargetKind:
+							context.structuredTarget?.target?.kind ?? null,
 					}).confidence,
 					trackedBlockIds: [...new Set(retrievedSpan.blockIds)],
-					blockRevisions: this._captureBlockRevisions(retrievedSpan.blockIds),
+					blockRevisions: this._captureBlockRevisions(
+						retrievedSpan.blockIds,
+					),
 					selectionSignature,
 				};
 			}
-			const context = await toolRuntime.executeTool(
+			const context = (await toolRuntime.executeTool(
 				"get_cursor_context",
 				{ includeSuggestions: this._state.suggestMode },
 				{} as never,
-			) as {
+			)) as {
 				activeBlockType?: string | null;
 				markdown?: string | null;
 				surroundingBlocks?: Array<{ id: string }>;
@@ -4165,10 +4529,12 @@ class AIControllerImpl implements AIController {
 				source: "cursor-context",
 				context,
 				routeConfidence: refineRouteWithNavigator(route, {
-					surroundingBlockCount: context.surroundingBlocks?.length ?? 0,
+					surroundingBlockCount:
+						context.surroundingBlocks?.length ?? 0,
 					selectedTextLength: context.selectedText?.length ?? 0,
 					activeBlockType: context.activeBlockType ?? null,
-					structuredTargetKind: context.structuredTarget?.target?.kind ?? null,
+					structuredTargetKind:
+						context.structuredTarget?.target?.kind ?? null,
 				}).confidence,
 				trackedBlockIds: [...new Set(trackedBlockIds)],
 				blockRevisions: this._captureBlockRevisions(trackedBlockIds),
@@ -4177,14 +4543,18 @@ class AIControllerImpl implements AIController {
 		}
 
 		if (route.useDocumentSummary) {
-			const retrievedSpan = await this._resolveMarkdownFastApplyRetrievedSpan(
-				toolRuntime,
-				route,
-				blockId,
-				prompt,
-			);
-			if (route.applyStrategy === "markdown-fast-apply" && retrievedSpan) {
-				const context = await toolRuntime.executeTool(
+			const retrievedSpan =
+				await this._resolveMarkdownFastApplyRetrievedSpan(
+					toolRuntime,
+					route,
+					blockId,
+					prompt,
+				);
+			if (
+				route.applyStrategy === "markdown-fast-apply" &&
+				retrievedSpan
+			) {
+				const context = (await toolRuntime.executeTool(
 					"get_context",
 					{
 						format: "markdown",
@@ -4193,7 +4563,7 @@ class AIControllerImpl implements AIController {
 						range: retrievedSpan.range,
 					},
 					{} as never,
-				) as {
+				)) as {
 					activeBlockType?: string | null;
 					markdown?: string | null;
 					surroundingBlocks?: Array<{ id: string }>;
@@ -4216,14 +4586,17 @@ class AIControllerImpl implements AIController {
 						surroundingBlockCount: retrievedSpan.blockIds.length,
 						selectedTextLength: context.selectedText?.length ?? 0,
 						activeBlockType: context.activeBlockType ?? null,
-						structuredTargetKind: context.structuredTarget?.target?.kind ?? null,
+						structuredTargetKind:
+							context.structuredTarget?.target?.kind ?? null,
 					}).confidence,
 					trackedBlockIds: [...new Set(retrievedSpan.blockIds)],
-					blockRevisions: this._captureBlockRevisions(retrievedSpan.blockIds),
+					blockRevisions: this._captureBlockRevisions(
+						retrievedSpan.blockIds,
+					),
 					selectionSignature,
 				};
 			}
-			const context = await toolRuntime.executeTool(
+			const context = (await toolRuntime.executeTool(
 				"get_context",
 				{
 					format: "markdown",
@@ -4235,7 +4608,7 @@ class AIControllerImpl implements AIController {
 					},
 				},
 				{} as never,
-			) as {
+			)) as {
 				activeBlockType?: string | null;
 				markdown?: string | null;
 				surroundingBlocks?: Array<{ id: string }>;
@@ -4256,10 +4629,12 @@ class AIControllerImpl implements AIController {
 				source: "document-summary",
 				context,
 				routeConfidence: refineRouteWithNavigator(route, {
-					surroundingBlockCount: context.surroundingBlocks?.length ?? 0,
+					surroundingBlockCount:
+						context.surroundingBlocks?.length ?? 0,
 					selectedTextLength: context.selectedText?.length ?? 0,
 					activeBlockType: context.activeBlockType ?? null,
-					structuredTargetKind: context.structuredTarget?.target?.kind ?? null,
+					structuredTargetKind:
+						context.structuredTarget?.target?.kind ?? null,
 				}).confidence,
 				trackedBlockIds: [...new Set(trackedBlockIds)],
 				blockRevisions: this._captureBlockRevisions(trackedBlockIds),
@@ -4301,7 +4676,8 @@ class AIControllerImpl implements AIController {
 			surroundingBlockCount: context.surroundingBlocks?.length ?? 0,
 			selectedTextLength: context.selectedText?.length ?? 0,
 			activeBlockType: context.activeBlockType ?? null,
-			structuredTargetKind: context.structuredTarget?.target?.kind ?? null,
+			structuredTargetKind:
+				context.structuredTarget?.target?.kind ?? null,
 		});
 	}
 
@@ -4314,8 +4690,11 @@ class AIControllerImpl implements AIController {
 			return { valid: true, canRefresh: false };
 		}
 
-		const selectionSignature = this._createSelectionSignature(this._editor.selection);
-		const selectionChanged = workingSet.selectionSignature !== selectionSignature;
+		const selectionSignature = this._createSelectionSignature(
+			this._editor.selection,
+		);
+		const selectionChanged =
+			workingSet.selectionSignature !== selectionSignature;
 		const revisionChanged =
 			workingSet.documentVersion !== this._documentVersion ||
 			workingSet.trackedBlockIds.some(
@@ -4328,7 +4707,10 @@ class AIControllerImpl implements AIController {
 			return { valid: true, canRefresh: false };
 		}
 
-		if (route.lane === "selection-rewrite" || route.lane === "cursor-context") {
+		if (
+			route.lane === "selection-rewrite" ||
+			route.lane === "cursor-context"
+		) {
 			return {
 				valid: false,
 				canRefresh: false,
@@ -4341,7 +4723,9 @@ class AIControllerImpl implements AIController {
 		return {
 			valid: false,
 			canRefresh: target.type === "block",
-			reason: revisionChanged ? "document-revision-mismatch" : "selection-changed",
+			reason: revisionChanged
+				? "document-revision-mismatch"
+				: "selection-changed",
 		};
 	}
 
@@ -4363,7 +4747,8 @@ class AIControllerImpl implements AIController {
 				? 0
 				: route.intent === "continue"
 					? 0
-					: route.intent === "rewrite" || route.intent === "local-edit"
+					: route.intent === "rewrite" ||
+						  route.intent === "local-edit"
 						? 1
 						: 0;
 		const startIndex = Math.max(0, blockIndex - radius);
@@ -4391,7 +4776,7 @@ class AIControllerImpl implements AIController {
 		}
 
 		try {
-			const retrieved = await toolRuntime.executeTool(
+			const retrieved = (await toolRuntime.executeTool(
 				"retrieve_document_spans",
 				{
 					query: prompt,
@@ -4401,7 +4786,7 @@ class AIControllerImpl implements AIController {
 					targetBlockId: blockId,
 				},
 				{} as never,
-			) as {
+			)) as {
 				spans?: AIWorkingSetRetrievedSpan[];
 			};
 			const retrievedSpan = retrieved.spans?.[0] ?? null;
@@ -4412,7 +4797,10 @@ class AIControllerImpl implements AIController {
 			// Older test fixtures or stale builds may not register the retriever yet.
 		}
 
-		const markdownWindow = this._resolveMarkdownFastApplyWindow(route, blockId);
+		const markdownWindow = this._resolveMarkdownFastApplyWindow(
+			route,
+			blockId,
+		);
 		if (!markdownWindow) {
 			return null;
 		}
@@ -4440,22 +4828,21 @@ class AIControllerImpl implements AIController {
 	): void {
 		const session =
 			sessionId != null
-				? this._state.sessions.find((item) => item.id === sessionId) ?? null
+				? (this._state.sessions.find((item) => item.id === sessionId) ??
+					null)
 				: null;
 		const activeGeneration = this._state.activeGeneration;
 		const undoGroupId =
 			options?.undoGroupId ??
 			(session?.surface === "bottom-chat" &&
-				activeGeneration != null &&
-				activeGeneration.sessionId === sessionId
+			activeGeneration != null &&
+			activeGeneration.sessionId === sessionId
 				? activeGeneration.undoGroupId
 				: undefined);
 		if (this._state.suggestMode && !sessionId) {
 			this._editor.apply(ops, {
 				origin: "ai",
-				...(undoGroupId
-					? { undoGroupId }
-					: { undoGroup: true }),
+				...(undoGroupId ? { undoGroupId } : { undoGroup: true }),
 			});
 			return;
 		}
@@ -4471,9 +4858,7 @@ class AIControllerImpl implements AIController {
 		const origin = sessionId ? AI_SESSION_SUGGESTION_ORIGIN : "extension";
 		this._editor.apply(intercepted, {
 			origin,
-			...(undoGroupId
-				? { undoGroupId }
-				: { undoGroup: true }),
+			...(undoGroupId ? { undoGroupId } : { undoGroup: true }),
 		});
 	}
 
@@ -4502,18 +4887,23 @@ class AIControllerImpl implements AIController {
 		insertionOffset?: number,
 	): DocumentOp[] {
 		const targetBlock = this._editor.getBlock(blockId);
-		const normalizedText = shouldTrimLeadingBlankBlockGenerationText(targetBlock)
+		const normalizedText = shouldTrimLeadingBlankBlockGenerationText(
+			targetBlock,
+		)
 			? trimLeadingBlankBlockGenerationText(text)
 			: text;
 		if (normalizedText.length === 0) {
 			return [];
 		}
-		return [{
-			type: "insert-text",
-			blockId,
-			offset: insertionOffset ?? targetBlock?.textContent().length ?? 0,
-			text: normalizedText,
-		}];
+		return [
+			{
+				type: "insert-text",
+				blockId,
+				offset:
+					insertionOffset ?? targetBlock?.textContent().length ?? 0,
+				text: normalizedText,
+			},
+		];
 	}
 
 	private _buildMarkdownBlockGenerationOps(
@@ -4554,7 +4944,9 @@ class AIControllerImpl implements AIController {
 		];
 	}
 
-	private _createSelectionSignature(selection: SelectionState): string | null {
+	private _createSelectionSignature(
+		selection: SelectionState,
+	): string | null {
 		if (!selection) {
 			return null;
 		}
@@ -4591,7 +4983,10 @@ class AIControllerImpl implements AIController {
 			return;
 		}
 		this._state = nextState;
-		if (!this._isRestoringInlineHistory && !this._pendingInlineHistoryRestore) {
+		if (
+			!this._isRestoringInlineHistory &&
+			!this._pendingInlineHistoryRestore
+		) {
 			this._recordInlineHistorySnapshot(previousState, nextState);
 		}
 		this._editor.requestDecorationUpdate();
@@ -4611,19 +5006,28 @@ class AIControllerImpl implements AIController {
 				...activeGeneration,
 				...overrides,
 				plan:
-					overrides.planState === "none" || overrides.planState === "rejected"
+					overrides.planState === "none" ||
+					overrides.planState === "rejected"
 						? null
 						: (overrides.plan ?? activeGeneration.plan),
 				reviewItems:
-					overrides.planState === "none" || overrides.planState === "rejected"
+					overrides.planState === "none" ||
+					overrides.planState === "rejected"
 						? []
-						: (overrides.reviewItems ?? activeGeneration.reviewItems ?? []),
+						: (overrides.reviewItems ??
+							activeGeneration.reviewItems ??
+							[]),
 				structuredPreview:
-					overrides.planState === "none" || overrides.planState === "rejected"
+					overrides.planState === "none" ||
+					overrides.planState === "rejected"
 						? null
-						: (overrides.structuredPreview ?? activeGeneration.structuredPreview ?? null),
+						: (overrides.structuredPreview ??
+							activeGeneration.structuredPreview ??
+							null),
 				suggestionIds:
-					overrides.suggestionIds ?? activeGeneration.suggestionIds ?? [],
+					overrides.suggestionIds ??
+					activeGeneration.suggestionIds ??
+					[],
 			},
 		});
 	}
@@ -4634,7 +5038,9 @@ class AIControllerImpl implements AIController {
 		resolution: AISessionResolution,
 		options?: { finalizeSession?: boolean },
 	): boolean {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		const turn = session?.turns.find((item) => item.id === turnId);
 		if (!session || !turn) {
 			return false;
@@ -4643,12 +5049,10 @@ class AIControllerImpl implements AIController {
 			session.surface === "bottom-chat" &&
 			(turn.target === "document" ||
 				turn.operation?.kind === "document-transform" ||
-				(
-					turn.operation?.kind === "rewrite-selection" &&
+				(turn.operation?.kind === "rewrite-selection" &&
 					turn.operation.target.kind === "scoped-range" &&
 					(turn.operation.target.scope === "document" ||
-						turn.operation.target.contentFormat === "markdown")
-				));
+						turn.operation.target.contentFormat === "markdown")));
 		const turnUndoGroupId = isBottomChatDocumentTurn
 			? turn.undoGroupId
 			: undefined;
@@ -4659,31 +5063,32 @@ class AIControllerImpl implements AIController {
 			: null;
 		const refreshedInlineSelectionTarget =
 			session.surface === "inline-edit" && resolution === "accept"
-				? resolveAcceptedInlineSelectionTarget(
+				? (resolveAcceptedInlineSelectionTarget(
 						this._editor,
 						turn.operation,
 						turn.suggestionIds,
-					) ?? resolveLiveInlineSelectionTarget(this._editor)
+					) ?? resolveLiveInlineSelectionTarget(this._editor))
 				: null;
 		const resolveSuggestionsForTurn =
 			resolution === "accept"
 				? (suggestionIds: readonly string[]) =>
-					acceptSuggestions(this._editor, suggestionIds, {
-						origin: turnSuggestionResolutionOrigin,
-						undoGroupId: turnUndoGroupId,
-					})
+						acceptSuggestions(this._editor, suggestionIds, {
+							origin: turnSuggestionResolutionOrigin,
+							undoGroupId: turnUndoGroupId,
+						})
 				: (suggestionIds: readonly string[]) =>
-					rejectSuggestions(this._editor, suggestionIds, {
-						origin: turnSuggestionResolutionOrigin,
-						undoGroupId: turnUndoGroupId,
-					});
+						rejectSuggestions(this._editor, suggestionIds, {
+							origin: turnSuggestionResolutionOrigin,
+							undoGroupId: turnUndoGroupId,
+						});
 		const resolveReviewItems =
 			resolution === "accept"
-				? (reviewItemIds: readonly string[]) => this.acceptReviewItems(reviewItemIds)
-				: (reviewItemIds: readonly string[]) => this.rejectReviewItems(reviewItemIds);
+				? (reviewItemIds: readonly string[]) =>
+						this.acceptReviewItems(reviewItemIds)
+				: (reviewItemIds: readonly string[]) =>
+						this.rejectReviewItems(reviewItemIds);
 		let resolved = false;
-		resolved =
-			resolveSuggestionsForTurn(turn.suggestionIds) || resolved;
+		resolved = resolveSuggestionsForTurn(turn.suggestionIds) || resolved;
 		if (
 			this._state.activeGeneration?.sessionId === sessionId &&
 			this._state.activeGeneration.turnId === turnId &&
@@ -4710,16 +5115,20 @@ class AIControllerImpl implements AIController {
 				: undefined,
 		});
 		if (refreshedInlineSelectionTarget) {
-				this._updateSession(sessionId, {
-					target: refreshedInlineSelectionTarget,
-					anchor: resolveSessionAnchor(refreshedInlineSelectionTarget.selection),
-					contextualPrompt: session.contextualPrompt
-						? {
-								...session.contextualPrompt,
-								anchor: resolveContextualPromptAnchor(refreshedInlineSelectionTarget),
-							}
-						: undefined,
-				});
+			this._updateSession(sessionId, {
+				target: refreshedInlineSelectionTarget,
+				anchor: resolveSessionAnchor(
+					refreshedInlineSelectionTarget.selection,
+				),
+				contextualPrompt: session.contextualPrompt
+					? {
+							...session.contextualPrompt,
+							anchor: resolveContextualPromptAnchor(
+								refreshedInlineSelectionTarget,
+							),
+						}
+					: undefined,
+			});
 		}
 		if (options?.finalizeSession === false) {
 			if (undoHistoryBeforeSnapshot) {
@@ -4740,7 +5149,8 @@ class AIControllerImpl implements AIController {
 			return true;
 		}
 		const nextSession =
-			this._state.sessions.find((item) => item.id === sessionId) ?? session;
+			this._state.sessions.find((item) => item.id === sessionId) ??
+			session;
 		this._updateSession(sessionId, {
 			status: "complete",
 			contextualPrompt: closeInlineSessionPrompt(nextSession),
@@ -4770,37 +5180,41 @@ class AIControllerImpl implements AIController {
 		const session =
 			this._state.sessions.find((item) => item.id === sessionId) ?? null;
 		if (session?.surface === "inline-edit") {
-			const reviewSnapshot = this._findInlineHistorySnapshotForResolvedTurn(
-				session,
-				"undo",
-			);
+			const reviewSnapshot =
+				this._findInlineHistorySnapshotForResolvedTurn(session, "undo");
 			if (reviewSnapshot) {
-				const restoredSessions = reviewSnapshot.sessions.map((snapshotSession) => {
-					if (
-						snapshotSession.id !== sessionId ||
-						snapshotSession.surface !== "inline-edit" ||
-						!snapshotSession.contextualPrompt
-					) {
-						return snapshotSession;
-					}
-					const snapshotTurn =
-						snapshotSession.turns.find((turn) => turn.id === turnId) ?? null;
-					if (!snapshotTurn) {
-						return snapshotSession;
-					}
-					return {
-						...snapshotSession,
-						contextualPrompt: {
-							...snapshotSession.contextualPrompt,
-							composer: {
-								...snapshotSession.contextualPrompt.composer,
-								draftPrompt:
-									snapshotSession.contextualPrompt.composer.draftPrompt ||
-									snapshotTurn.prompt,
+				const restoredSessions = reviewSnapshot.sessions.map(
+					(snapshotSession) => {
+						if (
+							snapshotSession.id !== sessionId ||
+							snapshotSession.surface !== "inline-edit" ||
+							!snapshotSession.contextualPrompt
+						) {
+							return snapshotSession;
+						}
+						const snapshotTurn =
+							snapshotSession.turns.find(
+								(turn) => turn.id === turnId,
+							) ?? null;
+						if (!snapshotTurn) {
+							return snapshotSession;
+						}
+						return {
+							...snapshotSession,
+							contextualPrompt: {
+								...snapshotSession.contextualPrompt,
+								composer: {
+									...snapshotSession.contextualPrompt
+										.composer,
+									draftPrompt:
+										snapshotSession.contextualPrompt
+											.composer.draftPrompt ||
+										snapshotTurn.prompt,
+								},
 							},
-						},
-					};
-				});
+						};
+					},
+				);
 				return createInlineHistorySnapshot(
 					this._editor,
 					restoredSessions,
@@ -4818,7 +5232,8 @@ class AIControllerImpl implements AIController {
 			) {
 				return session;
 			}
-			const targetTurn = session.turns.find((turn) => turn.id === turnId) ?? null;
+			const targetTurn =
+				session.turns.find((turn) => turn.id === turnId) ?? null;
 			if (targetTurn?.status !== "review") {
 				return session;
 			}
@@ -4859,48 +5274,64 @@ class AIControllerImpl implements AIController {
 			session.id !== sessionId
 				? session
 				: {
-					...session,
-					...overrides,
-					contextualPrompt:
-						overrides.contextualPrompt ?? session.contextualPrompt
-							? {
-								...(session.contextualPrompt ??
-									resolveContextualPromptState(
-										overrides.target ?? session.target,
-									)),
-								...(overrides.contextualPrompt ?? {}),
-								anchor: {
-									...((session.contextualPrompt ??
-										resolveContextualPromptState(
-											overrides.target ?? session.target,
-										)).anchor),
-									...(overrides.contextualPrompt?.anchor ?? {}),
-								},
-								composer: {
-									...((session.contextualPrompt ??
-										resolveContextualPromptState(
-											overrides.target ?? session.target,
-										)).composer),
-									...(overrides.contextualPrompt?.composer ?? {}),
-									isSubmitting:
-										overrides.contextualPrompt?.composer?.isSubmitting ??
-										(overrides.status === "streaming"
-											? true
-											: overrides.status
-												? false
-												: (session.contextualPrompt ??
-													resolveContextualPromptState(
-														overrides.target ?? session.target,
-													)).composer.isSubmitting),
-								},
-							}
-							: undefined,
-					updatedAt: Date.now(),
-					metrics: {
-						...session.metrics,
-						...(overrides.metrics ?? {}),
+						...session,
+						...overrides,
+						contextualPrompt:
+							(overrides.contextualPrompt ??
+							session.contextualPrompt)
+								? {
+										...(session.contextualPrompt ??
+											resolveContextualPromptState(
+												overrides.target ??
+													session.target,
+											)),
+										...(overrides.contextualPrompt ?? {}),
+										anchor: {
+											...(
+												session.contextualPrompt ??
+												resolveContextualPromptState(
+													overrides.target ??
+														session.target,
+												)
+											).anchor,
+											...(overrides.contextualPrompt
+												?.anchor ?? {}),
+										},
+										composer: {
+											...(
+												session.contextualPrompt ??
+												resolveContextualPromptState(
+													overrides.target ??
+														session.target,
+												)
+											).composer,
+											...(overrides.contextualPrompt
+												?.composer ?? {}),
+											isSubmitting:
+												overrides.contextualPrompt
+													?.composer?.isSubmitting ??
+												(overrides.status ===
+												"streaming"
+													? true
+													: overrides.status
+														? false
+														: (
+																session.contextualPrompt ??
+																resolveContextualPromptState(
+																	overrides.target ??
+																		session.target,
+																)
+															).composer
+																.isSubmitting),
+										},
+									}
+								: undefined,
+						updatedAt: Date.now(),
+						metrics: {
+							...session.metrics,
+							...(overrides.metrics ?? {}),
+						},
 					},
-				},
 		);
 		if (nextSessions === this._state.sessions) {
 			return;
@@ -4908,7 +5339,8 @@ class AIControllerImpl implements AIController {
 		this._setState({
 			sessions: nextSessions,
 			activeSessionId:
-				this._state.activeSessionId === sessionId || this._state.activeSessionId == null
+				this._state.activeSessionId === sessionId ||
+				this._state.activeSessionId == null
 					? sessionId
 					: this._state.activeSessionId,
 		});
@@ -4918,7 +5350,9 @@ class AIControllerImpl implements AIController {
 		sessionId: string,
 		fastApply: FastApplyDebugState | undefined,
 	): void {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (!session) {
 			return;
 		}
@@ -4938,7 +5372,9 @@ class AIControllerImpl implements AIController {
 		turnId: string,
 		overrides: Partial<AISession["turns"][number]>,
 	): void {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (!session) {
 			return;
 		}
@@ -4946,9 +5382,9 @@ class AIControllerImpl implements AIController {
 			turn.id !== turnId
 				? turn
 				: {
-					...turn,
-					...overrides,
-				},
+						...turn,
+						...overrides,
+					},
 		);
 		if (areStructuredValuesEqual(session.turns, nextTurns)) {
 			return;
@@ -4972,8 +5408,12 @@ class AIControllerImpl implements AIController {
 		}
 		const nextSessions = this._state.sessions.map((session) => {
 			const nextTurns = session.turns.map((turn) => {
-				const suggestionIds = turn.suggestionIds.filter((sessionSuggestionId) =>
-					this._suggestions.some((suggestion) => suggestion.id === sessionSuggestionId),
+				const suggestionIds = turn.suggestionIds.filter(
+					(sessionSuggestionId) =>
+						this._suggestions.some(
+							(suggestion) =>
+								suggestion.id === sessionSuggestionId,
+						),
 				);
 				const activeGenerationMatchesTurn =
 					this._state.activeGeneration?.sessionId === session.id &&
@@ -4981,15 +5421,18 @@ class AIControllerImpl implements AIController {
 				const activeGenerationForTurn = activeGenerationMatchesTurn
 					? this._state.activeGeneration
 					: null;
-				const reviewItemIds =
-					activeGenerationForTurn
-						? (activeGenerationForTurn.reviewItems ?? [])
+				const reviewItemIds = activeGenerationForTurn
+					? (activeGenerationForTurn.reviewItems ?? [])
 							.map((item) => item.id)
 							.filter((id) => turn.reviewItemIds.includes(id))
-						: [];
+					: [];
 				const structuredPreview = activeGenerationForTurn
-					? (activeGenerationForTurn.structuredPreview ?? turn.structuredPreview ?? null)
-					: (turn.reviewItemIds.length > 0 ? (turn.structuredPreview ?? null) : null);
+					? (activeGenerationForTurn.structuredPreview ??
+						turn.structuredPreview ??
+						null)
+					: turn.reviewItemIds.length > 0
+						? (turn.structuredPreview ?? null)
+						: null;
 				return {
 					...turn,
 					suggestionIds,
@@ -4997,13 +5440,16 @@ class AIControllerImpl implements AIController {
 					structuredPreview,
 				};
 			});
-			const pendingSuggestionIds = [...new Set(nextTurns.flatMap((turn) => turn.suggestionIds))];
-			const pendingReviewItemIds =
-				[...new Set(nextTurns.flatMap((turn) => turn.reviewItemIds))];
+			const pendingSuggestionIds = [
+				...new Set(nextTurns.flatMap((turn) => turn.suggestionIds)),
+			];
+			const pendingReviewItemIds = [
+				...new Set(nextTurns.flatMap((turn) => turn.reviewItemIds)),
+			];
 			const nextStatus =
 				pendingSuggestionIds.length === 0 &&
-					pendingReviewItemIds.length === 0 &&
-					session.status === "streaming"
+				pendingReviewItemIds.length === 0 &&
+				session.status === "streaming"
 					? "complete"
 					: session.status;
 			return {
@@ -5073,9 +5519,7 @@ class AIControllerImpl implements AIController {
 		previousState: AIControllerState,
 		nextState: AIControllerState,
 	): void {
-		if (
-			!didInlineHistoryCheckpointChange(previousState, nextState)
-		) {
+		if (!didInlineHistoryCheckpointChange(previousState, nextState)) {
 			return;
 		}
 		if (
@@ -5085,7 +5529,10 @@ class AIControllerImpl implements AIController {
 			return;
 		}
 		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex];
-		const nextHistory = this._inlineHistory.slice(0, this._inlineHistoryIndex + 1);
+		const nextHistory = this._inlineHistory.slice(
+			0,
+			this._inlineHistoryIndex + 1,
+		);
 		if (nextHistory.length === 0) {
 			const baselineSnapshot = createInlineHistorySnapshot(
 				this._editor,
@@ -5095,7 +5542,8 @@ class AIControllerImpl implements AIController {
 			);
 			nextHistory.push(baselineSnapshot);
 		}
-		const previousSnapshot = nextHistory[nextHistory.length - 1] ?? currentSnapshot ?? null;
+		const previousSnapshot =
+			nextHistory[nextHistory.length - 1] ?? currentSnapshot ?? null;
 		const snapshot = createInlineHistorySnapshot(
 			this._editor,
 			nextState.sessions,
@@ -5108,7 +5556,10 @@ class AIControllerImpl implements AIController {
 						: "document-coupled",
 			},
 		);
-		if (currentSnapshot && areInlineHistorySnapshotsEqual(currentSnapshot, snapshot)) {
+		if (
+			currentSnapshot &&
+			areInlineHistorySnapshotsEqual(currentSnapshot, snapshot)
+		) {
 			return;
 		}
 		const currentUndoMetadata =
@@ -5118,7 +5569,8 @@ class AIControllerImpl implements AIController {
 		const shouldPersistUndoSnapshot =
 			previousSnapshot != null &&
 			(snapshot.kind === "document-coupled" ||
-				currentUndoMetadata?.after?.documentVersion === this._documentVersion);
+				currentUndoMetadata?.after?.documentVersion ===
+					this._documentVersion);
 		if (shouldPersistUndoSnapshot && previousSnapshot) {
 			this._undoHistoryMetadata?.setCurrentEntryMetadata(
 				AI_UNDO_HISTORY_METADATA_KEY,
@@ -5137,7 +5589,9 @@ class AIControllerImpl implements AIController {
 		sessionId: string,
 		prompt: string,
 	): void {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (
 			!session ||
 			session.surface !== "inline-edit" ||
@@ -5152,17 +5606,17 @@ class AIControllerImpl implements AIController {
 				item.id !== sessionId
 					? item
 					: {
-						...item,
-						contextualPrompt: {
-							...item.contextualPrompt!,
-							composer: {
-								...item.contextualPrompt!.composer,
-								draftPrompt: prompt,
-								isOpen: true,
-								isSubmitting: false,
+							...item,
+							contextualPrompt: {
+								...item.contextualPrompt!,
+								composer: {
+									...item.contextualPrompt!.composer,
+									draftPrompt: prompt,
+									isOpen: true,
+									isSubmitting: false,
+								},
 							},
 						},
-					},
 			),
 		};
 		const snapshot = createInlineHistorySnapshot(
@@ -5173,10 +5627,16 @@ class AIControllerImpl implements AIController {
 			{ kind: "ui-local" },
 		);
 		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex];
-		if (currentSnapshot && areInlineHistorySnapshotsEqual(currentSnapshot, snapshot)) {
+		if (
+			currentSnapshot &&
+			areInlineHistorySnapshotsEqual(currentSnapshot, snapshot)
+		) {
 			return;
 		}
-		const nextHistory = this._inlineHistory.slice(0, this._inlineHistoryIndex + 1);
+		const nextHistory = this._inlineHistory.slice(
+			0,
+			this._inlineHistoryIndex + 1,
+		);
 		nextHistory.push(snapshot);
 		this._inlineHistory = nextHistory;
 		this._inlineHistoryIndex = nextHistory.length - 1;
@@ -5190,19 +5650,22 @@ class AIControllerImpl implements AIController {
 		if (!options?.shortcutOnly) {
 			return this._inlineHistoryIndex + step;
 		}
-		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex] ?? null;
+		const currentSnapshot =
+			this._inlineHistory[this._inlineHistoryIndex] ?? null;
 		const scopedSessionId = this._resolveShortcutInlineHistorySessionId(
 			currentSnapshot,
 			direction,
 		);
-		const waypoints = this._buildInlineShortcutHistoryWaypoints(scopedSessionId);
+		const waypoints =
+			this._buildInlineShortcutHistoryWaypoints(scopedSessionId);
 		if (waypoints.length === 0) {
 			return -1;
 		}
-		const currentWaypointIndex = this._resolveCurrentInlineShortcutWaypointIndex(
-			waypoints,
-			scopedSessionId,
-		);
+		const currentWaypointIndex =
+			this._resolveCurrentInlineShortcutWaypointIndex(
+				waypoints,
+				scopedSessionId,
+			);
 		if (currentWaypointIndex < 0) {
 			return -1;
 		}
@@ -5219,7 +5682,11 @@ class AIControllerImpl implements AIController {
 			return activeSession.id;
 		}
 		const selection = this._editor.selection;
-		if (currentSnapshot && selection?.type === "text" && !selection.isCollapsed) {
+		if (
+			currentSnapshot &&
+			selection?.type === "text" &&
+			!selection.isCollapsed
+		) {
 			const matchingSession = [...currentSnapshot.sessions]
 				.reverse()
 				.find(
@@ -5254,13 +5721,13 @@ class AIControllerImpl implements AIController {
 			const searchSnapshot = this._inlineHistory[searchIndex];
 			const matchingSelectionSession =
 				selection?.type === "text" && !selection.isCollapsed
-					? [...(searchSnapshot?.sessions ?? [])]
-						.reverse()
-						.find(
-							(session) =>
-								session.surface === "inline-edit" &&
-								sessionSelectionMatches(session, selection),
-						) ?? null
+					? ([...(searchSnapshot?.sessions ?? [])]
+							.reverse()
+							.find(
+								(session) =>
+									session.surface === "inline-edit" &&
+									sessionSelectionMatches(session, selection),
+							) ?? null)
 					: null;
 			if (matchingSelectionSession) {
 				return matchingSelectionSession.id;
@@ -5268,7 +5735,8 @@ class AIControllerImpl implements AIController {
 			const searchInlineSession =
 				[...(searchSnapshot?.sessions ?? [])]
 					.reverse()
-					.find((session) => session.surface === "inline-edit") ?? null;
+					.find((session) => session.surface === "inline-edit") ??
+				null;
 			if (searchInlineSession) {
 				return searchInlineSession.id;
 			}
@@ -5286,20 +5754,28 @@ class AIControllerImpl implements AIController {
 			if (!snapshot || snapshot.kind === "ui-local") {
 				continue;
 			}
-			const state = resolveInlineShortcutHistoryState(snapshot, sessionId);
+			const state = resolveInlineShortcutHistoryState(
+				snapshot,
+				sessionId,
+			);
 			if (!state) {
 				continue;
 			}
 			const previousWaypoint = waypoints[waypoints.length - 1] ?? null;
 			if (
 				previousWaypoint &&
-				areInlineShortcutHistoryStatesEqual(previousWaypoint.state, state)
+				areInlineShortcutHistoryStatesEqual(
+					previousWaypoint.state,
+					state,
+				)
 			) {
 				previousWaypoint.endIndex = index;
 				if (
 					shouldReplaceInlineShortcutWaypointRepresentative(
 						previousWaypoint.state,
-						this._inlineHistory[previousWaypoint.representativeIndex] ?? null,
+						this._inlineHistory[
+							previousWaypoint.representativeIndex
+						] ?? null,
 						snapshot,
 					)
 				) {
@@ -5321,7 +5797,8 @@ class AIControllerImpl implements AIController {
 		waypoints: readonly AIInlineShortcutHistoryWaypoint[],
 		sessionId: string | null,
 	): number {
-		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex] ?? null;
+		const currentSnapshot =
+			this._inlineHistory[this._inlineHistoryIndex] ?? null;
 		const currentState = currentSnapshot
 			? resolveInlineShortcutHistoryState(currentSnapshot, sessionId)
 			: null;
@@ -5330,20 +5807,29 @@ class AIControllerImpl implements AIController {
 				(waypoint) =>
 					this._inlineHistoryIndex >= waypoint.startIndex &&
 					this._inlineHistoryIndex <= waypoint.endIndex &&
-					areInlineShortcutHistoryStatesEqual(waypoint.state, currentState),
+					areInlineShortcutHistoryStatesEqual(
+						waypoint.state,
+						currentState,
+					),
 			);
 			if (currentIndex >= 0) {
 				return currentIndex;
 			}
 			const matchingIndex = waypoints.findIndex((waypoint) =>
-				areInlineShortcutHistoryStatesEqual(waypoint.state, currentState),
+				areInlineShortcutHistoryStatesEqual(
+					waypoint.state,
+					currentState,
+				),
 			);
 			if (matchingIndex >= 0) {
 				return matchingIndex;
 			}
 		}
 		for (let index = waypoints.length - 1; index >= 0; index -= 1) {
-			if (waypoints[index]!.representativeIndex <= this._inlineHistoryIndex) {
+			if (
+				waypoints[index]!.representativeIndex <=
+				this._inlineHistoryIndex
+			) {
 				return index;
 			}
 		}
@@ -5354,7 +5840,10 @@ class AIControllerImpl implements AIController {
 		direction: AIInlineHistoryDirection,
 		options?: { shortcutOnly?: boolean },
 	): boolean {
-		const targetIndex = this._resolveInlineHistoryTargetIndex(direction, options);
+		const targetIndex = this._resolveInlineHistoryTargetIndex(
+			direction,
+			options,
+		);
 		const targetSnapshot = this._inlineHistory[targetIndex];
 		if (!targetSnapshot) {
 			return false;
@@ -5371,14 +5860,21 @@ class AIControllerImpl implements AIController {
 		direction: AIInlineHistoryDirection,
 		options?: { shortcutOnly?: boolean },
 	): boolean {
-		const targetIndex = this._resolveInlineHistoryTargetIndex(direction, options);
+		const targetIndex = this._resolveInlineHistoryTargetIndex(
+			direction,
+			options,
+		);
 		const targetSnapshot = this._inlineHistory[targetIndex];
 		if (!targetSnapshot) {
 			return false;
 		}
-		const currentSnapshot = this._inlineHistory[this._inlineHistoryIndex] ?? null;
+		const currentSnapshot =
+			this._inlineHistory[this._inlineHistoryIndex] ?? null;
 		const shortcutSessionId = options?.shortcutOnly
-			? this._resolveShortcutInlineHistorySessionId(currentSnapshot, direction)
+			? this._resolveShortcutInlineHistorySessionId(
+					currentSnapshot,
+					direction,
+				)
 			: null;
 		if (targetSnapshot.kind === "ui-local") {
 			this._applyInlineHistorySnapshot(targetSnapshot, {
@@ -5394,9 +5890,9 @@ class AIControllerImpl implements AIController {
 			const targetState = resolveInlineShortcutHistoryState(
 				targetSnapshot,
 				shortcutSessionId ??
-				targetSnapshot.sessionId ??
-				targetSnapshot.activeSessionId ??
-				null,
+					targetSnapshot.sessionId ??
+					targetSnapshot.activeSessionId ??
+					null,
 			);
 			this._pendingInlineHistoryRestore = {
 				direction,
@@ -5417,9 +5913,9 @@ class AIControllerImpl implements AIController {
 		}
 		const resolvedTargetSnapshot = options?.shortcutOnly
 			? this._resolveShortcutInlineHistoryTraversalSnapshot(
-				targetSnapshot,
-				shortcutSessionId,
-			)
+					targetSnapshot,
+					shortcutSessionId,
+				)
 			: targetSnapshot;
 		this._applyInlineHistorySnapshot(resolvedTargetSnapshot, {
 			historyTraversal: true,
@@ -5474,13 +5970,19 @@ class AIControllerImpl implements AIController {
 		);
 		if (targetIndex >= 0) {
 			this._inlineHistoryIndex = targetIndex;
-			this._applyInlineHistorySnapshot(this._inlineHistory[targetIndex]!, {
-				historyTraversal: true,
-			});
+			this._applyInlineHistorySnapshot(
+				this._inlineHistory[targetIndex]!,
+				{
+					historyTraversal: true,
+				},
+			);
 			return;
 		}
 		this._applyInlineHistorySnapshot(snapshot, { historyTraversal: true });
-		const nextHistory = this._inlineHistory.slice(0, this._inlineHistoryIndex + 1);
+		const nextHistory = this._inlineHistory.slice(
+			0,
+			this._inlineHistoryIndex + 1,
+		);
 		nextHistory.push(snapshot);
 		this._inlineHistory = nextHistory;
 		this._inlineHistoryIndex = nextHistory.length - 1;
@@ -5490,21 +5992,30 @@ class AIControllerImpl implements AIController {
 		session: AISession,
 		direction: AIInlineHistoryDirection,
 	): AIInlineHistorySnapshot | null {
-		const latestTurnId = session.turns[session.turns.length - 1]?.id ?? null;
+		const latestTurnId =
+			session.turns[session.turns.length - 1]?.id ?? null;
 		if (!latestTurnId) {
 			return null;
 		}
-		for (let index = this._inlineHistory.length - 1; index >= 0; index -= 1) {
+		for (
+			let index = this._inlineHistory.length - 1;
+			index >= 0;
+			index -= 1
+		) {
 			const snapshot = this._inlineHistory[index];
 			const snapshotSession =
 				snapshot?.sessions.find(
-					(item) => item.id === session.id && item.surface === "inline-edit",
+					(item) =>
+						item.id === session.id &&
+						item.surface === "inline-edit",
 				) ?? null;
 			if (!snapshotSession) {
 				continue;
 			}
 			const snapshotTurn =
-				snapshotSession.turns.find((turn) => turn.id === latestTurnId) ?? null;
+				snapshotSession.turns.find(
+					(turn) => turn.id === latestTurnId,
+				) ?? null;
 			if (!snapshotTurn) {
 				continue;
 			}
@@ -5588,7 +6099,9 @@ class AIControllerImpl implements AIController {
 		}
 		return createInlineHistorySnapshot(
 			this._editor,
-			targetSnapshot.sessions.filter((session) => session.id !== scopedSessionId),
+			targetSnapshot.sessions.filter(
+				(session) => session.id !== scopedSessionId,
+			),
 			targetSnapshot.activeSessionId === scopedSessionId
 				? null
 				: targetSnapshot.activeSessionId,
@@ -5636,7 +6149,8 @@ class AIControllerImpl implements AIController {
 			return -1;
 		}
 		let resolvedTargetIndex = -1;
-		const scopedSessionId = request.sessionId ?? request.targetState.sessionId;
+		const scopedSessionId =
+			request.sessionId ?? request.targetState.sessionId;
 		for (let index = 0; index < this._inlineHistory.length; index += 1) {
 			const snapshot = this._inlineHistory[index];
 			if (!snapshot || snapshot.kind === "ui-local") {
@@ -5651,7 +6165,10 @@ class AIControllerImpl implements AIController {
 			);
 			if (
 				!snapshotState ||
-				!areInlineShortcutHistoryStatesEqual(snapshotState, request.targetState)
+				!areInlineShortcutHistoryStatesEqual(
+					snapshotState,
+					request.targetState,
+				)
 			) {
 				continue;
 			}
@@ -5674,25 +6191,25 @@ class AIControllerImpl implements AIController {
 			this._pendingInlineHistoryRestore &&
 			this._pendingInlineHistoryRestore.direction === event.kind
 		) {
-			const targetIndex = this._resolvePendingInlineHistoryRestoreTargetIndex(
-				this._pendingInlineHistoryRestore,
-			);
+			const targetIndex =
+				this._resolvePendingInlineHistoryRestoreTargetIndex(
+					this._pendingInlineHistoryRestore,
+				);
 			if (targetIndex >= 0) {
 				this._inlineHistoryIndex = targetIndex;
 				const targetSnapshot = this._inlineHistory[targetIndex]!;
-				const resolvedTargetSnapshot =
-					this._pendingInlineHistoryRestore.shortcutOnly
-						? this._resolveShortcutInlineHistoryTraversalSnapshot(
+				const resolvedTargetSnapshot = this._pendingInlineHistoryRestore
+					.shortcutOnly
+					? this._resolveShortcutInlineHistoryTraversalSnapshot(
 							targetSnapshot,
 							this._pendingInlineHistoryRestore.sessionId ?? null,
 						)
-						: this._resolveInlineHistoryTraversalSnapshot(targetSnapshot);
-				this._applyInlineHistorySnapshot(
-					resolvedTargetSnapshot,
-					{
-						historyTraversal: true,
-					},
-				);
+					: this._resolveInlineHistoryTraversalSnapshot(
+							targetSnapshot,
+						);
+				this._applyInlineHistorySnapshot(resolvedTargetSnapshot, {
+					historyTraversal: true,
+				});
 			}
 			this._pendingInlineHistoryRestore = null;
 			this._scheduleQueuedInlineHistoryShortcutFlush();
@@ -5727,7 +6244,9 @@ class AIControllerImpl implements AIController {
 		isOpen: boolean,
 		options?: { openReason?: "user" | "history" },
 	): void {
-		const session = this._state.sessions.find((item) => item.id === sessionId);
+		const session = this._state.sessions.find(
+			(item) => item.id === sessionId,
+		);
 		if (
 			!session ||
 			session.surface !== "inline-edit" ||
@@ -5750,19 +6269,20 @@ class AIControllerImpl implements AIController {
 			item.id !== sessionId
 				? item
 				: {
-					...item,
-					contextualPrompt: {
-						...item.contextualPrompt!,
-						composer: {
-							...item.contextualPrompt!.composer,
-							isOpen,
-							openReason: isOpen
-								? (options?.openReason ?? "user")
-								: item.contextualPrompt!.composer.openReason,
+						...item,
+						contextualPrompt: {
+							...item.contextualPrompt!,
+							composer: {
+								...item.contextualPrompt!.composer,
+								isOpen,
+								openReason: isOpen
+									? (options?.openReason ?? "user")
+									: item.contextualPrompt!.composer
+											.openReason,
+							},
 						},
+						updatedAt: Date.now(),
 					},
-					updatedAt: Date.now(),
-				},
 		);
 		this._setState({
 			sessions: nextSessions,
@@ -5788,7 +6308,8 @@ export function aiExtension(config: AIExtensionConfig = {}): Extension {
 
 		activateClient: async ({ editor }) => {
 			activeEditor = editor;
-			const inlineCompletionRegistration = ensureInlineCompletionController(editor);
+			const inlineCompletionRegistration =
+				ensureInlineCompletionController(editor);
 			inlineCompletion = inlineCompletionRegistration.controller;
 			releaseInlineCompletion = inlineCompletionRegistration.release;
 			controller = new AIControllerImpl(editor, config, {
@@ -5814,28 +6335,39 @@ export function aiExtension(config: AIExtensionConfig = {}): Extension {
 			});
 			reviewController = new AIReviewService({
 				getSuggestions: () => controller?.getSuggestions() ?? [],
-				acceptSuggestion: (id) => controller?.acceptSuggestion(id) ?? false,
-				rejectSuggestion: (id) => controller?.rejectSuggestion(id) ?? false,
+				acceptSuggestion: (id) =>
+					controller?.acceptSuggestion(id) ?? false,
+				rejectSuggestion: (id) =>
+					controller?.rejectSuggestion(id) ?? false,
 				acceptAllSuggestions: () => controller?.acceptAllSuggestions(),
 				rejectAllSuggestions: () => controller?.rejectAllSuggestions(),
 			});
 			editor.internals.setSlot(AI_CONTROLLER_SLOT, controller);
 			editor.internals.setSlot(AI_INLINE_HISTORY_SLOT, inlineHistory);
-			editor.internals.setSlot(AI_REVIEW_CONTROLLER_SLOT, reviewController);
-			unsubscribeTrackedOrigins = editor.undoManager.registerTrackedOrigins([
-				AI_SESSION_SUGGESTION_ORIGIN,
-				SUGGESTION_RESOLUTION_ORIGIN,
-			]);
+			editor.internals.setSlot(
+				AI_REVIEW_CONTROLLER_SLOT,
+				reviewController,
+			);
+			unsubscribeTrackedOrigins =
+				editor.undoManager.registerTrackedOrigins([
+					AI_SESSION_SUGGESTION_ORIGIN,
+					SUGGESTION_RESOLUTION_ORIGIN,
+				]);
 
 			unsubscribeBeforeApply = editor.onBeforeApply(
 				(ops, options) => {
 					if (!controller?.getState().suggestMode) return ops;
 					if (shouldBypassSuggestMode(options.origin)) return ops;
+					const originType = options.origin
+						? getOpOriginType(options.origin)
+						: undefined;
 					return interceptApplyForSuggestMode(
 						ops,
 						editor,
-						options.origin === "ai" ? "assistant" : config.author ?? "user",
-						options.origin === "ai" ? "ai" : "user",
+						originType === "ai"
+							? "assistant"
+							: (config.author ?? "user"),
+						originType === "ai" ? "ai" : "user",
 						readModelId(config.model),
 					);
 				},
@@ -5873,7 +6405,9 @@ export function aiExtension(config: AIExtensionConfig = {}): Extension {
 		decorations: () => {
 			const decorations = controller?.buildDecorations() ?? [];
 			const inlineDecorations =
-				activeEditor?.internals.getSlot(AI_AUTOCOMPLETE_CONTROLLER_SLOT) == null
+				activeEditor?.internals.getSlot(
+					AI_AUTOCOMPLETE_CONTROLLER_SLOT,
+				) == null
 					? (inlineCompletion?.buildDecorations() ?? [])
 					: [];
 			return createDecorationSet([...decorations, ...inlineDecorations]);
@@ -5900,15 +6434,21 @@ export function getAIInlineCompletionController(
 export function getAIInlineHistoryController(
 	editor: Editor,
 ): AIInlineHistoryController | null {
-	return editor.internals.getSlot<AIInlineHistoryController>(
-		AI_INLINE_HISTORY_SLOT,
-	) ?? null;
+	return (
+		editor.internals.getSlot<AIInlineHistoryController>(
+			AI_INLINE_HISTORY_SLOT,
+		) ?? null
+	);
 }
 
-export function getAIReviewController(editor: Editor): AIReviewController | null {
-	return editor.internals.getSlot<AIReviewController>(
-		AI_REVIEW_CONTROLLER_SLOT,
-	) ?? null;
+export function getAIReviewController(
+	editor: Editor,
+): AIReviewController | null {
+	return (
+		editor.internals.getSlot<AIReviewController>(
+			AI_REVIEW_CONTROLLER_SLOT,
+		) ?? null
+	);
 }
 
 function resolveOrderedReviewItems(
@@ -5937,7 +6477,10 @@ function compareReviewItemRemovalOrder(
 	left: StructuralReviewItem,
 	right: StructuralReviewItem,
 ): number {
-	const maxPathLength = Math.max(left.bundlePath.length, right.bundlePath.length);
+	const maxPathLength = Math.max(
+		left.bundlePath.length,
+		right.bundlePath.length,
+	);
 	for (let index = 0; index < maxPathLength; index += 1) {
 		const leftPart = left.bundlePath[index] ?? -1;
 		const rightPart = right.bundlePath[index] ?? -1;
@@ -5968,76 +6511,77 @@ function readModelId(model: ModelAdapter | undefined): string | undefined {
 	return candidate.modelId ?? candidate.name;
 }
 
-function supportsStructuredIntent(
-	model: ModelAdapter | undefined,
-): boolean {
+function supportsStructuredIntent(model: ModelAdapter | undefined): boolean {
 	return model?.capabilities?.structuredIntent === true;
 }
 
 type AIStreamEventInput =
 	| {
-		type: "generation-start";
-		prompt: string;
-		target: GenerationState["target"];
-	}
+			type: "generation-start";
+			prompt: string;
+			target: GenerationState["target"];
+	  }
 	| {
-		type: "status";
-		status: AIControllerState["status"];
-	}
+			type: "status";
+			status: AIControllerState["status"];
+	  }
 	| {
-		type: "text-delta";
-		delta: string;
-		text: string;
-	}
+			type: "text-delta";
+			delta: string;
+			text: string;
+	  }
 	| {
-		type: "operation";
-		operation: AIRequestedOperation;
-		phase: "preview" | "final" | "conflict";
-		text?: string;
-		reason?: string;
-	}
+			type: "operation";
+			operation: AIRequestedOperation;
+			phase: "preview" | "final" | "conflict";
+			text?: string;
+			reason?: string;
+	  }
 	| {
-		type: "app-partial";
-		data: unknown;
-		final: boolean;
-	}
+			type: "app-partial";
+			data: unknown;
+			final: boolean;
+	  }
 	| {
-		type: "tool-call";
-		toolCallId: string;
-		toolName: string;
-		input: unknown;
-	}
+			type: "tool-call";
+			toolCallId: string;
+			toolName: string;
+			input: unknown;
+	  }
 	| {
-		type: "tool-output";
-		toolCallId: string;
-		toolName: string;
-		part: unknown;
-		output: unknown;
-	}
+			type: "tool-output";
+			toolCallId: string;
+			toolName: string;
+			part: unknown;
+			output: unknown;
+	  }
 	| {
-		type: "tool-result";
-		toolCallId: string;
-		toolName: string;
-		output: unknown;
-		state: "complete" | "error";
-	}
+			type: "tool-result";
+			toolCallId: string;
+			toolName: string;
+			output: unknown;
+			state: "complete" | "error";
+	  }
 	| {
-		type: "structured-preview";
-		preview: GenerationStructuredPreviewState;
-		patches: readonly {
-			op: "add" | "remove" | "replace";
-			path: string;
-			value?: unknown;
-		}[];
-	}
+			type: "structured-preview";
+			preview: GenerationStructuredPreviewState;
+			patches: readonly {
+				op: "add" | "remove" | "replace";
+				path: string;
+				value?: unknown;
+			}[];
+	  }
 	| {
-		type: "generation-finish";
-		status: GenerationState["status"];
-		text: string;
-	};
+			type: "generation-finish";
+			status: GenerationState["status"];
+			text: string;
+	  };
 
 function createAIStreamEvent(
-	generation: Pick<GenerationState, "id" | "zoneId" | "blockId" | "sessionId">,
+	generation: Pick<
+		GenerationState,
+		"id" | "zoneId" | "blockId" | "sessionId"
+	>,
 	event: AIStreamEventInput,
 ): AIStreamEvent {
 	return {
@@ -6063,7 +6607,9 @@ function resolvePromptTarget(
 	if (target === "document") {
 		return "document";
 	}
-	return selection?.type === "text" && !selection.isCollapsed ? "selection" : "block";
+	return selection?.type === "text" && !selection.isCollapsed
+		? "selection"
+		: "block";
 }
 
 function resolveSessionTarget(
@@ -6088,11 +6634,11 @@ function resolveSessionTarget(
 		};
 	}
 	const blockId =
-		(target === "block" || target === "auto")
-			? resolveActiveBlockId(selection) ??
-			editor.lastBlock()?.id ??
-			editor.firstBlock()?.id ??
-			null
+		target === "block" || target === "auto"
+			? (resolveActiveBlockId(selection) ??
+				editor.lastBlock()?.id ??
+				editor.firstBlock()?.id ??
+				null)
 			: null;
 	return blockId ? { kind: "block", blockId } : { kind: "document" };
 }
@@ -6129,7 +6675,9 @@ function resolveContextualPromptAnchor(
 		const range = target.selection.toRange();
 		return {
 			kind: "text-range",
-			selectionSnapshot: resolveSessionSelectionSnapshot(target.selection),
+			selectionSnapshot: resolveSessionSelectionSnapshot(
+				target.selection,
+			),
 			focusBlockId: range.start.blockId,
 			status: "valid",
 			lastResolvedRect: null,
@@ -6211,28 +6759,33 @@ function cloneInlineHistorySessions(
 		target: cloneSessionTarget(editor, session.target),
 		contextualPrompt: session.contextualPrompt
 			? {
-				...session.contextualPrompt,
-				anchor: {
-					...session.contextualPrompt.anchor,
-					selectionSnapshot: session.contextualPrompt.anchor.selectionSnapshot
-						? {
-							...session.contextualPrompt.anchor.selectionSnapshot,
-							anchor: {
-								...session.contextualPrompt.anchor.selectionSnapshot.anchor,
-							},
-							focus: {
-								...session.contextualPrompt.anchor.selectionSnapshot.focus,
-							},
-							blockRange: [
-								...session.contextualPrompt.anchor.selectionSnapshot.blockRange,
-							],
-						}
-						: undefined,
-				},
-				composer: {
-					...session.contextualPrompt.composer,
-				},
-			}
+					...session.contextualPrompt,
+					anchor: {
+						...session.contextualPrompt.anchor,
+						selectionSnapshot: session.contextualPrompt.anchor
+							.selectionSnapshot
+							? {
+									...session.contextualPrompt.anchor
+										.selectionSnapshot,
+									anchor: {
+										...session.contextualPrompt.anchor
+											.selectionSnapshot.anchor,
+									},
+									focus: {
+										...session.contextualPrompt.anchor
+											.selectionSnapshot.focus,
+									},
+									blockRange: [
+										...session.contextualPrompt.anchor
+											.selectionSnapshot.blockRange,
+									],
+								}
+							: undefined,
+					},
+					composer: {
+						...session.contextualPrompt.composer,
+					},
+				}
 			: undefined,
 		turns: session.turns.map((turn) => ({
 			...turn,
@@ -6241,11 +6794,11 @@ function cloneInlineHistorySessions(
 			anchor: turn.anchor ? { ...turn.anchor } : undefined,
 			selection: turn.selection
 				? {
-					...turn.selection,
-					anchor: { ...turn.selection.anchor },
-					focus: { ...turn.selection.focus },
-					blockRange: [...turn.selection.blockRange],
-				}
+						...turn.selection,
+						anchor: { ...turn.selection.anchor },
+						focus: { ...turn.selection.focus },
+						blockRange: [...turn.selection.blockRange],
+					}
 				: undefined,
 		})),
 		promptHistory: session.promptHistory.map((prompt) => ({ ...prompt })),
@@ -6284,7 +6837,8 @@ function recreateTextSelection(
 			const isSingleBlock = blockRange.length === 1;
 			if (isSingleBlock) {
 				return (
-					point.offset >= this.start.offset && point.offset <= this.end.offset
+					point.offset >= this.start.offset &&
+					point.offset <= this.end.offset
 				);
 			}
 			if (point.blockId === this.start.blockId) {
@@ -6300,7 +6854,11 @@ function recreateTextSelection(
 			end: { blockId: string; offset: number };
 			contains: (point: { blockId: string; offset: number }) => boolean;
 		}): boolean {
-			return this.contains(other.start) || this.contains(other.end) || other.contains(this.start);
+			return (
+				this.contains(other.start) ||
+				this.contains(other.end) ||
+				other.contains(this.start)
+			);
 		},
 		equals(other: {
 			start: { blockId: string; offset: number };
@@ -6380,7 +6938,8 @@ function resolveSelectionSnapshotRangeEnd(
 			offset: Math.max(snapshot.anchor.offset, snapshot.focus.offset),
 		};
 	}
-	const lastBlockId = blockRange[blockRange.length - 1] ?? snapshot.focus.blockId;
+	const lastBlockId =
+		blockRange[blockRange.length - 1] ?? snapshot.focus.blockId;
 	return snapshot.anchor.blockId === lastBlockId
 		? { ...snapshot.anchor }
 		: { ...snapshot.focus };
@@ -6430,10 +6989,10 @@ function resolveRequestedOperationForSession(
 	);
 	const documentTransformPlan = clearDocument
 		? {
-			blockIds: documentBlockIds,
-			placement: "replace-blocks" as const,
-			transform: "remove" as const,
-		}
+				blockIds: documentBlockIds,
+				placement: "replace-blocks" as const,
+				transform: "remove" as const,
+			}
 		: undefined;
 
 	if (resolvedEditProposal) {
@@ -6469,7 +7028,8 @@ function resolveRequestedOperationForSession(
 		activeBlockId &&
 		(promptIntent === "rewrite" ||
 			(promptIntent === "local-edit" &&
-				(editor.getBlock(activeBlockId)?.textContent().length ?? 0) > 0) ||
+				(editor.getBlock(activeBlockId)?.textContent().length ?? 0) >
+					0) ||
 			explicitTarget === "block")
 	) {
 		if (!canUseLocalBlockTextOperation(editor, activeBlockId)) {
@@ -6503,7 +7063,9 @@ function resolveRequestedOperationForSession(
 	}
 	return createDocumentTransformOperation(
 		editor,
-		session.target.kind === "document" ? documentActiveBlockId : activeBlockId,
+		session.target.kind === "document"
+			? documentActiveBlockId
+			: activeBlockId,
 		promptIntent,
 		documentVersion,
 		documentTransformPlan,
@@ -6526,14 +7088,18 @@ function resolveLocalOperationContentFormat(
 	if (operation.kind !== "rewrite-block") {
 		return "text";
 	}
-	const blockId = operation.target.kind === "block" ? operation.target.blockId : null;
+	const blockId =
+		operation.target.kind === "block" ? operation.target.blockId : null;
 	if (blockId && resolveFullBlockTextSelection(editor, blockId)) {
 		return "text";
 	}
 	return defaultBlockFormat;
 }
 
-function canUseLocalBlockTextOperation(editor: Editor, blockId: string): boolean {
+function canUseLocalBlockTextOperation(
+	editor: Editor,
+	blockId: string,
+): boolean {
 	const block = editor.getBlock(blockId);
 	if (!block) {
 		return false;
@@ -6554,7 +7120,10 @@ function canReuseBottomChatSessionOperation(
 	const nextResolvedTarget =
 		resolveResolvedEditTargetFromRequestedOperation(nextOperation);
 	if (previousResolvedTarget && nextResolvedTarget) {
-		return areResolvedEditTargetsEqual(previousResolvedTarget, nextResolvedTarget);
+		return areResolvedEditTargetsEqual(
+			previousResolvedTarget,
+			nextResolvedTarget,
+		);
 	}
 	if (previousOperation.kind !== nextOperation.kind) {
 		return false;
@@ -6574,8 +7143,9 @@ function canReuseBottomChatSessionOperation(
 		}
 		return (
 			previousOperation.provenance?.selectionSignature ===
-			nextOperation.provenance?.selectionSignature &&
-			previousOperation.target.sourceText === nextOperation.target.sourceText
+				nextOperation.provenance?.selectionSignature &&
+			previousOperation.target.sourceText ===
+				nextOperation.target.sourceText
 		);
 	}
 	if (previousOperation.target.kind === "block") {
@@ -6585,22 +7155,23 @@ function canReuseBottomChatSessionOperation(
 		return (
 			previousOperation.target.blockId === nextOperation.target.blockId &&
 			previousOperation.provenance?.blockRevision ===
-			nextOperation.provenance?.blockRevision
+				nextOperation.provenance?.blockRevision
 		);
 	}
 	if (nextOperation.target.kind !== "document") {
 		return false;
 	}
 	return (
-		previousOperation.target.activeBlockId === nextOperation.target.activeBlockId &&
+		previousOperation.target.activeBlockId ===
+			nextOperation.target.activeBlockId &&
 		areStructuredValuesEqual(
 			previousOperation.target.blockIds ?? [],
 			nextOperation.target.blockIds ?? [],
 		) &&
 		(previousOperation.target.placement ?? null) ===
-		(nextOperation.target.placement ?? null) &&
+			(nextOperation.target.placement ?? null) &&
 		(previousOperation.target.transform ?? null) ===
-		(nextOperation.target.transform ?? null)
+			(nextOperation.target.transform ?? null)
 	);
 }
 
@@ -6633,11 +7204,17 @@ function areResolvedEditTargetsEqual(
 	) {
 		return false;
 	}
-	if (previousTarget.kind === "scoped-range" && nextTarget.kind === "scoped-range") {
+	if (
+		previousTarget.kind === "scoped-range" &&
+		nextTarget.kind === "scoped-range"
+	) {
 		return (
 			previousTarget.scope === nextTarget.scope &&
 			previousTarget.contentFormat === nextTarget.contentFormat &&
-			areStructuredValuesEqual(previousTarget.blockIds, nextTarget.blockIds)
+			areStructuredValuesEqual(
+				previousTarget.blockIds,
+				nextTarget.blockIds,
+			)
 		);
 	}
 	return true;
@@ -6670,7 +7247,11 @@ function isDocumentResetPrompt(prompt: string): boolean {
 
 function isDocumentFollowUpEditPrompt(prompt: string): boolean {
 	const normalizedPrompt = prompt.trim().toLowerCase();
-	if (/\b(continue|append|add|insert|another|more|next)\b/.test(normalizedPrompt)) {
+	if (
+		/\b(continue|append|add|insert|another|more|next)\b/.test(
+			normalizedPrompt,
+		)
+	) {
 		return false;
 	}
 	return (
@@ -6679,7 +7260,8 @@ function isDocumentFollowUpEditPrompt(prompt: string): boolean {
 		) &&
 		(/\b(title|heading|story|document|content|contents|text|tone|voice|ending|opening|intro|introduction|theme)\b/.test(
 			normalizedPrompt,
-		) || /\bmake (?:it|this)\b/.test(normalizedPrompt))
+		) ||
+			/\bmake (?:it|this)\b/.test(normalizedPrompt))
 	);
 }
 
@@ -6738,7 +7320,8 @@ function createRewriteSelectionOperation(
 			blockId: range.start.blockId,
 			anchor: { ...selection.anchor },
 			focus: { ...selection.focus },
-			sourceText: options?.sourceText ?? resolveSelectionText(editor, selection),
+			sourceText:
+				options?.sourceText ?? resolveSelectionText(editor, selection),
 		},
 		provenance: {
 			documentVersion,
@@ -6790,7 +7373,9 @@ function createRewriteSelectionOperationFromResolvedTarget(
 		},
 		provenance: {
 			documentVersion,
-			blockRevision: editor.getBlockRevision(target.blockId ?? selection.anchor.blockId),
+			blockRevision: editor.getBlockRevision(
+				target.blockId ?? selection.anchor.blockId,
+			),
 			selectionSignature: createSelectionSignature(selection),
 			syncedGeneration: editor.documentState.generation,
 		},
@@ -6855,7 +7440,10 @@ function createDocumentTransformOperation(
 	documentVersion: number,
 	options?: {
 		blockIds?: readonly string[];
-		placement?: "append-after-block" | "replace-empty-block" | "replace-blocks";
+		placement?:
+			| "append-after-block"
+			| "replace-empty-block"
+			| "replace-blocks";
 		transform?: "write" | "rewrite" | "remove";
 	},
 ): AIRequestedOperation {
@@ -6907,7 +7495,9 @@ function resolveReplacementDeleteBlockIds(
 	replaceBlockIds?: readonly string[],
 ): string[] {
 	const requestedIds =
-		replaceBlockIds && replaceBlockIds.length > 0 ? replaceBlockIds : [blockId];
+		replaceBlockIds && replaceBlockIds.length > 0
+			? replaceBlockIds
+			: [blockId];
 	const deleteBlockIds = requestedIds.filter(
 		(candidateBlockId, index, allBlockIds) =>
 			allBlockIds.indexOf(candidateBlockId) === index &&
@@ -7013,7 +7603,10 @@ function resolveResolvedEditProposal(
 		);
 	}
 
-	const paragraphSelection = resolveDocumentParagraphSelection(editor, prompt);
+	const paragraphSelection = resolveDocumentParagraphSelection(
+		editor,
+		prompt,
+	);
 	if (paragraphSelection) {
 		return createResolvedEditProposal(
 			promptIntent,
@@ -7077,7 +7670,8 @@ function resolveSelectionForRequestedOperation(
 		focus: operation.target.focus,
 		blockRange: resolveSelectionTargetBlockIds(editor, operation.target),
 		isMultiBlock:
-			resolveSelectionTargetBlockIds(editor, operation.target).length > 1 ||
+			resolveSelectionTargetBlockIds(editor, operation.target).length >
+				1 ||
 			operation.target.anchor.blockId !== operation.target.focus.blockId,
 	});
 }
@@ -7104,7 +7698,8 @@ function resolveDocumentBlockRangeSelection(
 ): TextSelection | null {
 	const resolvedBlockIds = blockIds.filter(
 		(blockId, index, allBlockIds) =>
-			allBlockIds.indexOf(blockId) === index && editor.getBlock(blockId) != null,
+			allBlockIds.indexOf(blockId) === index &&
+			editor.getBlock(blockId) != null,
 	);
 	const firstBlockId = resolvedBlockIds[0];
 	const lastBlockId = resolvedBlockIds[resolvedBlockIds.length - 1];
@@ -7133,7 +7728,9 @@ function resolveDocumentTitleSelection(
 	const headingBlockId =
 		editor.documentState.blockOrder.find((blockId) => {
 			const block = editor.getBlock(blockId);
-			return block?.type === "heading" || block?.type.startsWith("heading-");
+			return (
+				block?.type === "heading" || block?.type.startsWith("heading-")
+			);
 		}) ??
 		editor.firstBlock()?.id ??
 		null;
@@ -7150,19 +7747,22 @@ function resolveDocumentParagraphSelection(
 	if (paragraphIndex == null) {
 		return null;
 	}
-	const paragraphBlockIds = editor.documentState.blockOrder.filter((blockId) => {
-		const block = editor.getBlock(blockId);
-		if (!block) {
-			return false;
-		}
-		return (
-			block.type === "paragraph" ||
-			(block.textContent().trim().length > 0 &&
-				block.type !== "heading" &&
-				!block.type.startsWith("heading-"))
-		);
-	});
-	const targetParagraphBlockId = paragraphBlockIds[paragraphIndex - 1] ?? null;
+	const paragraphBlockIds = editor.documentState.blockOrder.filter(
+		(blockId) => {
+			const block = editor.getBlock(blockId);
+			if (!block) {
+				return false;
+			}
+			return (
+				block.type === "paragraph" ||
+				(block.textContent().trim().length > 0 &&
+					block.type !== "heading" &&
+					!block.type.startsWith("heading-"))
+			);
+		},
+	);
+	const targetParagraphBlockId =
+		paragraphBlockIds[paragraphIndex - 1] ?? null;
 	return targetParagraphBlockId
 		? resolveDocumentBlockRangeSelection(editor, [targetParagraphBlockId])
 		: null;
@@ -7236,7 +7836,10 @@ function resolveRequestedOperationConflict(
 		operation.target.kind === "selection" ||
 		operation.target.kind === "scoped-range"
 	) {
-		const selection = resolveSelectionForRequestedOperation(editor, operation);
+		const selection = resolveSelectionForRequestedOperation(
+			editor,
+			operation,
+		);
 		if (!selection) {
 			return "The selected range no longer exists.";
 		}
@@ -7251,11 +7854,15 @@ function resolveRequestedOperationConflict(
 		}
 		if (
 			operation.provenance?.selectionSignature != null &&
-			operation.provenance.selectionSignature !== currentSelectionSignature
+			operation.provenance.selectionSignature !==
+				currentSelectionSignature
 		) {
 			return "The selected range changed before the rewrite completed.";
 		}
-		if (resolveSelectionText(editor, selection) !== operation.target.sourceText) {
+		if (
+			resolveSelectionText(editor, selection) !==
+			operation.target.sourceText
+		) {
 			return "The selected text changed before the rewrite completed.";
 		}
 		return null;
@@ -7268,7 +7875,7 @@ function resolveRequestedOperationConflict(
 		if (
 			operation.provenance?.blockRevision != null &&
 			editor.getBlockRevision(operation.target.blockId) !==
-			operation.provenance.blockRevision
+				operation.provenance.blockRevision
 		) {
 			return "The target block changed before the operation completed.";
 		}
@@ -7276,14 +7883,18 @@ function resolveRequestedOperationConflict(
 	}
 	if (
 		operation.provenance?.syncedGeneration != null &&
-		editor.documentState.generation !== operation.provenance.syncedGeneration
+		editor.documentState.generation !==
+			operation.provenance.syncedGeneration
 	) {
 		return "The document changed before the operation completed.";
 	}
 	return null;
 }
 
-function resolveContinueInsertionOffset(editor: Editor, blockId: string): number {
+function resolveContinueInsertionOffset(
+	editor: Editor,
+	blockId: string,
+): number {
 	const selection = editor.selection;
 	if (
 		selection?.type === "text" &&
@@ -7315,10 +7926,14 @@ function resolveSessionSelectionTarget(
 		return null;
 	}
 	const activeTurnSelection = session.activeTurnId
-		? session.turns.find((turn) => turn.id === session.activeTurnId)?.selection
+		? session.turns.find((turn) => turn.id === session.activeTurnId)
+				?.selection
 		: session.turns[session.turns.length - 1]?.selection;
 	if (activeTurnSelection) {
-		const restoredSelection = recreateTextSelection(editor, activeTurnSelection);
+		const restoredSelection = recreateTextSelection(
+			editor,
+			activeTurnSelection,
+		);
 		if (!restoredSelection.isCollapsed) {
 			return restoredSelection;
 		}
@@ -7337,12 +7952,18 @@ function resolveSessionSelectionTarget(
 		return selection;
 	}
 	if (anchorSelection) {
-		const restoredSelection = recreateTextSelection(editor, anchorSelection);
+		const restoredSelection = recreateTextSelection(
+			editor,
+			anchorSelection,
+		);
 		if (!restoredSelection.isCollapsed) {
 			return restoredSelection;
 		}
 	}
-	if (session.target.kind === "selection" && !session.target.selection.isCollapsed) {
+	if (
+		session.target.kind === "selection" &&
+		!session.target.selection.isCollapsed
+	) {
 		return session.target.selection;
 	}
 	return null;
@@ -7374,7 +7995,8 @@ function resolvePendingInlineSelectionTarget(
 	const textSuggestions = readAllSuggestions(editor).filter(
 		(suggestion): suggestion is PersistentTextSuggestion =>
 			suggestion.kind === "text" &&
-			(suggestion.action === "insert" || suggestion.action === "delete") &&
+			(suggestion.action === "insert" ||
+				suggestion.action === "delete") &&
 			suggestionIds.includes(suggestion.id),
 	);
 	if (textSuggestions.length === 0) {
@@ -7452,7 +8074,9 @@ function resolveAcceptedInlineSelectionTarget(
 }
 
 function shouldCloseInlineSessionPrompt(session: AISession): boolean {
-	return session.surface === "inline-edit" && session.contextualPrompt != null;
+	return (
+		session.surface === "inline-edit" && session.contextualPrompt != null
+	);
 }
 
 function closeInlineSessionPrompt(
@@ -7524,7 +8148,9 @@ function selectionMatchesSnapshot(
 		selection.focus.offset === snapshot.focus.offset &&
 		selection.isMultiBlock === snapshot.isMultiBlock &&
 		selection.blockRange.length === snapshot.blockRange.length &&
-		selection.blockRange.every((blockId, index) => blockId === snapshot.blockRange[index])
+		selection.blockRange.every(
+			(blockId, index) => blockId === snapshot.blockRange[index],
+		)
 	);
 }
 
@@ -7534,8 +8160,9 @@ function resolveSessionSelectionSnapshots(
 	const snapshots: AISessionSelectionSnapshot[] = [];
 	const activeTurn =
 		session.activeTurnId != null
-			? session.turns.find((turn) => turn.id === session.activeTurnId) ?? null
-			: session.turns[session.turns.length - 1] ?? null;
+			? (session.turns.find((turn) => turn.id === session.activeTurnId) ??
+				null)
+			: (session.turns[session.turns.length - 1] ?? null);
 	if (activeTurn?.selection) {
 		snapshots.push(activeTurn.selection);
 	}
@@ -7543,7 +8170,9 @@ function resolveSessionSelectionSnapshots(
 		snapshots.push(session.contextualPrompt.anchor.selectionSnapshot);
 	}
 	if (session.target.kind === "selection") {
-		snapshots.push(resolveSessionSelectionSnapshot(session.target.selection));
+		snapshots.push(
+			resolveSessionSelectionSnapshot(session.target.selection),
+		);
 	}
 	return snapshots;
 }
@@ -7594,7 +8223,7 @@ function resolveBlockInsertionOffset(editor: Editor, blockId: string): number {
 	const fallbackOffset =
 		block && isVisuallyEmptyInlineText(block.textContent())
 			? 0
-			: block?.textContent().length ?? 0;
+			: (block?.textContent().length ?? 0);
 	if (selection?.type !== "text") {
 		return fallbackOffset;
 	}
@@ -7616,7 +8245,10 @@ function resolveBlockInsertionOffset(editor: Editor, blockId: string): number {
 	return fallbackOffset;
 }
 
-function appendUniqueString(values: readonly string[], value: string): string[] {
+function appendUniqueString(
+	values: readonly string[],
+	value: string,
+): string[] {
 	return values.includes(value) ? [...values] : [...values, value];
 }
 
@@ -7656,7 +8288,7 @@ function areSuggestionsEqual(
 			previousSuggestion.kind === "block" &&
 			nextSuggestion.kind === "block" &&
 			JSON.stringify(previousSuggestion.previousState) !==
-			JSON.stringify(nextSuggestion.previousState)
+				JSON.stringify(nextSuggestion.previousState)
 		) {
 			return false;
 		}
@@ -7679,7 +8311,9 @@ function areAIControllerStatesEqual(
 		return false;
 	}
 
-	if (!areGenerationsEqual(previous.activeGeneration, next.activeGeneration)) {
+	if (
+		!areGenerationsEqual(previous.activeGeneration, next.activeGeneration)
+	) {
 		return false;
 	}
 
@@ -7724,7 +8358,10 @@ function areGenerationsEqual(
 		previous.mutationMode !== next.mutationMode ||
 		previous.planState !== next.planState ||
 		previous.targetKind !== next.targetKind ||
-		!areStructuredValuesEqual(previous.structuredPreview, next.structuredPreview) ||
+		!areStructuredValuesEqual(
+			previous.structuredPreview,
+			next.structuredPreview,
+		) ||
 		!areStructuredValuesEqual(previous.reviewItems, next.reviewItems) ||
 		!areStructuredValuesEqual(previous.plan, next.plan) ||
 		!areStructuredValuesEqual(previous.debug, next.debug)
@@ -7778,14 +8415,26 @@ function areSessionsEqual(
 			previousSession.createdAt !== nextSession.createdAt ||
 			previousSession.updatedAt !== nextSession.updatedAt ||
 			previousSession.activeTurnId !== nextSession.activeTurnId ||
-			!areStructuredValuesEqual(previousSession.target, nextSession.target) ||
-			!areStructuredValuesEqual(previousSession.anchor, nextSession.anchor) ||
+			!areStructuredValuesEqual(
+				previousSession.target,
+				nextSession.target,
+			) ||
+			!areStructuredValuesEqual(
+				previousSession.anchor,
+				nextSession.anchor,
+			) ||
 			!areStructuredValuesEqual(
 				previousSession.contextualPrompt,
 				nextSession.contextualPrompt,
 			) ||
-			!areStructuredValuesEqual(previousSession.turns, nextSession.turns) ||
-			!areStructuredValuesEqual(previousSession.promptHistory, nextSession.promptHistory) ||
+			!areStructuredValuesEqual(
+				previousSession.turns,
+				nextSession.turns,
+			) ||
+			!areStructuredValuesEqual(
+				previousSession.promptHistory,
+				nextSession.promptHistory,
+			) ||
 			!areStringArraysEqual(
 				previousSession.generationIds,
 				nextSession.generationIds,
@@ -7798,7 +8447,10 @@ function areSessionsEqual(
 				previousSession.pendingReviewItemIds,
 				nextSession.pendingReviewItemIds,
 			) ||
-			!areStructuredValuesEqual(previousSession.metrics, nextSession.metrics)
+			!areStructuredValuesEqual(
+				previousSession.metrics,
+				nextSession.metrics,
+			)
 		) {
 			return false;
 		}
@@ -7828,9 +8480,7 @@ function didInlineHistoryCheckpointChange(
 	);
 }
 
-function buildInlineHistoryCheckpoint(
-	state: AIControllerState,
-): {
+function buildInlineHistoryCheckpoint(state: AIControllerState): {
 	activeSessionId: string | null;
 	sessions: Array<{
 		id: string;
@@ -7853,21 +8503,24 @@ function buildInlineHistoryCheckpoint(
 			const settledTurns = session.turns.filter(
 				(turn) => turn.status !== "streaming",
 			);
-			const latestSettledTurn = settledTurns[settledTurns.length - 1] ?? null;
+			const latestSettledTurn =
+				settledTurns[settledTurns.length - 1] ?? null;
 			return {
 				id: session.id,
 				isOpen: session.contextualPrompt?.composer.isOpen ?? false,
 				target:
 					session.contextualPrompt?.anchor.selectionSnapshot ??
 					(session.target.kind === "selection"
-						? resolveSessionSelectionSnapshot(session.target.selection)
+						? resolveSessionSelectionSnapshot(
+								session.target.selection,
+							)
 						: null),
 				latestSettledTurn: latestSettledTurn
 					? {
-						id: latestSettledTurn.id,
-						prompt: latestSettledTurn.prompt,
-						selection: latestSettledTurn.selection ?? null,
-					}
+							id: latestSettledTurn.id,
+							prompt: latestSettledTurn.prompt,
+							selection: latestSettledTurn.selection ?? null,
+						}
 					: null,
 				settledTurnCount: settledTurns.length,
 			};
@@ -7886,13 +8539,16 @@ function countSettledInlineTurns(
 		if (!session) {
 			return 0;
 		}
-		return session.turns.filter((turn) => turn.status !== "streaming").length;
+		return session.turns.filter((turn) => turn.status !== "streaming")
+			.length;
 	}
 	return snapshot.sessions
 		.filter((session) => session.surface === "inline-edit")
 		.reduce(
 			(count, session) =>
-				count + session.turns.filter((turn) => turn.status !== "streaming").length,
+				count +
+				session.turns.filter((turn) => turn.status !== "streaming")
+					.length,
 			0,
 		);
 }
@@ -7905,7 +8561,9 @@ function hasStreamingInlineTurns(
 		const session = snapshot.sessions.find(
 			(item) => item.id === sessionId && item.surface === "inline-edit",
 		);
-		return session?.turns.some((turn) => turn.status === "streaming") ?? false;
+		return (
+			session?.turns.some((turn) => turn.status === "streaming") ?? false
+		);
 	}
 	return snapshot.sessions
 		.filter((session) => session.surface === "inline-edit")
@@ -7919,9 +8577,10 @@ function resolveInlineShortcutHistoryState(
 	sessionId: string | null,
 ): AIInlineShortcutHistoryState | null {
 	const session = sessionId
-		? snapshot.sessions.find(
-			(item) => item.id === sessionId && item.surface === "inline-edit",
-		) ?? null
+		? (snapshot.sessions.find(
+				(item) =>
+					item.id === sessionId && item.surface === "inline-edit",
+			) ?? null)
 		: null;
 	if (!session) {
 		return {
@@ -7954,10 +8613,7 @@ function resolveInlineShortcutHistoryState(
 			turnId: latestTurn.id,
 		};
 	}
-	if (
-		latestTurn.status === "accepted" ||
-		latestTurn.status === "rejected"
-	) {
+	if (latestTurn.status === "accepted" || latestTurn.status === "rejected") {
 		return {
 			sessionId,
 			phase: "resolved",
@@ -7991,27 +8647,33 @@ function shouldReplaceInlineShortcutWaypointRepresentative(
 		return true;
 	}
 	const currentSession = state.sessionId
-		? currentSnapshot.sessions.find(
-			(session) =>
-				session.id === state.sessionId && session.surface === "inline-edit",
-		) ?? null
+		? (currentSnapshot.sessions.find(
+				(session) =>
+					session.id === state.sessionId &&
+					session.surface === "inline-edit",
+			) ?? null)
 		: null;
 	const nextSession = state.sessionId
-		? nextSnapshot.sessions.find(
-			(session) =>
-				session.id === state.sessionId && session.surface === "inline-edit",
-		) ?? null
+		? (nextSnapshot.sessions.find(
+				(session) =>
+					session.id === state.sessionId &&
+					session.surface === "inline-edit",
+			) ?? null)
 		: null;
 	if (state.phase === "review") {
-		const currentOpen = currentSession?.contextualPrompt?.composer.isOpen === true;
-		const nextOpen = nextSession?.contextualPrompt?.composer.isOpen === true;
+		const currentOpen =
+			currentSession?.contextualPrompt?.composer.isOpen === true;
+		const nextOpen =
+			nextSession?.contextualPrompt?.composer.isOpen === true;
 		if (currentOpen !== nextOpen) {
 			return nextOpen;
 		}
 	}
 	if (state.phase === "resolved") {
-		const currentOpen = currentSession?.contextualPrompt?.composer.isOpen === true;
-		const nextOpen = nextSession?.contextualPrompt?.composer.isOpen === true;
+		const currentOpen =
+			currentSession?.contextualPrompt?.composer.isOpen === true;
+		const nextOpen =
+			nextSession?.contextualPrompt?.composer.isOpen === true;
 		if (currentOpen !== nextOpen) {
 			return !nextOpen;
 		}
@@ -8064,10 +8726,7 @@ function areStringArraysEqual(
 	return true;
 }
 
-function areStructuredValuesEqual(
-	previous: unknown,
-	next: unknown,
-): boolean {
+function areStructuredValuesEqual(previous: unknown, next: unknown): boolean {
 	if (previous === next) {
 		return true;
 	}
@@ -8167,7 +8826,10 @@ function sliceInlineDeltasFromOffset(
 	deltas: readonly { insert: string; attributes?: Record<string, unknown> }[],
 	startOffset: number,
 ): Array<{ insert: string; attributes?: Record<string, unknown> }> {
-	const sliced: Array<{ insert: string; attributes?: Record<string, unknown> }> = [];
+	const sliced: Array<{
+		insert: string;
+		attributes?: Record<string, unknown>;
+	}> = [];
 	let offset = 0;
 	for (const delta of deltas) {
 		const length = delta.insert.length;
@@ -8189,7 +8851,10 @@ function sliceInlineDeltasFromOffset(
 	return sliced;
 }
 
-function resolveSelectionText(editor: Editor, selection: TextSelection): string {
+function resolveSelectionText(
+	editor: Editor,
+	selection: TextSelection,
+): string {
 	const range = selection.toRange();
 	const blockIds = range.blockRange;
 	const parts = blockIds.map((blockId, index) => {
@@ -8200,7 +8865,9 @@ function resolveSelectionText(editor: Editor, selection: TextSelection): string 
 		let resolved = "";
 		const startOffset = index === 0 ? range.start.offset : 0;
 		const endOffset =
-			index === blockIds.length - 1 ? range.end.offset : Number.POSITIVE_INFINITY;
+			index === blockIds.length - 1
+				? range.end.offset
+				: Number.POSITIVE_INFINITY;
 
 		for (const delta of block.textDeltas()) {
 			const length = delta.insert.length;

@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect } from "react";
-import { useEditorContext } from "../../context/editorContext";
+import React, { createContext, useContext, useEffect, useRef } from "react";
+import type { Editor } from "@pen/types";
+import { EditorContext } from "../../context/editorContext";
 import {
 	useSlashMenu,
 	type SlashMenuState,
@@ -8,7 +9,10 @@ import {
 import { renderAsChild, type AsChildProps } from "../../utils/asChild";
 import { isDevelopmentEnvironment } from "../../utils/environment";
 
-type SlashMenuContextValue = SlashMenuState & SlashMenuActions;
+export type SlashMenuContextValue = SlashMenuState &
+	SlashMenuActions & {
+		editor?: Editor;
+	};
 
 const SlashMenuContext = createContext<SlashMenuContextValue | null>(null);
 
@@ -26,57 +30,147 @@ export function useSlashMenuContext(): SlashMenuContextValue {
 }
 
 export interface SlashMenuRootProps extends AsChildProps {
+	controller?: SlashMenuContextValue;
+	editor?: Editor;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
 	ref?: React.Ref<HTMLElement>;
 }
 
 export function SlashMenuRoot(props: SlashMenuRootProps) {
-	const { open: controlledOpen, onOpenChange, ...rest } = props;
-	const { editor } = useEditorContext();
+	const { controller, editor, ...rest } = props;
+	if (controller) {
+		return (
+			<SlashMenuRootContent
+				{...rest}
+				controller={controller}
+				editor={editor}
+			/>
+		);
+	}
+
+	return <UncontrolledSlashMenuRoot {...rest} editor={editor} />;
+}
+
+type UncontrolledSlashMenuRootProps = Omit<SlashMenuRootProps, "controller">;
+
+function UncontrolledSlashMenuRoot(props: UncontrolledSlashMenuRootProps) {
+	const { editor: editorProp, ...rest } = props;
+	const editorContext = useContext(EditorContext);
+	const editor = editorProp ?? editorContext?.editor;
+
+	if (!editor) {
+		if (isDevelopmentEnvironment()) {
+			console.error(
+				"Pen: <Pen.SlashMenu.Root> must be used within <Pen.Editor.Root> or receive an editor prop.",
+			);
+		}
+		throw new Error("Missing editor for Pen.SlashMenu.Root");
+	}
+
 	const menuState = useSlashMenu(editor);
 
-	const isOpen = controlledOpen ?? menuState.open;
+	return (
+		<SlashMenuRootContent
+			{...rest}
+			controller={menuState}
+			editor={editor}
+		/>
+	);
+}
+
+type SlashMenuRootContentProps = Omit<
+	SlashMenuRootProps,
+	"controller" | "editor"
+> & {
+	controller: SlashMenuContextValue;
+	editor?: Editor;
+};
+
+function SlashMenuRootContent(props: SlashMenuRootContentProps) {
+	const {
+		controller,
+		editor: editorProp,
+		open: controlledOpen,
+		onOpenChange,
+		...rest
+	} = props;
+	const editorContext = useContext(EditorContext);
+	const editor = editorProp ?? controller.editor ?? editorContext?.editor;
+
+	const isOpen = controlledOpen ?? controller.open;
 
 	const wrappedState: SlashMenuContextValue = {
-		...menuState,
+		...controller,
+		editor,
+		open: isOpen,
 		dismiss: () => {
-			menuState.dismiss();
+			controller.dismiss();
 			onOpenChange?.(false);
 		},
-		confirm: () => {
-			menuState.confirm();
-			onOpenChange?.(false);
+		confirm: (index?: number) => {
+			const didConfirm = controller.confirm(index);
+			if (didConfirm) {
+				onOpenChange?.(false);
+			}
+			return didConfirm;
 		},
 	};
+	const wrappedStateRef = useRef(wrappedState);
+	wrappedStateRef.current = wrappedState;
 
 	useEffect(() => {
 		if (!isOpen) return;
 
 		const handleKeyDown = (event: KeyboardEvent) => {
+			const currentState = wrappedStateRef.current;
+			if (event.metaKey || event.ctrlKey || event.altKey) {
+				return;
+			}
+
 			switch (event.key) {
-				case "ArrowDown":
+				case "ArrowDown": {
 					event.preventDefault();
-					wrappedState.select(
-						Math.min(
-							wrappedState.selectedIndex + 1,
-							wrappedState.items.length - 1,
-						),
-					);
+					event.stopPropagation();
+					const nextIndex =
+						currentState.items.length === 0
+							? 0
+							: (currentState.selectedIndex + 1) %
+								currentState.items.length;
+					wrappedStateRef.current = {
+						...currentState,
+						selectedIndex: nextIndex,
+					};
+					currentState.select(nextIndex);
 					break;
-				case "ArrowUp":
+				}
+				case "ArrowUp": {
 					event.preventDefault();
-					wrappedState.select(
-						Math.max(wrappedState.selectedIndex - 1, 0),
-					);
+					event.stopPropagation();
+					const nextIndex =
+						currentState.items.length === 0
+							? 0
+							: (currentState.selectedIndex -
+									1 +
+									currentState.items.length) %
+								currentState.items.length;
+					wrappedStateRef.current = {
+						...currentState,
+						selectedIndex: nextIndex,
+					};
+					currentState.select(nextIndex);
 					break;
+				}
 				case "Enter":
+				case "Tab":
 					event.preventDefault();
-					wrappedState.confirm();
+					event.stopPropagation();
+					currentState.confirm(currentState.selectedIndex);
 					break;
 				case "Escape":
 					event.preventDefault();
-					wrappedState.dismiss();
+					event.stopPropagation();
+					currentState.dismiss();
 					break;
 			}
 		};
@@ -84,10 +178,10 @@ export function SlashMenuRoot(props: SlashMenuRootProps) {
 		document.addEventListener("keydown", handleKeyDown, true);
 		return () =>
 			document.removeEventListener("keydown", handleKeyDown, true);
-	});
+	}, [isOpen]);
 
 	const primitiveProps: Record<string, unknown> = {
-		role: "listbox",
+		role: "dialog",
 		"data-pen-slash-menu": "",
 		"data-open": isOpen || undefined,
 	};

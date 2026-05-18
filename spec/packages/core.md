@@ -11,7 +11,7 @@ Every higher-level package depends on the contracts and runtime behavior establi
 ## Key Exports / Entrypoints
 
 - Export map: `.`
-- Runtime entrypoints such as `createEditor()` and `createDocumentSession()`
+- Runtime entrypoints such as `createEditor()`, `createHeadlessEditor()`, and `createDocumentSession()`
 - Schema runtime exports such as `SchemaRegistryImpl`, `mergeSchemas`, and `SchemaEngineImpl`
 - Read-model and editor helpers such as `DocumentStateImpl`, `SelectionManagerImpl`, `DocumentRangeImpl`, and `ExtensionManagerImpl`
 - Decoration and inline-completion helpers such as `createDecorationSet()`, `mergeDecorationSets()`, `ensureInlineCompletionController()`, and `getInlineCompletionController()`
@@ -53,14 +53,24 @@ Important rules:
 
 - `DocumentOp[]` is the mutation currency.
 - Durable document writes go through `editor.apply(...)`.
+- Structured operation origins can carry `groupId`, `requestId`, `actorId`, and `source` metadata so hosts can attribute and group mutations without inventing a parallel apply path.
+- Default feature composition should flow through presets or explicit extensions; legacy `createEditor({ without })` remains deprecated compatibility rather than the preferred way to remove default features.
 - Extensions can prepare work, observe editor events, and register slots, but they do not bypass the core mutation boundary.
 - Renderer packages read `DocumentState`, `BlockHandle`, selection, and decorations from the editor; they do not become alternate document authorities.
+
+## Headless Workflows
+
+`createHeadlessEditor()` is the preferred factory for server-side or workflow-only editor use. It keeps Pen headless and applies the same document pipeline to existing CRDT documents without mounting a renderer. Hosts should use it for AI workers, export workers, migrations, and contract tests that need editor semantics without UI behavior.
+
+Headless editors default to the core apply pipeline only. Hosts can opt into default extensions explicitly when a non-rendered workflow needs undo, shortcuts, or delta stream behavior.
 
 ## Integration Notes
 
 - Path in workspace: `packages/core`
 - Spec path mirrors workspace path: `packages/core.md`
 - Typical adoption starts with `createEditor()` plus `@pen/schema-default` and `@pen/preset-default`
+- Use `createEditor({ preset: defaultPreset(...) })` or explicit `extensions` for feature composition instead of the deprecated `without` option.
+- Server/workflow adoption starts with `createHeadlessEditor()` plus a wrapped CRDT document.
 - Schema composition happens here through the registry/merge APIs, not in renderer packages
 - Serialization packages and tool packages should treat the editor as the authority boundary, even when they export convenience helpers
 

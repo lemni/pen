@@ -16,7 +16,7 @@ export interface SelectionRectProps extends AsChildProps {
 }
 
 export function EditorSelectionRect(props: SelectionRectProps) {
-  const { editor } = useEditorContext();
+  const { blockSelection, editor } = useEditorContext();
   const { rootElement, store } = useEditorRegionSelectionContext();
   const selection = useSelection(editor);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -40,11 +40,17 @@ export function EditorSelectionRect(props: SelectionRectProps) {
   const blockCount = isBlockSelection ? selection.blockIds.length : 0;
 
   const announcement = useMemo(() => {
+    if (!blockSelection.enabled) return "";
     if (!isBlockSelection || blockCount === 0) return "";
     return `${blockCount} block${blockCount === 1 ? "" : "s"} selected`;
-  }, [isBlockSelection, blockCount]);
+  }, [blockSelection.enabled, isBlockSelection, blockCount]);
 
   useEffect(() => {
+    if (!blockSelection.enabled) {
+      setRect(null);
+      return;
+    }
+
     if (liveRect) {
       setRect(new DOMRect(liveRect.left, liveRect.top, liveRect.width, liveRect.height));
       return;
@@ -105,7 +111,7 @@ export function EditorSelectionRect(props: SelectionRectProps) {
 
     rafRef.current = requestAnimationFrame(computeRect);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [selection, isBlockSelection, liveRect, regionConfig, rootElement]);
+  }, [blockSelection.enabled, selection, isBlockSelection, liveRect, regionConfig, rootElement]);
 
   if (!rect) {
     return announcement ? (

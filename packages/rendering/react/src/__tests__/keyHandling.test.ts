@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	createEditor,
-	getInlineCompletionController,
-} from "@pen/core";
+import { createEditor, getInlineCompletionController } from "@pen/core";
 import { getSearchController, searchExtension } from "@pen/search";
 import {
 	AI_AUTOCOMPLETE_CONTROLLER_SLOT,
@@ -70,9 +67,10 @@ function getYText(
 	const adapter = editor.internals.adapter;
 	const doc = editor.internals.crdtDoc;
 	const ydoc = adapter.raw<RawDocLike>(doc);
-	const ytext = ydoc.getMap("blocks").get(blockId)?.get("content") as
-		| FieldEditorTextLike
-		| null;
+	const ytext = ydoc
+		.getMap("blocks")
+		.get(blockId)
+		?.get("content") as FieldEditorTextLike | null;
 	if (!ytext) {
 		throw new Error(`Missing test Y.Text for block ${blockId}`);
 	}
@@ -85,13 +83,18 @@ function createFieldEditorMock(blockId: string) {
 		anchorOffset: number;
 		focusOffset: number;
 	}> = [];
+	const programmaticSelections: Array<{
+		blockId: string;
+		anchorOffset: number;
+		focusOffset: number;
+	}> = [];
 
 	return {
 		controller: {
 			focusBlockId: blockId,
 			inputMode: "richtext" as const,
 			activeCellCoord: null,
-			activateCell: () => { },
+			activateCell: () => {},
 			activateTextSelection: (
 				targetBlockId: string,
 				anchorOffset: number,
@@ -103,17 +106,31 @@ function createFieldEditorMock(blockId: string) {
 					focusOffset,
 				});
 			},
-			deactivate: () => { },
+			commitProgrammaticTextSelection: (
+				targetBlockId: string,
+				anchorOffset: number,
+				focusOffset: number,
+			) => {
+				programmaticSelections.push({
+					blockId: targetBlockId,
+					anchorOffset,
+					focusOffset,
+				});
+			},
+			deactivate: () => {},
 			selectAll: () => false,
 		},
 		activations,
+		programmaticSelections,
 	};
 }
 
 function createPresetEditor(
 	options: {
 		preset?: Parameters<typeof defaultPreset>[0];
-		extensions?: NonNullable<Parameters<typeof createEditor>[0]>["extensions"];
+		extensions?: NonNullable<
+			Parameters<typeof createEditor>[0]
+		>["extensions"];
 	} = {},
 ) {
 	return createEditor({
@@ -123,6 +140,78 @@ function createPresetEditor(
 }
 
 describe("@pen/react key binding contexts", () => {
+	it("selects inline atoms before arrow navigation moves past them", () => {
+		const editor = createPresetEditor({
+			preset: {
+				documentOps: false,
+				deltaStream: false,
+				undo: false,
+				shortcuts: false,
+			},
+		});
+		const blockId = editor.firstBlock()!.id;
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "A" },
+			{
+				type: "insert-inline-node",
+				blockId,
+				offset: 1,
+				nodeType: "mention",
+				props: { id: "user-1", label: "Ada" },
+			},
+			{ type: "insert-text", blockId, offset: 2, text: "B" },
+		]);
+		const ytext = getYText(editor, blockId);
+		const fieldEditor = createFieldEditorMock(blockId);
+
+		expect(
+			handleFieldEditorKeyDown({
+				event: createKeyEvent("ArrowLeft"),
+				editor,
+				fieldEditor: fieldEditor.controller,
+				ytext,
+				range: { start: 2, end: 2 },
+			}),
+		).toBe(true);
+		expect(fieldEditor.activations.at(-1)).toEqual({
+			blockId,
+			anchorOffset: 1,
+			focusOffset: 2,
+		});
+
+		expect(
+			handleFieldEditorKeyDown({
+				event: createKeyEvent("ArrowLeft"),
+				editor,
+				fieldEditor: fieldEditor.controller,
+				ytext,
+				range: { start: 1, end: 2 },
+			}),
+		).toBe(true);
+		expect(fieldEditor.activations.at(-1)).toEqual({
+			blockId,
+			anchorOffset: 1,
+			focusOffset: 1,
+		});
+
+		expect(
+			handleFieldEditorKeyDown({
+				event: createKeyEvent("ArrowRight"),
+				editor,
+				fieldEditor: fieldEditor.controller,
+				ytext,
+				range: { start: 1, end: 1 },
+			}),
+		).toBe(true);
+		expect(fieldEditor.activations.at(-1)).toEqual({
+			blockId,
+			anchorOffset: 1,
+			focusOffset: 2,
+		});
+
+		editor.destroy();
+	});
+
 	it("filters bindings by collapsed selection state", () => {
 		let handled = 0;
 		const editor = createPresetEditor({
@@ -382,14 +471,16 @@ describe("@pen/react key binding contexts", () => {
 			extensions: [
 				defineExtension({
 					name: "history-override",
-					keyBindings: [{
-						key: "Mod-z",
-						priority: 1000,
-						handler: () => {
-							handled += 1;
-							return true;
+					keyBindings: [
+						{
+							key: "Mod-z",
+							priority: 1000,
+							handler: () => {
+								handled += 1;
+								return true;
+							},
 						},
-					}],
+					],
 				}),
 			],
 		});
@@ -462,14 +553,21 @@ describe("@pen/react key binding contexts", () => {
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
-			{ type: "insert-text", blockId, offset: 0, text: "alpha beta alpha" },
+			{
+				type: "insert-text",
+				blockId,
+				offset: 0,
+				text: "alpha beta alpha",
+			},
 		]);
 
 		const controller = getSearchController(editor);
 		controller?.open();
 		controller?.setQuery("alpha");
 
-		expect(handleEditorKeyBindings(editor, createKeyEvent("Enter"))).toBe(true);
+		expect(handleEditorKeyBindings(editor, createKeyEvent("Enter"))).toBe(
+			true,
+		);
 		expect(editor.selection).toMatchObject({
 			type: "text",
 			anchor: { blockId, offset: 11 },
@@ -477,7 +575,10 @@ describe("@pen/react key binding contexts", () => {
 		});
 
 		expect(
-			handleEditorKeyBindings(editor, createKeyEvent("Enter", { shiftKey: true })),
+			handleEditorKeyBindings(
+				editor,
+				createKeyEvent("Enter", { shiftKey: true }),
+			),
 		).toBe(true);
 		expect(editor.selection).toMatchObject({
 			type: "text",
@@ -485,7 +586,9 @@ describe("@pen/react key binding contexts", () => {
 			focus: { blockId, offset: 5 },
 		});
 
-		expect(handleEditorKeyBindings(editor, createKeyEvent("Escape"))).toBe(true);
+		expect(handleEditorKeyBindings(editor, createKeyEvent("Escape"))).toBe(
+			true,
+		);
 		expect(controller?.getState().open).toBe(false);
 
 		editor.destroy();
@@ -504,7 +607,12 @@ describe("@pen/react key binding contexts", () => {
 		const blockId = editor.firstBlock()!.id;
 
 		editor.apply([
-			{ type: "insert-text", blockId, offset: 0, text: "alpha beta alpha" },
+			{
+				type: "insert-text",
+				blockId,
+				offset: 0,
+				text: "alpha beta alpha",
+			},
 		]);
 
 		const controller = getSearchController(editor);
@@ -585,7 +693,11 @@ describe("@pen/react field editor Tab handling", () => {
 		const secondBlockId = crypto.randomUUID();
 
 		editor.apply([
-			{ type: "convert-block", blockId: firstBlockId, newType: "bulletListItem" },
+			{
+				type: "convert-block",
+				blockId: firstBlockId,
+				newType: "bulletListItem",
+			},
 			{
 				type: "insert-block",
 				blockId: secondBlockId,
@@ -593,7 +705,12 @@ describe("@pen/react field editor Tab handling", () => {
 				props: { indent: 0 },
 				position: { after: firstBlockId },
 			},
-			{ type: "insert-text", blockId: secondBlockId, offset: 0, text: "child" },
+			{
+				type: "insert-text",
+				blockId: secondBlockId,
+				offset: 0,
+				text: "child",
+			},
 		]);
 
 		const fieldEditor = createFieldEditorMock(secondBlockId);
@@ -690,18 +807,18 @@ describe("@pen/react field editor Tab handling", () => {
 										lastPolicyInvalidationStage: null,
 									},
 								}),
-								subscribe: () => () => { },
+								subscribe: () => () => {},
 								request: (options?: { explicit?: boolean }) => {
 									requestCount += 1;
 									return options?.explicit === true;
 								},
 								acceptVisibleSuggestion: () => false,
 								hasVisibleSuggestion: () => false,
-								registerProvider: () => () => { },
+								registerProvider: () => () => {},
 								listProviderDescriptors: () => [],
-								updateRuntimeSettings: () => { },
-								dismiss: () => { },
-								setEnabled: () => { },
+								updateRuntimeSettings: () => {},
+								dismiss: () => {},
+								setEnabled: () => {},
 							},
 						);
 					},
@@ -795,23 +912,26 @@ describe("@pen/react field editor Tab handling", () => {
 										lastPolicyInvalidationStage: null,
 									},
 								}),
-								subscribe: () => () => { },
+								subscribe: () => () => {},
 								request: () => false,
 								acceptVisibleSuggestion: () => {
 									acceptVisibleSuggestionCount += 1;
 									return true;
 								},
 								hasVisibleSuggestion: () => true,
-								registerProvider: () => () => { },
+								registerProvider: () => () => {},
 								listProviderDescriptors: () => [],
-								updateRuntimeSettings: () => { },
-								dismiss: () => { },
-								setEnabled: () => { },
+								updateRuntimeSettings: () => {},
+								dismiss: () => {},
+								setEnabled: () => {},
 							},
 						);
 					},
 					deactivateClient: async () => {
-						activeEditor?.internals.setSlot(FIELD_EDITOR_SLOT_KEY, null);
+						activeEditor?.internals.setSlot(
+							FIELD_EDITOR_SLOT_KEY,
+							null,
+						);
 						activeEditor?.internals.setSlot(
 							AI_AUTOCOMPLETE_CONTROLLER_SLOT,
 							null,
@@ -850,6 +970,45 @@ describe("@pen/react field editor Tab handling", () => {
 		expect(handled).toBe(true);
 		expect(acceptVisibleSuggestionCount).toBe(1);
 		expect(prevented).toBe(true);
+
+		editor.destroy();
+	});
+
+	it("commits programmatic selection after accepting raw inline completions", () => {
+		const editor = createPresetEditor({
+			preset: {
+				shortcuts: false,
+			},
+			extensions: [aiExtension()],
+		});
+		const blockId = editor.firstBlock()!.id;
+		const fieldEditor = createFieldEditorMock(blockId);
+		const inlineCompletion = getInlineCompletionController(editor);
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Hello" },
+		]);
+		editor.selectText(blockId, 5, 5);
+		inlineCompletion?.showSuggestion({
+			id: "suggestion-1",
+			blockId,
+			offset: 5,
+			text: " world",
+			type: "inline",
+		});
+
+		const handled = handleFieldEditorKeyDown({
+			event: createKeyEvent("Tab"),
+			editor,
+			fieldEditor: fieldEditor.controller,
+			ytext: getYText(editor, blockId),
+			range: { start: 5, end: 5 },
+		});
+
+		expect(handled).toBe(true);
+		expect(editor.getBlock(blockId)?.textContent()).toBe("Hello world");
+		expect(fieldEditor.programmaticSelections).toEqual([
+			{ blockId, anchorOffset: 11, focusOffset: 11 },
+		]);
 
 		editor.destroy();
 	});
@@ -898,17 +1057,17 @@ describe("@pen/react field editor Tab handling", () => {
 										lastPolicyInvalidationStage: null,
 									},
 								}),
-								subscribe: () => () => { },
+								subscribe: () => () => {},
 								request: () => false,
 								acceptVisibleSuggestion: () => false,
 								hasVisibleSuggestion: () => true,
-								registerProvider: () => () => { },
+								registerProvider: () => () => {},
 								listProviderDescriptors: () => [],
-								updateRuntimeSettings: () => { },
+								updateRuntimeSettings: () => {},
 								dismiss: (reason?: string) => {
 									dismissReason = reason ?? null;
 								},
-								setEnabled: () => { },
+								setEnabled: () => {},
 							},
 						);
 					},

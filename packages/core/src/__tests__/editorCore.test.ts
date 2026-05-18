@@ -6,6 +6,7 @@ import {
 	defineExtension,
 	type DocumentSession,
 	type PenStreamPart,
+	getOpOriginType,
 } from "@pen/types";
 import { describe, expect, it, vi } from "vitest";
 
@@ -13,6 +14,8 @@ import {
 	createDecorationSet,
 	createDocumentSession,
 	createEditor as createCoreEditor,
+	createHeadlessEditor,
+	ensureInlineCompletionController,
 } from "../index";
 
 const noDefaultExtensionsPreset = {
@@ -27,9 +30,7 @@ const undoOnlyPreset = {
 	},
 };
 
-function createEditor(
-	options: Parameters<typeof createCoreEditor>[0] = {},
-) {
+function createEditor(options: Parameters<typeof createCoreEditor>[0] = {}) {
 	return createCoreEditor({
 		...options,
 		preset: options.preset ?? noDefaultExtensionsPreset,
@@ -116,7 +117,10 @@ describe("@pen/core createEditor", () => {
 							defineExtension({
 								name: "preset-test-extension",
 								activateClient: async (ctx) => {
-									ctx.editor.internals.setSlot("test:preset-installed", true);
+									ctx.editor.internals.setSlot(
+										"test:preset-installed",
+										true,
+									);
 								},
 							}),
 						],
@@ -172,6 +176,27 @@ describe("@pen/core createEditor", () => {
 		session.destroy();
 	});
 
+	it("creates headless editors around caller-owned documents without default undo behavior", () => {
+		const adapter = yjsAdapter();
+		const document = adapter.createDocument();
+		const editor = createHeadlessEditor({ crdt: adapter, document });
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{
+				type: "insert-text",
+				blockId,
+				offset: 0,
+				text: "Server edit",
+			},
+		]);
+
+		expect(editor.getBlock(blockId)?.textContent()).toBe("Server edit");
+		expect(editor.undoManager.undo()).toBe(false);
+
+		editor.destroy();
+	});
+
 	it("does not destroy caller-owned documents on editor teardown", () => {
 		const adapter = yjsAdapter();
 		const document = adapter.createDocument();
@@ -208,7 +233,9 @@ describe("@pen/core createEditor", () => {
 		expect(editor.documentState.documentProfile).toBe("flow");
 		expect(editor.editorViewMode).toBe("flow");
 		expect(
-			editor.internals.adapter.getDocumentProfile?.(editor.internals.crdtDoc),
+			editor.internals.adapter.getDocumentProfile?.(
+				editor.internals.crdtDoc,
+			),
 		).toBe("flow");
 
 		editor.destroy();
@@ -425,7 +452,9 @@ describe("@pen/core createEditor", () => {
 		expect(childEditor.getBlock(childBlockId)?.textContent()).toBe(
 			"Nested content",
 		);
-		expect(childEditor.documentScope.parentId).toBe(rootEditor.documentScope.id);
+		expect(childEditor.documentScope.parentId).toBe(
+			rootEditor.documentScope.id,
+		);
 		expect(childEditor.documentScope.ownerBlockId).toBe("subdoc-block");
 
 		childEditor.apply([
@@ -465,7 +494,8 @@ describe("@pen/core createEditor", () => {
 				baseSession.getScopeForBlock(blockId, options),
 			listScopes: () => baseSession.listScopes(),
 			getAwareness: (scopeId) => baseSession.getAwareness(scopeId),
-			observe: (scopeId, callback) => baseSession.observe(scopeId, callback),
+			observe: (scopeId, callback) =>
+				baseSession.observe(scopeId, callback),
 			observeAll: (callback) => baseSession.observeAll(callback),
 			createSubdocument: (blockId, options) =>
 				baseSession.createSubdocument(blockId, options),
@@ -481,10 +511,15 @@ describe("@pen/core createEditor", () => {
 		const originalDoc = editor.internals.crdtDoc;
 		const replacementSource = createEditor();
 		const replacementDoc = delegatedSession.adapter.loadDocument(
-			delegatedSession.adapter.encodeState(replacementSource.internals.crdtDoc),
+			delegatedSession.adapter.encodeState(
+				replacementSource.internals.crdtDoc,
+			),
 		);
 
-		delegatedSession.replaceScopeDocument(editor.documentScope.id, replacementDoc);
+		delegatedSession.replaceScopeDocument(
+			editor.documentScope.id,
+			replacementDoc,
+		);
 		await flushMicrotasks();
 
 		expect(editor.internals.crdtDoc).toBe(replacementDoc);
@@ -565,14 +600,19 @@ describe("@pen/core createEditor", () => {
 			},
 		]);
 
-		session.replaceScopeDocument(rootEditor.documentScope.id, replacementSession.rootScope.doc);
+		session.replaceScopeDocument(
+			rootEditor.documentScope.id,
+			replacementSession.rootScope.doc,
+		);
 		await flushMicrotasks();
 
 		expect(childEditor.firstBlock()?.textContent()).toBe(
 			"Replacement nested content",
 		);
 		expect(childEditor.documentScope.ownerBlockId).toBe("subdoc-block");
-		expect(childEditor.documentScope.parentId).toBe(rootEditor.documentScope.id);
+		expect(childEditor.documentScope.parentId).toBe(
+			rootEditor.documentScope.id,
+		);
 
 		replacementChildEditor.destroy();
 		replacementRootEditor.destroy();
@@ -635,6 +675,35 @@ describe("@pen/core createEditor", () => {
 		editor.destroy();
 	});
 
+	it("moves the text selection after accepting an inline completion", () => {
+		const editor = createEditor();
+		const blockId = editor.firstBlock()!.id;
+		const { controller } = ensureInlineCompletionController(editor);
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "Hello" },
+		]);
+		editor.selectText(blockId, 5, 5);
+		controller.showSuggestion({
+			id: "suggestion-1",
+			blockId,
+			offset: 5,
+			text: " world",
+			type: "inline",
+		});
+
+		expect(controller.acceptSuggestion()).toBe(true);
+
+		expect(editor.getBlock(blockId)?.textContent()).toBe("Hello world");
+		expect(editor.selection).toMatchObject({
+			type: "text",
+			anchor: { blockId, offset: 11 },
+			focus: { blockId, offset: 11 },
+		});
+
+		editor.destroy();
+	});
+
 	it("splits and merges inline blocks", () => {
 		const editor = createEditor();
 
@@ -680,6 +749,35 @@ describe("@pen/core createEditor", () => {
 		editor.destroy();
 	});
 
+	it("splits at offset zero by inserting an empty block above", () => {
+		const editor = createEditor();
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{
+				type: "insert-text",
+				blockId,
+				offset: 0,
+				text: "hello world",
+			},
+		]);
+
+		editor.apply([
+			{
+				type: "split-block",
+				blockId,
+				offset: 0,
+				newBlockId: "b2",
+			},
+		]);
+
+		expect(editor.documentState.blockOrder).toEqual([blockId, "b2"]);
+		expect(editor.getBlock(blockId)?.textContent()).toBe("");
+		expect(editor.getBlock("b2")?.textContent()).toBe("hello world");
+
+		editor.destroy();
+	});
+
 	it("preserves full text offsets for code blocks", () => {
 		const editor = createEditor();
 		const blockId = editor.firstBlock()!.id;
@@ -689,10 +787,7 @@ describe("@pen/core createEditor", () => {
 			{ type: "insert-text", blockId, offset: 0, text: "abcd" },
 		]);
 
-		editor.selectTextRange(
-			{ blockId, offset: 1 },
-			{ blockId, offset: 3 },
-		);
+		editor.selectTextRange({ blockId, offset: 1 }, { blockId, offset: 3 });
 
 		expect(editor.selection).toMatchObject({
 			type: "text",
@@ -835,10 +930,7 @@ describe("@pen/core createEditor", () => {
 		});
 		const blockId = editor.firstBlock()!.id;
 
-		editor.selectTextRange(
-			{ blockId, offset: 0 },
-			{ blockId, offset: 0 },
-		);
+		editor.selectTextRange({ blockId, offset: 0 }, { blockId, offset: 0 });
 
 		editor.apply(
 			[
@@ -851,10 +943,7 @@ describe("@pen/core createEditor", () => {
 			],
 			{ origin: "user" },
 		);
-		editor.selectTextRange(
-			{ blockId, offset: 1 },
-			{ blockId, offset: 1 },
-		);
+		editor.selectTextRange({ blockId, offset: 1 }, { blockId, offset: 1 });
 		editor.apply(
 			[
 				{
@@ -905,7 +994,9 @@ describe("@pen/core createEditor", () => {
 		);
 		await flushMicrotasks();
 
-		expect(visibleText(editor.getBlock(blockId)!.textContent())).toBe("hello");
+		expect(visibleText(editor.getBlock(blockId)!.textContent())).toBe(
+			"hello",
+		);
 		expect(editor.getBlock(blockId)?.textDeltas()).toEqual([
 			{
 				insert: "hello",
@@ -962,9 +1053,10 @@ describe("@pen/core createEditor", () => {
 			origin: "user",
 			affectedBlocks: [blockId],
 		});
-		expect((documentCommits[0] as { blockRevisions: Record<string, number> }).blockRevisions[blockId]).toBe(
-			editor.getBlockRevision(blockId),
-		);
+		expect(
+			(documentCommits[0] as { blockRevisions: Record<string, number> })
+				.blockRevisions[blockId],
+		).toBe(editor.getBlockRevision(blockId));
 		expect(observed).toHaveLength(1);
 		expect(observed[0]).toHaveLength(1);
 
@@ -1026,9 +1118,10 @@ describe("@pen/core createEditor", () => {
 			commitId: 2,
 			affectedBlocks: [blockId],
 		});
-		expect((documentCommits[0] as { blockRevisions: Record<string, number> }).blockRevisions[blockId]).toBe(
-			editor.getBlockRevision(blockId),
-		);
+		expect(
+			(documentCommits[0] as { blockRevisions: Record<string, number> })
+				.blockRevisions[blockId],
+		).toBe(editor.getBlockRevision(blockId));
 		expect(observed).toHaveLength(1);
 		expect(observed[0]).toHaveLength(1);
 
@@ -1422,12 +1515,12 @@ describe("@pen/core createEditor", () => {
 		editor.destroy();
 	});
 
-it("rebinds undo manager after loadDocument", async () => {
+	it("rebinds undo manager after loadDocument", async () => {
 		const editor = createDefaultEditor();
 		const newDoc = editor.internals.adapter.createDocument();
 
 		editor.loadDocument(newDoc);
-	await flushMicrotasks();
+		await flushMicrotasks();
 
 		expect(editor.undoManager).toBe(
 			editor.internals.getSlot("undo:manager"),
@@ -1486,19 +1579,24 @@ it("rebinds undo manager after loadDocument", async () => {
 			redo: () => false,
 			canUndo: () => false,
 			canRedo: () => false,
-			stopCapturing: () => { },
-			syncExplicitUndoGroup: () => { },
-			setGroupTimeout: () => { },
-			registerTrackedOrigins: () => () => { },
-			onStackChange: () => () => { },
+			stopCapturing: () => {},
+			syncExplicitUndoGroup: () => {},
+			setGroupTimeout: () => {},
+			registerTrackedOrigins: () => () => {},
+			onStackChange: () => () => {},
 		};
 		const editor = createEditor({
 			extensions: [
 				defineExtension({
 					name: "test-undo-slot",
 					activateClient: async ({ editor }) => {
-						expect(editor.undoManager).not.toBe(registeredUndoManager);
-						editor.internals.setSlot("undo:manager", registeredUndoManager);
+						expect(editor.undoManager).not.toBe(
+							registeredUndoManager,
+						);
+						editor.internals.setSlot(
+							"undo:manager",
+							registeredUndoManager,
+						);
 						expect(editor.undoManager).toBe(registeredUndoManager);
 					},
 				}),
@@ -1823,8 +1921,12 @@ it("rebinds undo manager after loadDocument", async () => {
 
 		expect(editor.undoManager.undo()).toBe(true);
 		expect(editor.undoManager.undo()).toBe(true);
-		expect(visibleText(editor.getBlock(firstBlockId)!.textContent())).toBe("");
-		expect(visibleText(editor.getBlock(secondBlockId)!.textContent())).toBe("");
+		expect(visibleText(editor.getBlock(firstBlockId)!.textContent())).toBe(
+			"",
+		);
+		expect(visibleText(editor.getBlock(secondBlockId)!.textContent())).toBe(
+			"",
+		);
 
 		editor.destroy();
 	});
@@ -1836,7 +1938,11 @@ it("rebinds undo manager after loadDocument", async () => {
 		await processStream(
 			(async function* (): AsyncIterable<PenStreamPart> {
 				yield { type: "gen-start", zoneId: "zone-shared", blockId };
-				yield { type: "gen-delta", zoneId: "zone-shared", delta: "AI " };
+				yield {
+					type: "gen-delta",
+					zoneId: "zone-shared",
+					delta: "AI ",
+				};
 
 				editor.apply(
 					[
@@ -1910,7 +2016,7 @@ it("rebinds undo manager after loadDocument", async () => {
 		const commitOrigins: string[] = [];
 
 		editor.on("documentCommit", (event) => {
-			commitOrigins.push(event.origin);
+			commitOrigins.push(getOpOriginType(event.origin));
 		});
 
 		editor.apply([
@@ -2009,8 +2115,12 @@ describe("@pen/core table operations", () => {
 			},
 		]);
 
-		const blockMap = editor.internals.doc.blocks.get("t1") as TestBlockMapLike;
-		const tableContent = blockMap.get("tableContent") as TestTableContentLike;
+		const blockMap = editor.internals.doc.blocks.get(
+			"t1",
+		) as TestBlockMapLike;
+		const tableContent = blockMap.get(
+			"tableContent",
+		) as TestTableContentLike;
 		const firstRow = tableContent.get(0);
 		firstRow.get("cells").delete(2, 1);
 

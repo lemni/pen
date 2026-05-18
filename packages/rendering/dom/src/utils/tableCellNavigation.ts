@@ -41,7 +41,10 @@ export function handleTableCellSelectionKeyDown(options: {
 	}
 
 	const cellKeyDownSlot = editor.internals.getSlot("database:cell-keydown") as
-		| ((event: KeyboardEvent, context: { blockId: string; row: number; col: number; root: HTMLElement }) => boolean)
+		| ((
+				event: KeyboardEvent,
+				context: { blockId: string; row: number; col: number; root: HTMLElement },
+		  ) => boolean)
 		| undefined;
 	const slotCoord = resolveCellSelectionCoord(block, selection, {
 		row: head.row,
@@ -113,7 +116,7 @@ export function handleTableCellSelectionKeyDown(options: {
 
 	if ((event.key === "Backspace" || event.key === "Delete") && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
 		event.preventDefault();
-		editor.deleteSelection();
+		editor.deleteSelection({ origin: "user" });
 		return true;
 	}
 
@@ -151,7 +154,7 @@ export function handleTableCellSelectionKeyDown(options: {
 		const cellCoord = head;
 		clearCellContent(editor, selection, blockId, cellCoord.row, cellCoord.col);
 		activateCellEditing(editor, fieldEditor, blockId, selection, cellCoord.row, cellCoord.col, root);
-		insertCharInActiveCell(fieldEditor, editor, selection, blockId, cellCoord.row, cellCoord.col, event.key);
+		insertCharInActiveCell(editor, selection, blockId, cellCoord.row, cellCoord.col, event.key);
 		return true;
 	}
 
@@ -327,7 +330,6 @@ function clearCellContent(
 }
 
 function insertCharInActiveCell(
-	_fieldEditor: FieldEditorTableNavigationController,
 	editor: Editor,
 	selection: CellSelection,
 	blockId: string,
@@ -529,7 +531,9 @@ function pasteCellSelection(editor: Editor, selection: CellSelection): void {
 								const parsed = parseEncodedCellPayload(penCellsMatch[2]);
 								applyPastedCells(editor, selection, parsed.cells);
 								return;
-							} catch { /* fall through to plain text */ }
+							} catch {
+								// Fall through to plain-text clipboard reads below.
+							}
 						}
 						pasteFromPlainText(editor, selection);
 					});

@@ -2,9 +2,9 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEditor } from "@pen/core";
+import { handleTableCellSelectionKeyDown } from "@pen/dom";
 import { defaultPreset } from "@pen/preset-default";
 import type { FieldEditorImpl } from "../field-editor/fieldEditorImpl";
-import { handleTableCellSelectionKeyDown } from "../utils/tableCellNavigation";
 
 class MockClipboardItem {
 	readonly types: string[];

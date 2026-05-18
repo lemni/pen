@@ -44,7 +44,7 @@ export function writePenClipboard(
 			}),
 		])
 		.catch(() => {
-			navigator.clipboard.writeText(plainText).catch(() => {});
+			navigator.clipboard.writeText(plainText).catch(() => { });
 		});
 }
 

@@ -1,13 +1,35 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { docs as collaborationDocs, setupWSConnection } from "@y/websocket-server/utils";
-import { generateText, jsonSchema, Output, stepCountIs, streamText, tool } from "ai";
+import {
+	docs as collaborationDocs,
+	setupWSConnection,
+} from "@y/websocket-server/utils";
+import {
+	generateText,
+	jsonSchema,
+	Output,
+	stepCountIs,
+	streamText,
+	tool,
+} from "ai";
 import { config as loadEnv } from "dotenv";
 import { randomUUID } from "node:crypto";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+	createServer,
+	type IncomingMessage,
+	type ServerResponse,
+} from "node:http";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { createEditor } from "@pen/core";
+import * as Y from "yjs";
+import { createHeadlessEditor } from "@pen/core";
+import {
+	encodeYjsStateVectorBase64,
+	ensureExtensionRoot,
+	getYjsDoc,
+	readExtensionRoot,
+} from "@pen/crdt-yjs";
+import { exportPlainText } from "@pen/export-json";
 import {
 	buildPlaygroundRequestPlan as buildSharedPlaygroundRequestPlan,
 	buildExplicitLocalOperationPrompt,
@@ -35,11 +57,7 @@ import {
 import { listDefaultAISkills, renderSkillFiles } from "@pen/ai-skills";
 import { defaultPreset } from "@pen/preset-default";
 import { createDefaultSchema } from "@pen/schema-default";
-import type {
-	Editor,
-	ModelRequestedOperation,
-	ToolRuntime,
-} from "@pen/types";
+import type { Editor, ModelRequestedOperation, ToolRuntime } from "@pen/types";
 import {
 	isScopedSelectionTarget,
 	renderSelectionTargetText,
@@ -106,6 +124,9 @@ const PLAYGROUND_LOCAL_CONTINUE_SYSTEM_PROMPT =
 	"You are a precise local editor operation. Return only the continuation text that should be inserted at the requested cursor position inside the required payload wrapper. Do not repeat the existing content, and do not include analysis, narration, tool chatter, labels, or quotes outside the wrapper.";
 const PLAYGROUND_SKILLS_ROUTE = "/api/skills";
 const PLAYGROUND_TOOL_ROUTE_PREFIX = "/api/tools/";
+const PLAYGROUND_SESSION_DIAGNOSTICS_ROUTE = "/api/ai/session/diagnostics";
+const PLAYGROUND_EXTENSION_ROOT_NAMESPACE = "pen.playground";
+const PLAYGROUND_EXTENSION_ROOT_VERSION = 1;
 const PLAYGROUND_DIRECT_TOOL_NAMES = new Set([
 	"get_context",
 	"read_document",
@@ -130,6 +151,22 @@ interface ToolExecuteBody {
 
 interface SessionCreateResponse {
 	sessionId: string;
+}
+
+interface SessionDiagnosticsResponse {
+	sessionId: string;
+	headless: true;
+	blockCount: number;
+	generation: number;
+	plainText: string;
+	stateVector: string;
+	extensionRoot: {
+		namespace: string;
+		version: number;
+		requestCount: number;
+		lastRequestMode: string | null;
+		lastSyncedRevision: number | null;
+	};
 }
 
 interface SessionSyncBody {
@@ -207,28 +244,29 @@ interface PlaygroundRequestPlan {
 	selectedTextLength: number | null;
 }
 
-const buildTypedSharedPlaygroundRequestPlan = buildSharedPlaygroundRequestPlan as (
-	editor: Editor,
-	prompt: string,
-	config: {
-		documentModel: string;
-		selectionModel: string;
-		documentSystemPrompt: string;
-		structuredPlannerSystemPrompt: string;
-		selectionFastPathSystemPrompt: string;
-		autocompleteSystemPrompt: string;
-		selectionSourceCharLimit: number;
-		selectionStopSentinel: string;
-		selectionOutputTokenCap: number;
-		autocompleteOutputTokenCap: number;
-		selectionDefaultOutputTokens: number;
-		selectionExpandOutputTokens: number;
-		selectionSummarizeOutputTokens: number;
-		selectionTranslateOutputTokens: number;
-	},
-	requestedMode?: PlaygroundRequestMode | null,
-	requestedOperation?: ModelRequestedOperation | null,
-) => PlaygroundRequestPlan;
+const buildTypedSharedPlaygroundRequestPlan =
+	buildSharedPlaygroundRequestPlan as (
+		editor: Editor,
+		prompt: string,
+		config: {
+			documentModel: string;
+			selectionModel: string;
+			documentSystemPrompt: string;
+			structuredPlannerSystemPrompt: string;
+			selectionFastPathSystemPrompt: string;
+			autocompleteSystemPrompt: string;
+			selectionSourceCharLimit: number;
+			selectionStopSentinel: string;
+			selectionOutputTokenCap: number;
+			autocompleteOutputTokenCap: number;
+			selectionDefaultOutputTokens: number;
+			selectionExpandOutputTokens: number;
+			selectionSummarizeOutputTokens: number;
+			selectionTranslateOutputTokens: number;
+		},
+		requestedMode?: PlaygroundRequestMode | null,
+		requestedOperation?: ModelRequestedOperation | null,
+	) => PlaygroundRequestPlan;
 
 const sessions = new Map<string, PlaygroundSession>();
 const serverOrigin = `http://${PLAYGROUND_SERVER_HOST}:${PLAYGROUND_SERVER_PORT}`;
@@ -272,6 +310,14 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
+		if (
+			url.pathname === PLAYGROUND_SESSION_DIAGNOSTICS_ROUTE &&
+			req.method === "GET"
+		) {
+			handleSessionDiagnosticsRequest(req, res, url);
+			return;
+		}
+
 		if (url.pathname === "/api/tools" && req.method === "GET") {
 			handleListToolsRequest(req, res);
 			return;
@@ -282,7 +328,10 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 
-		if (url.pathname.startsWith(PLAYGROUND_TOOL_ROUTE_PREFIX) && req.method === "POST") {
+		if (
+			url.pathname.startsWith(PLAYGROUND_TOOL_ROUTE_PREFIX) &&
+			req.method === "POST"
+		) {
 			await handleDirectToolRequest(req, res, url);
 			return;
 		}
@@ -304,9 +353,7 @@ server.on("upgrade", (request, socket, head) => {
 });
 
 server.listen(PLAYGROUND_SERVER_PORT, PLAYGROUND_SERVER_HOST, () => {
-	console.log(
-		`Pen playground AI backend listening on ${serverOrigin}`,
-	);
+	console.log(`Pen playground AI backend listening on ${serverOrigin}`);
 });
 
 collaborationWebSocketServer.on(
@@ -330,7 +377,33 @@ function handleCreateSession(res: ServerResponse): void {
 	logPlaygroundEvent("session:create", {
 		sessionId: session.id,
 	});
-	sendJson(res, 200, { sessionId: session.id } satisfies SessionCreateResponse);
+	sendJson(res, 200, {
+		sessionId: session.id,
+	} satisfies SessionCreateResponse);
+}
+
+function handleSessionDiagnosticsRequest(
+	req: IncomingMessage,
+	res: ServerResponse,
+	url: URL,
+): void {
+	const sessionId =
+		url.searchParams.get("sessionId")?.trim() ??
+		readHeader(req, SESSION_HEADER);
+	if (!sessionId) {
+		sendJson(res, 400, {
+			error: "Expected a valid playground session ID.",
+		});
+		return;
+	}
+
+	const session = sessions.get(sessionId) ?? null;
+	if (!session) {
+		sendJson(res, 404, { error: "Playground session not found." });
+		return;
+	}
+
+	sendJson(res, 200, { ...createSessionDiagnostics(session) });
 }
 
 async function handleSessionSync(
@@ -343,14 +416,14 @@ async function handleSessionSync(
 	const editorState = parseSerializedEditorState(body.editorState);
 	const revision =
 		typeof body.revision === "number" &&
-			Number.isInteger(body.revision) &&
-			body.revision >= 0
+		Number.isInteger(body.revision) &&
+		body.revision >= 0
 			? body.revision
 			: null;
 	const generation =
 		typeof body.generation === "number" &&
-			Number.isInteger(body.generation) &&
-			body.generation >= 0
+		Number.isInteger(body.generation) &&
+		body.generation >= 0
 			? body.generation
 			: null;
 
@@ -358,7 +431,9 @@ async function handleSessionSync(
 		logPlaygroundEvent("session:sync-rejected", {
 			reason: "missing-session-id",
 		});
-		sendJson(res, 400, { error: "Expected a valid playground session ID." });
+		sendJson(res, 400, {
+			error: "Expected a valid playground session ID.",
+		});
 		return;
 	}
 
@@ -367,7 +442,9 @@ async function handleSessionSync(
 			sessionId,
 			reason: "missing-editor-state",
 		});
-		sendJson(res, 400, { error: "Expected a serialized editor state payload." });
+		sendJson(res, 400, {
+			error: "Expected a serialized editor state payload.",
+		});
 		return;
 	}
 	if (revision == null || generation == null) {
@@ -409,6 +486,7 @@ async function handleSessionSync(
 	session.lastSyncedAt = Date.now();
 	session.syncedRevision = revision;
 	session.syncedGeneration = syncedGeneration;
+	recordPlaygroundSessionSync(session);
 	touchSession(session);
 	previousEditor.destroy();
 	logPlaygroundEvent("session:sync-complete", {
@@ -433,15 +511,13 @@ async function handleAIRequest(
 			reason: "missing-api-key",
 		});
 		sendJson(res, 500, {
-			error:
-				"Missing ANTHROPIC_API_KEY. Add it to playground/.env.local before starting the backend.",
+			error: "Missing ANTHROPIC_API_KEY. Add it to playground/.env.local before starting the backend.",
 		});
 		return;
 	}
 
 	const body = (await readJsonBody<AIRequestBody>(req)) ?? {};
-	const prompt =
-		typeof body.prompt === "string" ? body.prompt.trim() : "";
+	const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
 	const sessionId =
 		typeof body.sessionId === "string" ? body.sessionId : null;
 	const isAISuggestionsRequest =
@@ -451,14 +527,14 @@ async function handleAIRequest(
 	const requestedOperation = parseRequestedOperation(body.operation);
 	const expectedSyncRevision =
 		typeof body.expectedSyncRevision === "number" &&
-			Number.isInteger(body.expectedSyncRevision) &&
-			body.expectedSyncRevision >= 0
+		Number.isInteger(body.expectedSyncRevision) &&
+		body.expectedSyncRevision >= 0
 			? body.expectedSyncRevision
 			: null;
 	const expectedSyncedGeneration =
 		typeof body.expectedSyncedGeneration === "number" &&
-			Number.isInteger(body.expectedSyncedGeneration) &&
-			body.expectedSyncedGeneration >= 0
+		Number.isInteger(body.expectedSyncedGeneration) &&
+		body.expectedSyncedGeneration >= 0
 			? body.expectedSyncedGeneration
 			: null;
 
@@ -481,7 +557,9 @@ async function handleAIRequest(
 		logPlaygroundEvent("ai:request-rejected", {
 			reason: "missing-session-id",
 		});
-		sendJson(res, 400, { error: "Expected a valid playground session ID." });
+		sendJson(res, 400, {
+			error: "Expected a valid playground session ID.",
+		});
 		return;
 	}
 
@@ -534,9 +612,9 @@ async function handleAIRequest(
 	const resolvedOperation =
 		requestedOperation != null
 			? remapRequestedOperationBlockIds(
-				requestedOperation,
-				session.clientToServerBlockIds,
-			)
+					requestedOperation,
+					session.clientToServerBlockIds,
+				)
 			: null;
 	const requestPlan = buildPlaygroundRequestPlan(
 		session.editor,
@@ -553,6 +631,7 @@ async function handleAIRequest(
 		startedAt: performance.now(),
 		...createPlaygroundRequestMetricsSeed(requestPlan),
 	};
+	recordPlaygroundRequestMetadata(session, requestId, requestPlan.mode);
 	const abortActiveRequest = () => {
 		if (abortController.signal.aborted || res.writableEnded) {
 			return;
@@ -571,7 +650,9 @@ async function handleAIRequest(
 	try {
 		if (isAISuggestionsRequest && suggestionScope) {
 			const result = await generateText({
-				model: createPlaygroundLanguageModel(PLAYGROUND_SELECTION_MODEL),
+				model: createPlaygroundLanguageModel(
+					PLAYGROUND_SELECTION_MODEL,
+				),
 				system: AI_SUGGESTIONS_SYSTEM_PROMPT,
 				prompt: JSON.stringify(
 					{
@@ -599,7 +680,10 @@ async function handleAIRequest(
 			sendJson(res, 200, {
 				suggestions: parseSuggestionResponse(result.text),
 				usage: {
-					promptTokens: resolveUsageTokenValue(result.usage, "inputTokens"),
+					promptTokens: resolveUsageTokenValue(
+						result.usage,
+						"inputTokens",
+					),
 					completionTokens: resolveUsageTokenValue(
 						result.usage,
 						"outputTokens",
@@ -645,15 +729,12 @@ async function handleAIRequest(
 			(resolvedOperation.kind === "rewrite-selection" ||
 				resolvedOperation.kind === "rewrite-block" ||
 				resolvedOperation.kind === "continue-block" ||
-				(
-					resolvedOperation.kind === "document-transform" &&
+				(resolvedOperation.kind === "document-transform" &&
 					resolvedOperation.target.kind === "document" &&
-					(
-						resolvedOperation.target.transform === "rewrite" ||
+					(resolvedOperation.target.transform === "rewrite" ||
 						resolvedOperation.target.transform === "remove" ||
-						resolvedOperation.target.placement === "replace-blocks"
-					)
-				));
+						resolvedOperation.target.placement ===
+							"replace-blocks")));
 
 		if (isLocalOperation) {
 			await streamLocalOperationResponse({
@@ -661,11 +742,12 @@ async function handleAIRequest(
 				editor: session.editor,
 				prompt,
 				operation: resolvedOperation,
-				requestedMode: body.requestMode === "bottom-chat" ||
+				requestedMode:
+					body.requestMode === "bottom-chat" ||
 					body.requestMode === "inline-edit" ||
 					body.requestMode === "structured-planner"
-					? body.requestMode
-					: requestedMode,
+						? body.requestMode
+						: requestedMode,
 				requestPlan,
 				abortSignal: abortController.signal,
 				metrics,
@@ -678,10 +760,14 @@ async function handleAIRequest(
 			const result = streamText({
 				model: createPlaygroundLanguageModel(requestPlan.modelId),
 				system: requestPlan.systemPrompt,
-				prompt: buildStructuredIntentModelPrompt(structuredIntentRequest),
+				prompt: buildStructuredIntentModelPrompt(
+					structuredIntentRequest,
+				),
 				output: Output.object({
 					schema: jsonSchema(
-						getStructuredIntentOutputSchema(structuredIntentRequest.targetKind),
+						getStructuredIntentOutputSchema(
+							structuredIntentRequest.targetKind,
+						),
 					),
 				}),
 				...(requestPlan.maxOutputTokens != null
@@ -694,7 +780,8 @@ async function handleAIRequest(
 			});
 			for await (const partial of result.partialOutputStream) {
 				if (metrics.firstTextDeltaServerMs == null) {
-					metrics.firstTextDeltaServerMs = performance.now() - metrics.startedAt;
+					metrics.firstTextDeltaServerMs =
+						performance.now() - metrics.startedAt;
 					logPlaygroundEvent("ai:first-structured-partial", {
 						requestId,
 						sessionId,
@@ -718,9 +805,12 @@ async function handleAIRequest(
 				prompt: requestPlan.prompt,
 				...(requestPlan.useTools
 					? {
-						tools: buildPlaygroundTools(session.editor, metrics),
-						stopWhen: stepCountIs(PLAYGROUND_MAX_TOOL_STEPS),
-					}
+							tools: buildPlaygroundTools(
+								session.editor,
+								metrics,
+							),
+							stopWhen: stepCountIs(PLAYGROUND_MAX_TOOL_STEPS),
+						}
 					: {}),
 				...(requestPlan.maxOutputTokens != null
 					? { maxOutputTokens: requestPlan.maxOutputTokens }
@@ -734,7 +824,8 @@ async function handleAIRequest(
 				abortSignal: abortController.signal,
 			});
 
-			const shouldStreamRawText = requestPlan.mode === "inline-autocomplete";
+			const shouldStreamRawText =
+				requestPlan.mode === "inline-autocomplete";
 			const documentPayloadCollector = shouldStreamRawText
 				? null
 				: createLocalOperationPayloadCollector();
@@ -742,7 +833,8 @@ async function handleAIRequest(
 			for await (const part of result.fullStream) {
 				if (part.type === "tool-call") {
 					if (metrics.firstToolStartMs == null) {
-						metrics.firstToolStartMs = performance.now() - metrics.startedAt;
+						metrics.firstToolStartMs =
+							performance.now() - metrics.startedAt;
 						logPlaygroundEvent("ai:first-tool-call", {
 							requestId,
 							sessionId,
@@ -751,13 +843,17 @@ async function handleAIRequest(
 						});
 					}
 					metrics.toolCallCount += 1;
-					writeJsonLine(res, { type: "phase", phase: "tool-calling" });
+					writeJsonLine(res, {
+						type: "phase",
+						phase: "tool-calling",
+					});
 					continue;
 				}
 
 				if (part.type === "text-delta") {
 					if (metrics.firstTextDeltaServerMs == null) {
-						metrics.firstTextDeltaServerMs = performance.now() - metrics.startedAt;
+						metrics.firstTextDeltaServerMs =
+							performance.now() - metrics.startedAt;
 						logPlaygroundEvent("ai:first-text-delta", {
 							requestId,
 							sessionId,
@@ -773,7 +869,10 @@ async function handleAIRequest(
 						continue;
 					}
 					const preview = documentPayloadCollector?.push(part.text);
-					if (preview?.changed && preview.text.length > lastSentLength) {
+					if (
+						preview?.changed &&
+						preview.text.length > lastSentLength
+					) {
 						const increment = preview.text.slice(lastSentLength);
 						lastSentLength = preview.text.length;
 						writeJsonLine(res, { type: "phase", phase: "writing" });
@@ -850,7 +949,10 @@ async function handleAIRequest(
 		});
 		res.end();
 	} finally {
-		session.activeRequestCount = Math.max(0, session.activeRequestCount - 1);
+		session.activeRequestCount = Math.max(
+			0,
+			session.activeRequestCount - 1,
+		);
 		touchSession(session);
 		logPlaygroundEvent("ai:request-finish", {
 			requestId,
@@ -891,7 +993,9 @@ function handleListSkillsRequest(
 
 	const skills = listDefaultAISkills(listAITools(resolved.toolRuntime), {
 		autocompleteProviders:
-			getAutocompleteController(resolved.editor)?.listProviderDescriptors() ?? [],
+			getAutocompleteController(
+				resolved.editor,
+			)?.listProviderDescriptors() ?? [],
 	});
 	sendJson(res, 200, {
 		skills: skills.map((skill) => ({
@@ -946,7 +1050,7 @@ async function handleDirectToolRequest(
 }
 
 function createPlaygroundEditor(): Editor {
-	return createEditor({
+	const editor = createHeadlessEditor({
 		preset: defaultPreset({
 			deltaStream: false,
 			undo: false,
@@ -954,6 +1058,8 @@ function createPlaygroundEditor(): Editor {
 		schema: createDefaultSchema(),
 		documentProfile: "structured",
 	});
+	ensurePlaygroundExtensionRoot(editor);
+	return editor;
 }
 
 function createPlaygroundSession(): PlaygroundSession {
@@ -972,6 +1078,93 @@ function createPlaygroundSession(): PlaygroundSession {
 	return session;
 }
 
+function ensurePlaygroundExtensionRoot(editor: Editor) {
+	return ensureExtensionRoot({
+		doc: getYjsDoc(editor),
+		namespace: PLAYGROUND_EXTENSION_ROOT_NAMESPACE,
+		version: PLAYGROUND_EXTENSION_ROOT_VERSION,
+		shape: {
+			requestIds: "array",
+			diagnostics: "map",
+			notes: "text",
+		},
+	});
+}
+
+function recordPlaygroundRequestMetadata(
+	session: PlaygroundSession,
+	requestId: string,
+	requestMode: PlaygroundRequestMode,
+): void {
+	const root = ensurePlaygroundExtensionRoot(session.editor);
+	const requestIds = root.map.get("requestIds");
+	const diagnostics = root.map.get("diagnostics");
+	if (requestIds instanceof Y.Array) {
+		requestIds.push([requestId]);
+	}
+	if (diagnostics instanceof Y.Map) {
+		diagnostics.set("lastRequestMode", requestMode);
+		diagnostics.set("lastRequestId", requestId);
+		diagnostics.set("lastRequestAt", new Date().toISOString());
+	}
+}
+
+function recordPlaygroundSessionSync(session: PlaygroundSession): void {
+	const root = ensurePlaygroundExtensionRoot(session.editor);
+	const diagnostics = root.map.get("diagnostics");
+	if (diagnostics instanceof Y.Map) {
+		diagnostics.set("lastSyncedRevision", session.syncedRevision);
+		diagnostics.set("lastSyncedGeneration", session.syncedGeneration);
+		diagnostics.set(
+			"lastSyncedAt",
+			new Date(session.lastSyncedAt ?? Date.now()).toISOString(),
+		);
+	}
+}
+
+function createSessionDiagnostics(
+	session: PlaygroundSession,
+): SessionDiagnosticsResponse {
+	const yDoc = getYjsDoc(session.editor);
+	const extensionRoot = readExtensionRoot({
+		doc: yDoc,
+		namespace: PLAYGROUND_EXTENSION_ROOT_NAMESPACE,
+	});
+	const rootMap = extensionRoot?.map;
+	const requestIds = rootMap?.get("requestIds");
+	const diagnostics = rootMap?.get("diagnostics");
+	const requestCount = requestIds instanceof Y.Array ? requestIds.length : 0;
+	const lastRequestMode =
+		diagnostics instanceof Y.Map
+			? diagnostics.get("lastRequestMode")
+			: null;
+	const lastSyncedRevision =
+		diagnostics instanceof Y.Map
+			? diagnostics.get("lastSyncedRevision")
+			: null;
+
+	return {
+		sessionId: session.id,
+		headless: true,
+		blockCount: session.editor.documentState.blockOrder.length,
+		generation: session.editor.documentState.generation,
+		plainText: exportPlainText(session.editor),
+		stateVector: encodeYjsStateVectorBase64(yDoc),
+		extensionRoot: {
+			namespace:
+				extensionRoot?.namespace ?? PLAYGROUND_EXTENSION_ROOT_NAMESPACE,
+			version: extensionRoot?.version ?? 0,
+			requestCount,
+			lastRequestMode:
+				typeof lastRequestMode === "string" ? lastRequestMode : null,
+			lastSyncedRevision:
+				typeof lastSyncedRevision === "number"
+					? lastSyncedRevision
+					: null,
+		},
+	};
+}
+
 function touchSession(session: PlaygroundSession): void {
 	session.lastTouchedAt = Date.now();
 }
@@ -980,7 +1173,7 @@ function resolvePlaygroundToolRuntime(
 	req: IncomingMessage,
 ): { editor: Editor; toolRuntime: ToolRuntime } | null {
 	const sessionId = readHeader(req, SESSION_HEADER);
-	const session = sessionId ? sessions.get(sessionId) ?? null : null;
+	const session = sessionId ? (sessions.get(sessionId) ?? null) : null;
 	const editor = session?.editor ?? null;
 	if (!editor) {
 		return null;
@@ -1020,33 +1213,48 @@ function buildPlaygroundRequestPlan(
 	requestedMode: PlaygroundRequestMode | null,
 	requestedOperation: ModelRequestedOperation | null,
 ): PlaygroundRequestPlan {
-	return buildTypedSharedPlaygroundRequestPlan(editor, prompt, {
-		documentModel: PLAYGROUND_DOCUMENT_MODEL,
-		selectionModel: PLAYGROUND_SELECTION_MODEL,
-		documentSystemPrompt: PLAYGROUND_DOCUMENT_SYSTEM_PROMPT,
-		structuredPlannerSystemPrompt: PLAYGROUND_STRUCTURED_PLANNER_SYSTEM_PROMPT,
-		selectionFastPathSystemPrompt: PLAYGROUND_SELECTION_FAST_PATH_SYSTEM_PROMPT,
-		autocompleteSystemPrompt: AUTOCOMPLETE_SYSTEM_PROMPT,
-		selectionSourceCharLimit: PLAYGROUND_SELECTION_SOURCE_CHAR_LIMIT,
-		selectionStopSentinel: PLAYGROUND_SELECTION_STOP_SENTINEL,
-		selectionOutputTokenCap: PLAYGROUND_SELECTION_OUTPUT_TOKEN_CAP,
-		autocompleteOutputTokenCap: PLAYGROUND_AUTOCOMPLETE_OUTPUT_TOKEN_CAP,
-		selectionDefaultOutputTokens: PLAYGROUND_SELECTION_DEFAULT_OUTPUT_TOKENS,
-		selectionExpandOutputTokens: PLAYGROUND_SELECTION_EXPAND_OUTPUT_TOKENS,
-		selectionSummarizeOutputTokens: PLAYGROUND_SELECTION_SUMMARIZE_OUTPUT_TOKENS,
-		selectionTranslateOutputTokens: PLAYGROUND_SELECTION_TRANSLATE_OUTPUT_TOKENS,
-	}, requestedMode, requestedOperation);
+	return buildTypedSharedPlaygroundRequestPlan(
+		editor,
+		prompt,
+		{
+			documentModel: PLAYGROUND_DOCUMENT_MODEL,
+			selectionModel: PLAYGROUND_SELECTION_MODEL,
+			documentSystemPrompt: PLAYGROUND_DOCUMENT_SYSTEM_PROMPT,
+			structuredPlannerSystemPrompt:
+				PLAYGROUND_STRUCTURED_PLANNER_SYSTEM_PROMPT,
+			selectionFastPathSystemPrompt:
+				PLAYGROUND_SELECTION_FAST_PATH_SYSTEM_PROMPT,
+			autocompleteSystemPrompt: AUTOCOMPLETE_SYSTEM_PROMPT,
+			selectionSourceCharLimit: PLAYGROUND_SELECTION_SOURCE_CHAR_LIMIT,
+			selectionStopSentinel: PLAYGROUND_SELECTION_STOP_SENTINEL,
+			selectionOutputTokenCap: PLAYGROUND_SELECTION_OUTPUT_TOKEN_CAP,
+			autocompleteOutputTokenCap:
+				PLAYGROUND_AUTOCOMPLETE_OUTPUT_TOKEN_CAP,
+			selectionDefaultOutputTokens:
+				PLAYGROUND_SELECTION_DEFAULT_OUTPUT_TOKENS,
+			selectionExpandOutputTokens:
+				PLAYGROUND_SELECTION_EXPAND_OUTPUT_TOKENS,
+			selectionSummarizeOutputTokens:
+				PLAYGROUND_SELECTION_SUMMARIZE_OUTPUT_TOKENS,
+			selectionTranslateOutputTokens:
+				PLAYGROUND_SELECTION_TRANSLATE_OUTPUT_TOKENS,
+		},
+		requestedMode,
+		requestedOperation,
+	);
 }
 
-function parsePlaygroundRequestMode(value: unknown): PlaygroundRequestMode | null {
+function parsePlaygroundRequestMode(
+	value: unknown,
+): PlaygroundRequestMode | null {
 	const requestedMode =
 		value === "document-agent" ||
-			value === "structured-generation" ||
-			value === "selection-fast" ||
-			value === "inline-autocomplete" ||
-			value === "bottom-chat" ||
-			value === "inline-edit" ||
-			value === "structured-planner"
+		value === "structured-generation" ||
+		value === "selection-fast" ||
+		value === "inline-autocomplete" ||
+		value === "bottom-chat" ||
+		value === "inline-edit" ||
+		value === "structured-planner"
 			? (value as PlaygroundRequestedMode)
 			: null;
 	if (!requestedMode) {
@@ -1081,7 +1289,9 @@ function resolveOperationRequestMode(
 	return requestedMode;
 }
 
-function parseRequestedOperation(value: unknown): ModelRequestedOperation | null {
+function parseRequestedOperation(
+	value: unknown,
+): ModelRequestedOperation | null {
 	if (!value || typeof value !== "object") {
 		return null;
 	}
@@ -1118,7 +1328,9 @@ function parseRequestedOperation(value: unknown): ModelRequestedOperation | null
 			typeof candidate.target.sourceText === "string" &&
 			(candidate.target.kind !== "scoped-range" ||
 				(Array.isArray(candidate.target.blockIds) &&
-					candidate.target.blockIds.every((blockId) => typeof blockId === "string") &&
+					candidate.target.blockIds.every(
+						(blockId) => typeof blockId === "string",
+					) &&
 					(candidate.target.contentFormat === "text" ||
 						candidate.target.contentFormat === "markdown") &&
 					(candidate.target.scope === "block" ||
@@ -1135,10 +1347,11 @@ function parseRequestedOperation(value: unknown): ModelRequestedOperation | null
 			: null;
 	}
 	if (candidate.target.kind === "document") {
-		return (
-			(candidate.target.blockIds === undefined ||
-				(Array.isArray(candidate.target.blockIds) &&
-					candidate.target.blockIds.every((blockId) => typeof blockId === "string"))) &&
+		return (candidate.target.blockIds === undefined ||
+			(Array.isArray(candidate.target.blockIds) &&
+				candidate.target.blockIds.every(
+					(blockId) => typeof blockId === "string",
+				))) &&
 			(candidate.target.placement === undefined ||
 				candidate.target.placement === "append-after-block" ||
 				candidate.target.placement === "replace-empty-block" ||
@@ -1147,7 +1360,6 @@ function parseRequestedOperation(value: unknown): ModelRequestedOperation | null
 				candidate.target.transform === "write" ||
 				candidate.target.transform === "rewrite" ||
 				candidate.target.transform === "remove")
-		)
 			? candidate
 			: null;
 	}
@@ -1165,13 +1377,14 @@ function parseAISuggestionRequestScope(
 	return typeof candidate.targetText === "string" &&
 		typeof candidate.contextBefore === "string" &&
 		typeof candidate.contextAfter === "string" &&
-		(candidate.blockType === null || typeof candidate.blockType === "string")
+		(candidate.blockType === null ||
+			typeof candidate.blockType === "string")
 		? {
-			blockType: (candidate.blockType as string | null) ?? null,
-			targetText: candidate.targetText,
-			contextBefore: candidate.contextBefore,
-			contextAfter: candidate.contextAfter,
-		}
+				blockType: (candidate.blockType as string | null) ?? null,
+				targetText: candidate.targetText,
+				contextBefore: candidate.contextBefore,
+				contextAfter: candidate.contextAfter,
+			}
 		: null;
 }
 
@@ -1212,9 +1425,13 @@ async function streamLocalOperationResponse(input: {
 		sessionId,
 	} = input;
 	const usesClientInlineSelectionPreview = requestedMode === "inline-edit";
-	const conflictReason = resolveRequestedOperationConflict(editor, operation, {
-		allowSelectionTextMismatch: usesClientInlineSelectionPreview,
-	});
+	const conflictReason = resolveRequestedOperationConflict(
+		editor,
+		operation,
+		{
+			allowSelectionTextMismatch: usesClientInlineSelectionPreview,
+		},
+	);
 	if (conflictReason) {
 		writeJsonLine(res, {
 			type: "conflict",
@@ -1239,7 +1456,9 @@ async function streamLocalOperationResponse(input: {
 		...(requestPlan.temperature != null
 			? { temperature: requestPlan.temperature }
 			: {}),
-		...(requestPlan.stopSequences ? { stopSequences: requestPlan.stopSequences } : {}),
+		...(requestPlan.stopSequences
+			? { stopSequences: requestPlan.stopSequences }
+			: {}),
 		abortSignal,
 	});
 
@@ -1247,7 +1466,8 @@ async function streamLocalOperationResponse(input: {
 	for await (const part of result.fullStream) {
 		if (part.type === "text-delta") {
 			if (metrics.firstTextDeltaServerMs == null) {
-				metrics.firstTextDeltaServerMs = performance.now() - metrics.startedAt;
+				metrics.firstTextDeltaServerMs =
+					performance.now() - metrics.startedAt;
 				logPlaygroundEvent("ai:first-text-delta", {
 					requestId,
 					sessionId,
@@ -1288,11 +1508,9 @@ function resolveLocalOperationFrameType(
 ): "replace-preview" | "replace-final" | "insert-preview" | "insert-final" {
 	if (
 		operation.kind === "continue-block" ||
-		(
-			operation.kind === "document-transform" &&
+		(operation.kind === "document-transform" &&
 			operation.target.kind === "document" &&
-			operation.target.placement === "append-after-block"
-		)
+			operation.target.placement === "append-after-block")
 	) {
 		return phase === "preview" ? "insert-preview" : "insert-final";
 	}
@@ -1304,7 +1522,9 @@ function resolveDocumentTransformTargetBlockIds(
 	target: Extract<ModelRequestedOperation["target"], { kind: "document" }>,
 ): string[] {
 	const requestedBlockIds =
-		target.blockIds?.filter((blockId) => editor.getBlock(blockId) != null) ?? [];
+		target.blockIds?.filter(
+			(blockId) => editor.getBlock(blockId) != null,
+		) ?? [];
 	if (requestedBlockIds.length > 0) {
 		return requestedBlockIds;
 	}
@@ -1321,7 +1541,9 @@ function remapRequestedOperationBlockIds(
 	clientToServerBlockIds: ReadonlyMap<string, string>,
 ): ModelRequestedOperation {
 	const remapBlockId = (blockId: string | null | undefined): string | null =>
-		blockId == null ? null : (clientToServerBlockIds.get(blockId) ?? blockId);
+		blockId == null
+			? null
+			: (clientToServerBlockIds.get(blockId) ?? blockId);
 	if (
 		operation.target.kind === "selection" ||
 		operation.target.kind === "scoped-range"
@@ -1333,22 +1555,26 @@ function remapRequestedOperationBlockIds(
 				blockId: remapBlockId(operation.target.blockId),
 				...(operation.target.kind === "scoped-range"
 					? {
-						blockIds: operation.target.blockIds.map(
-							(blockId) => clientToServerBlockIds.get(blockId) ?? blockId,
-						),
-					}
+							blockIds: operation.target.blockIds.map(
+								(blockId) =>
+									clientToServerBlockIds.get(blockId) ??
+									blockId,
+							),
+						}
 					: {}),
 				anchor: {
 					...operation.target.anchor,
 					blockId:
-						clientToServerBlockIds.get(operation.target.anchor.blockId) ??
-						operation.target.anchor.blockId,
+						clientToServerBlockIds.get(
+							operation.target.anchor.blockId,
+						) ?? operation.target.anchor.blockId,
 				},
 				focus: {
 					...operation.target.focus,
 					blockId:
-						clientToServerBlockIds.get(operation.target.focus.blockId) ??
-						operation.target.focus.blockId,
+						clientToServerBlockIds.get(
+							operation.target.focus.blockId,
+						) ?? operation.target.focus.blockId,
 				},
 			},
 		};
@@ -1396,7 +1622,8 @@ function resolveRequestedOperationConflict(
 			isScopedSelectionTarget(target) &&
 			operation.provenance?.syncedGeneration != null &&
 			operation.provenance.syncedGeneration >= 0 &&
-			editor.documentState.generation !== operation.provenance.syncedGeneration
+			editor.documentState.generation !==
+				operation.provenance.syncedGeneration
 		) {
 			return "The document changed before the operation started.";
 		}
@@ -1419,7 +1646,7 @@ function resolveRequestedOperationConflict(
 		if (
 			operation.provenance?.blockRevision != null &&
 			editor.getBlockRevision(operation.target.blockId) !==
-			operation.provenance.blockRevision
+				operation.provenance.blockRevision
 		) {
 			return "The target block changed before the operation started.";
 		}
@@ -1428,7 +1655,8 @@ function resolveRequestedOperationConflict(
 		operation.target.kind === "document" &&
 		operation.provenance?.syncedGeneration != null &&
 		operation.provenance.syncedGeneration >= 0 &&
-		editor.documentState.generation !== operation.provenance.syncedGeneration
+		editor.documentState.generation !==
+			operation.provenance.syncedGeneration
 	) {
 		return "The document changed before the operation started.";
 	}
@@ -1452,15 +1680,20 @@ function buildPlaygroundTools(
 		/* Server-side tool execution streams metrics, not editor deltas */
 	});
 
-	return toolRuntime.listTools().reduce<Record<string, ReturnType<typeof tool>>>(
-		(accumulator, definition) => {
+	return toolRuntime
+		.listTools()
+		.reduce<
+			Record<string, ReturnType<typeof tool>>
+		>((accumulator, definition) => {
 			if (!PLAYGROUND_DIRECT_TOOL_NAMES.has(definition.name)) {
 				return accumulator;
 			}
 
 			accumulator[definition.name] = {
 				description: definition.description,
-				inputSchema: jsonSchema(definition.inputSchema as Record<string, unknown>),
+				inputSchema: jsonSchema(
+					definition.inputSchema as Record<string, unknown>,
+				),
 				execute: async (input: unknown) => {
 					const startedAt = performance.now();
 					const result = await executeAITool(
@@ -1471,15 +1704,14 @@ function buildPlaygroundTools(
 					);
 					metrics.toolExecutionMs += performance.now() - startedAt;
 					if (metrics.firstToolResultMs == null) {
-						metrics.firstToolResultMs = performance.now() - metrics.startedAt;
+						metrics.firstToolResultMs =
+							performance.now() - metrics.startedAt;
 					}
 					return result;
 				},
 			} as unknown as ReturnType<typeof tool>;
 			return accumulator;
-		},
-		{},
-	);
+		}, {});
 }
 
 function hydrateEditor(
@@ -1492,7 +1724,12 @@ function hydrateEditor(
 
 	if (firstSerializedBlock && firstEditorBlock) {
 		idMap.set(firstSerializedBlock.id, firstEditorBlock.id);
-		applyBlockSnapshot(editor, firstSerializedBlock, firstEditorBlock.id, idMap);
+		applyBlockSnapshot(
+			editor,
+			firstSerializedBlock,
+			firstEditorBlock.id,
+			idMap,
+		);
 	}
 
 	for (const block of state.blocks.slice(1)) {
@@ -1625,7 +1862,7 @@ function normalizeBlockProps(
 ): Record<string, unknown> {
 	const normalizedParentId =
 		typeof props.parentId === "string"
-			? idMap.get(props.parentId) ?? props.parentId
+			? (idMap.get(props.parentId) ?? props.parentId)
 			: props.parentId;
 
 	return {
@@ -1649,9 +1886,7 @@ async function readJsonBody<T = unknown>(
 	const chunks: Uint8Array[] = [];
 
 	for await (const chunk of req) {
-		chunks.push(
-			typeof chunk === "string" ? Buffer.from(chunk) : chunk,
-		);
+		chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
 	}
 
 	if (chunks.length === 0) {
@@ -1724,7 +1959,7 @@ function normalizePlaygroundSelectionModelName(
 	modelName: string | undefined,
 ): string {
 	if (!modelName) {
-		return "claude-3-haiku-20240307";
+		return "claude-haiku-4-5";
 	}
 
 	return normalizePlaygroundModelName(modelName);
@@ -1795,7 +2030,10 @@ function shutdownPlaygroundServer(signal: NodeJS.Signals): void {
 		collaborationWebSocketServer.close();
 		clearTimeout(exitTimer);
 		if (error) {
-			console.error("Failed to close playground AI backend cleanly:", error);
+			console.error(
+				"Failed to close playground AI backend cleanly:",
+				error,
+			);
 			process.exit(1);
 			return;
 		}

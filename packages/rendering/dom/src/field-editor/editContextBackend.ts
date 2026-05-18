@@ -1,5 +1,10 @@
 import { INPUT_RULES_ENGINE_SLOT_KEY } from "@pen/types";
-import type { DocumentOp, Editor, InlineDecoration, InputBackend } from "@pen/types";
+import type {
+	DocumentOp,
+	Editor,
+	InlineDecoration,
+	InputBackend,
+} from "@pen/types";
 import { supportsInlineInputRules } from "@pen/types";
 import type { FieldEditorInputController } from "./controller";
 import { fullReconcileToDOM, applyDeltaToDOM } from "./reconciler";
@@ -14,6 +19,7 @@ import { isHistoryTransactionOrigin } from "./historyOrigin";
 import { handleCopy, handleCut, handleClipboardPaste } from "./clipboard";
 import type { PasteImporters } from "../types/paste";
 import { applyListInputRule } from "./commands";
+import { isFieldEditorTextEditingKey } from "../utils/textEntryTarget";
 import type {
 	FieldEditorObserver,
 	FieldEditorTextChangeEvent,
@@ -28,6 +34,31 @@ type EditContextTextUpdateEvent = Event & {
 	text: string;
 	selectionStart?: number;
 	selectionEnd?: number;
+};
+
+type EditContextSelection = {
+	blockId: string;
+	anchorOffset: number;
+	focusOffset: number;
+};
+
+type EditContextSelectionOptions = {
+	source?: "text-update";
+};
+
+type EditContextRange = {
+	start: number;
+	end: number;
+};
+
+type DirectionalSelectionOffsets = NonNullable<
+	ReturnType<typeof getDirectionalSelectionOffsets>
+>;
+
+type KeyDownRangeResolution = {
+	range: EditContextRange;
+	nextSelection: EditContextSelection | null;
+	shouldSyncEditContextSelection: boolean;
 };
 
 type EditContextTextFormat = {
@@ -45,6 +76,8 @@ type EditContextCharacterBoundsUpdateEvent = Event & {
 	rangeStart: number;
 	rangeEnd: number;
 };
+
+const ZERO_WIDTH_SPACE = "\u200B";
 
 declare class EditContext {
 	constructor(options?: {
@@ -73,11 +106,11 @@ export class EditContextBackend implements InputBackend {
 	private ytext: FieldEditorTextLike | null = null;
 	private observer: FieldEditorObserver | null = null;
 	private isApplyingSelection = 0;
-	private pendingSelectionOverride: {
-		blockId: string;
-		anchorOffset: number;
-		focusOffset: number;
-	} | null = null;
+	private editContextSelection: EditContextSelection | null = null;
+	// A textupdate carries the freshest post-input caret. Keep it authoritative
+	// until a real user selection gesture or navigation key moves the caret.
+	private authoritativeTextInputSelection: EditContextSelection | null = null;
+	private pendingSelectionOverride: EditContextSelection | null = null;
 	private editor: Editor;
 	private fieldEditor: FieldEditorInputController;
 
@@ -91,15 +124,23 @@ export class EditContextBackend implements InputBackend {
 		this.ytext = ytext as FieldEditorTextLike;
 		this.fieldEditor.setComposing(false);
 
-		const editContextConstructor = (globalThis as EditContextGlobal).EditContext;
+		const editContextConstructor = (globalThis as EditContextGlobal)
+			.EditContext;
 		if (!editContextConstructor) {
-			throw new Error("EditContext is not available in this environment.");
+			throw new Error(
+				"EditContext is not available in this environment.",
+			);
 		}
 
+		const initialText = this.ytext.toString();
+		const initialEditContextText = toEditContextText(initialText);
+		const initialSelectionOffset = isLogicallyEmptyText(initialText)
+			? 0
+			: initialEditContextText.length;
 		this.editContext = new editContextConstructor({
-			text: this.ytext.toString(),
-			selectionStart: 0,
-			selectionEnd: 0,
+			text: initialEditContextText,
+			selectionStart: initialSelectionOffset,
+			selectionEnd: initialSelectionOffset,
 		});
 
 		const ec = this.editContext!;
@@ -114,6 +155,7 @@ export class EditContextBackend implements InputBackend {
 		element.addEventListener("paste", this.handlePasteEvent);
 		element.addEventListener("dragstart", this.handleDragStart);
 		element.addEventListener("drop", this.handleDrop);
+		element.addEventListener("pointerdown", this.handlePointerDown);
 		ec.addEventListener("textupdate", this.handleTextUpdate);
 		ec.addEventListener("textformatupdate", this.handleTextFormatUpdate);
 		ec.addEventListener(
@@ -131,8 +173,11 @@ export class EditContextBackend implements InputBackend {
 		fullReconcileToDOM(this.ytext, element, this.editor.schema, {
 			inlineDecorations: this.getInlineDecorationsForBlock(),
 		});
+		this.fieldEditor.notifyDomReconciled(
+			this.fieldEditor.focusBlockId ?? undefined,
+		);
 		this.isApplyingSelection++;
-		this.updateSelection(null);
+		this.updateSelection();
 		element.focus({ preventScroll: true });
 		requestAnimationFrame(() => {
 			this.isApplyingSelection--;
@@ -164,6 +209,10 @@ export class EditContextBackend implements InputBackend {
 			this.element.removeEventListener("paste", this.handlePasteEvent);
 			this.element.removeEventListener("dragstart", this.handleDragStart);
 			this.element.removeEventListener("drop", this.handleDrop);
+			this.element.removeEventListener(
+				"pointerdown",
+				this.handlePointerDown,
+			);
 			this.element.ownerDocument?.removeEventListener(
 				"selectionchange",
 				this.handleSelectionChange,
@@ -178,11 +227,13 @@ export class EditContextBackend implements InputBackend {
 		this.element = null;
 		this.ytext = null;
 		this.observer = null;
+		this.editContextSelection = null;
+		this.authoritativeTextInputSelection = null;
 		this.pendingSelectionOverride = null;
 		this.fieldEditor.setComposing(false);
 	}
 
-	updateSelection(_relPos: unknown): void {
+	updateSelection(): void {
 		if (!this.editContext || !this.ytext) return;
 
 		const selection = this.fieldEditor.selection;
@@ -193,24 +244,36 @@ export class EditContextBackend implements InputBackend {
 			selection.anchor.blockId === blockId &&
 			selection.focus.blockId === blockId
 		) {
-			this.editContext.updateSelection(
+			const anchorOffset = this.resolveEditContextOffset(
 				selection.anchor.offset,
+			);
+			const focusOffset = this.resolveEditContextOffset(
 				selection.focus.offset,
 			);
-			this.isApplyingSelection++;
-			this.projectDOMSelection(
+			this.setEditContextSelection({
 				blockId,
-				selection.anchor.offset,
-				selection.focus.offset,
-			);
+				anchorOffset,
+				focusOffset,
+			});
+			this.isApplyingSelection++;
+			this.projectDOMSelection(blockId, anchorOffset, focusOffset);
 			requestAnimationFrame(() => {
 				this.isApplyingSelection--;
 			});
 			return;
 		}
 
-		const len = this.ytext.length;
+		const len = isLogicallyEmptyText(this.ytext.toString())
+			? 0
+			: this.ytext.length;
 		this.editContext.updateSelection(len, len);
+		this.editContextSelection = blockId
+			? {
+					blockId,
+					anchorOffset: len,
+					focusOffset: len,
+				}
+			: null;
 	}
 
 	private projectDOMSelection(
@@ -248,21 +311,30 @@ export class EditContextBackend implements InputBackend {
 			return;
 		}
 
-		const range = {
-			start: updateRangeStart,
-			end: updateRangeEnd,
-		};
+		const resolvedTextUpdate = this.resolveTextUpdateRange({
+			blockId,
+			updateRangeStart,
+			updateRangeEnd,
+			text,
+			selectionStart,
+			selectionEnd,
+		});
+		const { range } = resolvedTextUpdate;
 		const listInputRuleTarget = applyListInputRule(this.editor, {
 			blockId,
 			range,
 			text,
 		});
 		if (listInputRuleTarget) {
-			this.pendingSelectionOverride = {
+			const nextSelection = {
 				blockId: listInputRuleTarget.blockId,
 				anchorOffset: listInputRuleTarget.anchorOffset,
 				focusOffset: listInputRuleTarget.focusOffset,
 			};
+			this.pendingSelectionOverride = nextSelection;
+			this.setEditContextSelection(nextSelection, {
+				source: "text-update",
+			});
 			this.fieldEditor.syncTextSelection(
 				listInputRuleTarget.blockId,
 				listInputRuleTarget.anchorOffset,
@@ -280,6 +352,9 @@ export class EditContextBackend implements InputBackend {
 		);
 		if (inlineInputRuleTarget) {
 			this.pendingSelectionOverride = inlineInputRuleTarget;
+			this.setEditContextSelection(inlineInputRuleTarget, {
+				source: "text-update",
+			});
 			this.fieldEditor.syncTextSelection(
 				inlineInputRuleTarget.blockId,
 				inlineInputRuleTarget.anchorOffset,
@@ -290,18 +365,10 @@ export class EditContextBackend implements InputBackend {
 			return;
 		}
 
-		this.pendingSelectionOverride =
-			typeof selectionStart === "number" &&
-			typeof selectionEnd === "number"
-				? {
-						blockId,
-						anchorOffset: selectionStart,
-						focusOffset: selectionEnd,
-					}
-				: null;
+		this.pendingSelectionOverride = resolvedTextUpdate.selection;
 
 		const ops: DocumentOp[] = [];
-		if (updateRangeEnd > updateRangeStart) {
+		if (range.end > range.start) {
 			ops.push({
 				type: "delete-text" as const,
 				blockId,
@@ -315,21 +382,24 @@ export class EditContextBackend implements InputBackend {
 				blockId,
 				offset: range.start,
 				text,
-				marks: this.fieldEditor.resolveInsertMarks(this.ytext, range.start),
+				marks: this.fieldEditor.resolveInsertMarks(
+					this.ytext,
+					range.start,
+				),
 			});
 		}
 		if (ops.length > 0) {
 			this.editor.apply(ops, { origin: "user" });
 		}
 
-		if (
-			typeof selectionStart === "number" &&
-			typeof selectionEnd === "number"
-		) {
+		if (resolvedTextUpdate.selection) {
+			this.setEditContextSelection(resolvedTextUpdate.selection, {
+				source: "text-update",
+			});
 			this.fieldEditor.syncTextSelection(
 				blockId,
-				selectionStart,
-				selectionEnd,
+				resolvedTextUpdate.selection.anchorOffset,
+				resolvedTextUpdate.selection.focusOffset,
 			);
 			this.restoreDOMCaret();
 		}
@@ -337,17 +407,205 @@ export class EditContextBackend implements InputBackend {
 		this.pendingSelectionOverride = null;
 	};
 
+	private resolveTextUpdateRange(input: {
+		blockId: string;
+		updateRangeStart: number;
+		updateRangeEnd: number;
+		text: string;
+		selectionStart?: number;
+		selectionEnd?: number;
+	}): {
+		range: { start: number; end: number };
+		selection: EditContextSelection | null;
+	} {
+		const selection = this.fieldEditor.selection;
+		const isLogicallyEmpty = isLogicallyEmptyText(
+			this.ytext?.toString() ?? "",
+		);
+		const editorSelectionRange = this.resolveEditorSelectionRange(
+			input.blockId,
+		);
+		const isCollapsedInsert =
+			input.text.length > 0 &&
+			input.updateRangeStart === input.updateRangeEnd;
+		const programmaticInputRange =
+			this.fieldEditor.resolveProgrammaticInputRange(input.blockId, {
+				start: input.updateRangeStart,
+				end: input.updateRangeEnd,
+			});
+		const editContextCaret = collapsedSelectionOffset(
+			this.editContextSelection,
+			input.blockId,
+		);
+		const authoritativeInputCaret = collapsedSelectionOffset(
+			this.authoritativeTextInputSelection,
+			input.blockId,
+		);
+		const editorCaret =
+			selection?.type === "text" &&
+			selection.isCollapsed &&
+			selection.focus.blockId === input.blockId
+				? selection.focus.offset
+				: null;
+		const trustedCaret =
+			authoritativeInputCaret ??
+			(isLogicallyEmpty ? 0 : (editContextCaret ?? editorCaret));
+		const shouldUseTrustedCaret =
+			isCollapsedInsert &&
+			trustedCaret != null &&
+			trustedCaret !== input.updateRangeStart;
+		const shouldUseEditorSelectionRange =
+			editorSelectionRange != null &&
+			input.updateRangeStart === input.updateRangeEnd &&
+			(input.updateRangeStart !== editorSelectionRange.start ||
+				input.updateRangeEnd !== editorSelectionRange.end);
+		const shouldClampEmptyRange =
+			isLogicallyEmpty && authoritativeInputCaret == null;
+		const rangeStart = programmaticInputRange
+			? programmaticInputRange.start
+			: shouldUseEditorSelectionRange
+				? editorSelectionRange.start
+				: shouldClampEmptyRange
+					? 0
+					: shouldUseTrustedCaret
+						? trustedCaret
+						: input.updateRangeStart;
+		const rangeEnd = programmaticInputRange
+			? programmaticInputRange.end
+			: shouldUseEditorSelectionRange
+				? editorSelectionRange.end
+				: shouldClampEmptyRange
+					? 0
+					: shouldUseTrustedCaret
+						? trustedCaret
+						: input.updateRangeEnd;
+		const hasCollapsedEventSelection =
+			typeof input.selectionStart !== "number" ||
+			typeof input.selectionEnd !== "number" ||
+			input.selectionStart === input.selectionEnd;
+		const nextSelectionOffset =
+			input.text.length > 0 && hasCollapsedEventSelection
+				? rangeStart + input.text.length
+				: null;
+		const anchorOffset =
+			nextSelectionOffset ??
+			(typeof input.selectionStart === "number"
+				? input.selectionStart
+				: null);
+		const focusOffset =
+			nextSelectionOffset ??
+			(typeof input.selectionEnd === "number"
+				? input.selectionEnd
+				: null);
+
+		return {
+			range: {
+				start: rangeStart,
+				end: rangeEnd,
+			},
+			selection:
+				anchorOffset != null && focusOffset != null
+					? {
+							blockId: input.blockId,
+							anchorOffset,
+							focusOffset,
+						}
+					: null,
+		};
+	}
+
+	private setEditContextSelection(
+		selection: EditContextSelection,
+		options?: EditContextSelectionOptions,
+	): void {
+		const resolvedSelection = {
+			blockId: selection.blockId,
+			anchorOffset: this.resolveEditContextOffset(
+				selection.anchorOffset,
+				options,
+			),
+			focusOffset: this.resolveEditContextOffset(
+				selection.focusOffset,
+				options,
+			),
+		};
+		this.editContextSelection = resolvedSelection;
+		if (options?.source === "text-update") {
+			this.authoritativeTextInputSelection = resolvedSelection;
+		} else {
+			// Programmatic/editor selections supersede stale EditContext text-update carets.
+			this.authoritativeTextInputSelection = null;
+		}
+		this.editContext?.updateSelection(
+			resolvedSelection.anchorOffset,
+			resolvedSelection.focusOffset,
+		);
+	}
+
+	private resolveEditContextOffset(
+		offset: number,
+		options?: EditContextSelectionOptions,
+	): number {
+		return options?.source !== "text-update" &&
+			isLogicallyEmptyText(this.ytext?.toString() ?? "")
+			? 0
+			: offset;
+	}
+
+	private resolveEditorSelectionRange(
+		blockId: string,
+	): EditContextRange | null {
+		const selection = this.fieldEditor.selection;
+		if (
+			selection?.type !== "text" ||
+			selection.isCollapsed ||
+			selection.anchor.blockId !== blockId ||
+			selection.focus.blockId !== blockId
+		) {
+			return null;
+		}
+
+		return {
+			start: Math.min(selection.anchor.offset, selection.focus.offset),
+			end: Math.max(selection.anchor.offset, selection.focus.offset),
+		};
+	}
+
+	private shouldIgnoreStaleCollapsedDomSelection(
+		selection: ReturnType<typeof normalizeSelectionFormation>,
+	): boolean {
+		if (selection.type === "block") {
+			return false;
+		}
+		if (
+			selection.anchor.blockId !== selection.focus.blockId ||
+			selection.anchor.offset !== selection.focus.offset
+		) {
+			return false;
+		}
+
+		const editorSelectionRange = this.resolveEditorSelectionRange(
+			selection.anchor.blockId,
+		);
+		if (!editorSelectionRange) {
+			return false;
+		}
+
+		return (
+			selection.anchor.offset !== editorSelectionRange.start ||
+			selection.focus.offset !== editorSelectionRange.end
+		);
+	}
+
 	private applyInlineInputRule(
 		blockId: string,
 		offset: number,
 		text: string,
-	):
-		| {
-				blockId: string;
-				anchorOffset: number;
-				focusOffset: number;
-		  }
-		| null {
+	): {
+		blockId: string;
+		anchorOffset: number;
+		focusOffset: number;
+	} | null {
 		if (text.length !== 1) {
 			return null;
 		}
@@ -369,7 +627,13 @@ export class EditContextBackend implements InputBackend {
 		const ops =
 			inputRuleEngine?.tryMatchInline(this.editor, blockId, text, {
 				offset,
-			}) ?? this.resolveFallbackInlineInputRule(blockId, block.textContent(), offset, text);
+			}) ??
+			this.resolveFallbackInlineInputRule(
+				blockId,
+				block.textContent(),
+				offset,
+				text,
+			);
 		if (!ops) {
 			return null;
 		}
@@ -425,7 +689,8 @@ export class EditContextBackend implements InputBackend {
 		if (!this.element) return;
 
 		const ranges =
-			(event as EditContextTextFormatUpdateEvent).getTextFormats?.() ?? [];
+			(event as EditContextTextFormatUpdateEvent).getTextFormats?.() ??
+			[];
 		for (const fmt of ranges) {
 			const { rangeStart, rangeEnd, underlineStyle, underlineThickness } =
 				fmt;
@@ -481,7 +746,11 @@ export class EditContextBackend implements InputBackend {
 
 	private handleSelectionChange = (): void => {
 		if (!this.element || !this.editContext) return;
-		if (!this.fieldEditor.shouldHandleDomSelectionChange(this.isApplyingSelection)) {
+		if (
+			!this.fieldEditor.shouldHandleDomSelectionChange(
+				this.isApplyingSelection,
+			)
+		) {
 			return;
 		}
 
@@ -497,6 +766,11 @@ export class EditContextBackend implements InputBackend {
 			mappedSelection,
 		);
 
+		if (this.shouldIgnoreStaleCollapsedDomSelection(normalizedSelection)) {
+			this.restoreDOMCaret();
+			return;
+		}
+
 		if (normalizedSelection.type === "block") {
 			this.fieldEditor.deactivate();
 			this.editor.setSelection({
@@ -507,7 +781,8 @@ export class EditContextBackend implements InputBackend {
 		}
 
 		if (
-			normalizedSelection.anchor.blockId !== normalizedSelection.focus.blockId
+			normalizedSelection.anchor.blockId !==
+			normalizedSelection.focus.blockId
 		) {
 			this.fieldEditor.applyDocumentTextSelection(
 				normalizedSelection.anchor,
@@ -534,8 +809,46 @@ export class EditContextBackend implements InputBackend {
 
 		const offsets = getDirectionalSelectionOffsets(this.element);
 		if (!offsets) return;
+		const editorSelectionRange = this.resolveEditorSelectionRange(
+			normalizedSelection.anchor.blockId,
+		);
+		if (
+			editorSelectionRange &&
+			offsets.anchor === offsets.focus &&
+			(offsets.start !== editorSelectionRange.start ||
+				offsets.end !== editorSelectionRange.end)
+		) {
+			this.setEditContextSelection({
+				blockId: normalizedSelection.anchor.blockId,
+				anchorOffset: editorSelectionRange.start,
+				focusOffset: editorSelectionRange.end,
+			});
+			this.restoreDOMCaret();
+			return;
+		}
+		const authoritativeSelection = this.getAuthoritativeTextInputSelection(
+			normalizedSelection.anchor.blockId,
+		);
+		if (
+			authoritativeSelection &&
+			offsets.anchor === offsets.focus &&
+			(offsets.anchor !== authoritativeSelection.anchorOffset ||
+				offsets.focus !== authoritativeSelection.focusOffset)
+		) {
+			this.setEditContextSelection(authoritativeSelection, {
+				source: "text-update",
+			});
+			this.restoreDOMCaret();
+			return;
+		}
 
 		this.editContext.updateSelection(offsets.start, offsets.end);
+		const nextSelection = {
+			blockId: normalizedSelection.anchor.blockId,
+			anchorOffset: offsets.anchor,
+			focusOffset: offsets.focus,
+		};
+		this.editContextSelection = nextSelection;
 		this.fieldEditor.syncTextSelection(
 			normalizedSelection.anchor.blockId,
 			offsets.anchor,
@@ -547,8 +860,12 @@ export class EditContextBackend implements InputBackend {
 		if (!this.editContext || !this.element || !this.ytext) return;
 		const isHistory = isHistoryTransactionOrigin(event.transaction?.origin);
 		if (isHistory) {
-			const nextText = this.ytext?.toString?.() ?? "";
-			this.editContext.updateText(0, this.editContext.text.length, nextText);
+			const nextText = toEditContextText(this.ytext?.toString?.() ?? "");
+			this.editContext.updateText(
+				0,
+				this.editContext.text.length,
+				nextText,
+			);
 			const clampedSelectionStart = Math.min(
 				this.editContext.selectionStart,
 				nextText.length,
@@ -561,20 +878,21 @@ export class EditContextBackend implements InputBackend {
 				clampedSelectionStart,
 				clampedSelectionEnd,
 			);
+			const blockId = this.fieldEditor.focusBlockId;
+			this.editContextSelection = blockId
+				? {
+						blockId,
+						anchorOffset: clampedSelectionStart,
+						focusOffset: clampedSelectionEnd,
+					}
+				: null;
+			fullReconcileToDOM(this.ytext, this.element, this.editor.schema, {
+				preserveSelection: true,
+				inlineDecorations: this.getInlineDecorationsForBlock(),
+			});
+			this.fieldEditor.notifyDomReconciled(blockId ?? undefined);
+			this.restoreDOMCaret();
 			return;
-		}
-
-		const delta = event.delta;
-		let offset = 0;
-		for (const entry of delta) {
-			if (entry.retain != null) {
-				offset += entry.retain;
-			} else if (typeof entry.insert === "string") {
-				this.editContext.updateText(offset, offset, entry.insert);
-				offset += entry.insert.length;
-			} else if (entry.delete != null) {
-				this.editContext.updateText(offset, offset + entry.delete, "");
-			}
 		}
 
 		const applied = applyDeltaToDOM(
@@ -587,8 +905,47 @@ export class EditContextBackend implements InputBackend {
 				preserveSelection: true,
 				inlineDecorations: this.getInlineDecorationsForBlock(),
 			});
+			this.fieldEditor.notifyDomReconciled(
+				this.fieldEditor.focusBlockId ?? undefined,
+			);
 		}
 
+		if (
+			shouldReplaceEditContextText(
+				event.delta,
+				this.editContext.text.length,
+			)
+		) {
+			const nextText = toEditContextText(this.ytext.toString());
+			this.editContext.updateText(
+				0,
+				this.editContext.text.length,
+				nextText,
+			);
+		} else {
+			const delta = event.delta;
+			let offset = 0;
+			for (const entry of delta) {
+				if (entry.retain != null) {
+					offset += entry.retain;
+				} else if (typeof entry.insert === "string") {
+					this.editContext.updateText(offset, offset, entry.insert);
+					offset += entry.insert.length;
+				} else if (entry.delete != null) {
+					this.editContext.updateText(
+						offset,
+						offset + entry.delete,
+						"",
+					);
+				}
+			}
+		}
+
+		if (this.pendingSelectionOverride) {
+			this.setEditContextSelection(this.pendingSelectionOverride, {
+				source: "text-update",
+			});
+		}
 		this.restoreDOMCaret();
 	};
 
@@ -605,28 +962,44 @@ export class EditContextBackend implements InputBackend {
 			this.pendingSelectionOverride?.blockId === blockId
 				? this.pendingSelectionOverride
 				: null;
+		const authoritativeInputSelection =
+			blockId != null &&
+			this.authoritativeTextInputSelection?.blockId === blockId
+				? this.authoritativeTextInputSelection
+				: null;
+		const editContextSelection =
+			blockId != null && this.editContextSelection?.blockId === blockId
+				? this.editContextSelection
+				: null;
+		const editorSelection =
+			selection?.type === "text" &&
+			blockId &&
+			selection.anchor.blockId === blockId &&
+			selection.focus.blockId === blockId
+				? selection
+				: null;
 		const anchorOffset =
 			pendingSelection?.anchorOffset ??
-			(selection?.type === "text" &&
-			blockId &&
-			selection.anchor.blockId === blockId &&
-			selection.focus.blockId === blockId
-				? selection.anchor.offset
-				: null);
+			authoritativeInputSelection?.anchorOffset ??
+			editorSelection?.anchor.offset ??
+			editContextSelection?.anchorOffset ??
+			null;
 		const focusOffset =
 			pendingSelection?.focusOffset ??
-			(selection?.type === "text" &&
-			blockId &&
-			selection.anchor.blockId === blockId &&
-			selection.focus.blockId === blockId
-				? selection.focus.offset
-				: null);
+			authoritativeInputSelection?.focusOffset ??
+			editorSelection?.focus.offset ??
+			editContextSelection?.focusOffset ??
+			null;
 		if (root && blockId && anchorOffset != null && focusOffset != null) {
+			this.isApplyingSelection++;
 			editorSelectionToDOM(
 				root,
 				{ blockId, offset: anchorOffset },
 				{ blockId, offset: focusOffset },
 			);
+			requestAnimationFrame(() => {
+				this.isApplyingSelection--;
+			});
 			return;
 		}
 
@@ -641,11 +1014,15 @@ export class EditContextBackend implements InputBackend {
 		const sel = this.element.ownerDocument?.getSelection();
 		if (!sel) return;
 
+		this.isApplyingSelection++;
 		sel.removeAllRanges();
 		const range = document.createRange();
 		range.setStart(anchorPoint.node, anchorPoint.offset);
 		range.setEnd(focusPoint.node, focusPoint.offset);
 		sel.addRange(range);
+		requestAnimationFrame(() => {
+			this.isApplyingSelection--;
+		});
 	}
 
 	private getInlineDecorationsForBlock(): readonly InlineDecoration[] {
@@ -657,31 +1034,25 @@ export class EditContextBackend implements InputBackend {
 			.getDecorations()
 			.forBlock(blockId)
 			.filter(
-				(decoration): decoration is InlineDecoration => decoration.type === "inline",
+				(decoration): decoration is InlineDecoration =>
+					decoration.type === "inline",
 			);
 	}
 
 	private handleKeyDown = (event: KeyboardEvent): void => {
 		if (!this.editContext || !this.element || !this.ytext) return;
+		if (isNavigationSelectionKey(event)) {
+			this.authoritativeTextInputSelection = null;
+		}
 
+		const blockId = this.fieldEditor.focusBlockId;
 		const liveDomOffsets = getDirectionalSelectionOffsets(this.element);
-		const range = liveDomOffsets
-			? {
-					start: liveDomOffsets.start,
-					end: liveDomOffsets.end,
-				}
-			: {
-					start: Math.min(
-						this.editContext.selectionStart,
-						this.editContext.selectionEnd,
-					),
-					end: Math.max(
-						this.editContext.selectionStart,
-						this.editContext.selectionEnd,
-					),
-				};
-		if (liveDomOffsets) {
+		const { range, nextSelection, shouldSyncEditContextSelection } =
+			this.resolveKeyDownRange(blockId, event, liveDomOffsets);
+
+		if (shouldSyncEditContextSelection) {
 			this.editContext.updateSelection(range.start, range.end);
+			this.editContextSelection = nextSelection;
 		}
 
 		const handled = handleFieldEditorKeyDown({
@@ -695,6 +1066,213 @@ export class EditContextBackend implements InputBackend {
 			event.preventDefault();
 		}
 	};
+
+	private resolveKeyDownRange(
+		blockId: string | null,
+		event: KeyboardEvent,
+		liveDomOffsets: DirectionalSelectionOffsets | null,
+	): KeyDownRangeResolution {
+		if (!blockId) {
+			return {
+				range: liveDomOffsets
+					? directionalSelectionToRange(liveDomOffsets)
+					: this.resolveEditContextSelectionRange(),
+				nextSelection: null,
+				shouldSyncEditContextSelection: false,
+			};
+		}
+
+		const editorSelectionRange = this.resolveEditorSelectionRange(blockId);
+		const liveRange = liveDomOffsets
+			? directionalSelectionToRange(liveDomOffsets)
+			: null;
+		const programmaticInputRange = isFieldEditorTextEditingKey(event)
+			? this.fieldEditor.resolveProgrammaticInputRange(blockId, liveRange)
+			: null;
+		if (programmaticInputRange) {
+			return {
+				range: programmaticInputRange,
+				nextSelection: rangeToSelection(
+					blockId,
+					programmaticInputRange,
+				),
+				shouldSyncEditContextSelection: true,
+			};
+		}
+
+		const trustedKeyRange = this.resolveTrustedKeyDownRange(
+			blockId,
+			event,
+			editorSelectionRange,
+		);
+		if (trustedKeyRange) {
+			return {
+				range: trustedKeyRange,
+				nextSelection: rangeToSelection(blockId, trustedKeyRange),
+				shouldSyncEditContextSelection: true,
+			};
+		}
+
+		if (
+			editorSelectionRange &&
+			(!liveDomOffsets ||
+				(liveDomOffsets.start === liveDomOffsets.end &&
+					!rangesEqual(liveDomOffsets, editorSelectionRange)))
+		) {
+			return {
+				range: editorSelectionRange,
+				nextSelection: rangeToSelection(blockId, editorSelectionRange),
+				shouldSyncEditContextSelection: true,
+			};
+		}
+
+		if (
+			liveDomOffsets &&
+			this.shouldUseLiveDomSelection(blockId, liveDomOffsets)
+		) {
+			return {
+				range: directionalSelectionToRange(liveDomOffsets),
+				nextSelection: {
+					blockId,
+					anchorOffset: liveDomOffsets.anchor,
+					focusOffset: liveDomOffsets.focus,
+				},
+				shouldSyncEditContextSelection: true,
+			};
+		}
+
+		return {
+			range: liveDomOffsets
+				? directionalSelectionToRange(liveDomOffsets)
+				: this.resolveEditContextSelectionRange(),
+			nextSelection: null,
+			shouldSyncEditContextSelection: false,
+		};
+	}
+
+	private shouldUseLiveDomSelection(
+		blockId: string,
+		liveDomOffsets: DirectionalSelectionOffsets,
+	): boolean {
+		const authoritativeSelection =
+			this.getAuthoritativeTextInputSelection(blockId);
+		return !(
+			authoritativeSelection &&
+			liveDomOffsets.anchor === liveDomOffsets.focus &&
+			(liveDomOffsets.anchor !== authoritativeSelection.anchorOffset ||
+				liveDomOffsets.focus !== authoritativeSelection.focusOffset)
+		);
+	}
+
+	private resolveEditContextSelectionRange(): EditContextRange {
+		if (!this.editContext) {
+			return { start: 0, end: 0 };
+		}
+
+		return {
+			start: Math.min(
+				this.editContext.selectionStart,
+				this.editContext.selectionEnd,
+			),
+			end: Math.max(
+				this.editContext.selectionStart,
+				this.editContext.selectionEnd,
+			),
+		};
+	}
+
+	private resolveTrustedKeyDownRange(
+		blockId: string,
+		event: KeyboardEvent,
+		editorSelectionRange: EditContextRange | null,
+	): EditContextRange | null {
+		if (!isFieldEditorTextEditingKey(event)) {
+			return null;
+		}
+
+		if (editorSelectionRange) {
+			return editorSelectionRange;
+		}
+
+		const authoritativeSelection =
+			this.getAuthoritativeTextInputSelection(blockId);
+		if (authoritativeSelection) {
+			return selectionToRange(authoritativeSelection);
+		}
+
+		const collapsedEditorSelection =
+			this.resolveCollapsedEditorSelectionRange(blockId);
+		if (collapsedEditorSelection) {
+			return collapsedEditorSelection;
+		}
+
+		const projectedSelection = this.getProjectedTextSelection(blockId);
+		if (projectedSelection) {
+			return selectionToRange(projectedSelection);
+		}
+
+		const synchronizedEditContextRange =
+			this.resolveSynchronizedEditContextRange(blockId);
+		if (synchronizedEditContextRange) {
+			return synchronizedEditContextRange;
+		}
+
+		return null;
+	}
+
+	private getProjectedTextSelection(
+		blockId: string,
+	): EditContextSelection | null {
+		return this.editContextSelection?.blockId === blockId
+			? this.editContextSelection
+			: null;
+	}
+
+	private resolveCollapsedEditorSelectionRange(
+		blockId: string,
+	): EditContextRange | null {
+		const selection = this.fieldEditor.selection;
+		if (
+			selection?.type === "text" &&
+			selection.isCollapsed &&
+			selection.focus.blockId === blockId
+		) {
+			return {
+				start: selection.focus.offset,
+				end: selection.focus.offset,
+			};
+		}
+
+		return null;
+	}
+
+	private resolveSynchronizedEditContextRange(
+		blockId: string,
+	): EditContextRange | null {
+		if (!this.editContext) {
+			return null;
+		}
+
+		const editContextRange = {
+			start: Math.min(
+				this.editContext.selectionStart,
+				this.editContext.selectionEnd,
+			),
+			end: Math.max(
+				this.editContext.selectionStart,
+				this.editContext.selectionEnd,
+			),
+		};
+		const editorRange =
+			this.resolveEditorSelectionRange(blockId) ??
+			this.resolveCollapsedEditorSelectionRange(blockId);
+
+		if (editorRange && rangesEqual(editContextRange, editorRange)) {
+			return editContextRange;
+		}
+
+		return null;
+	}
 
 	private handleCopyEvent = (event: ClipboardEvent): void => {
 		event.preventDefault();
@@ -725,18 +1303,33 @@ export class EditContextBackend implements InputBackend {
 	private handleDrop = (event: DragEvent): void => {
 		event.preventDefault();
 	};
+
+	private handlePointerDown = (): void => {
+		this.authoritativeTextInputSelection = null;
+	};
+
+	private getAuthoritativeTextInputSelection(
+		blockId: string,
+	): EditContextSelection | null {
+		const selection =
+			this.authoritativeTextInputSelection?.blockId === blockId
+				? this.authoritativeTextInputSelection
+				: null;
+		if (!selection || selection.anchorOffset !== selection.focusOffset) {
+			return null;
+		}
+		return selection;
+	}
 }
 
 function resolveInlineSelectionTarget(
 	blockId: string,
 	ops: DocumentOp[],
-):
-	| {
-			blockId: string;
-			anchorOffset: number;
-			focusOffset: number;
-	  }
-	| null {
+): {
+	blockId: string;
+	anchorOffset: number;
+	focusOffset: number;
+} | null {
 	let nextOffset: number | null = null;
 	for (const op of ops) {
 		if (op.type === "insert-text" && op.blockId === blockId) {
@@ -808,4 +1401,89 @@ function findTextPosition(
 		return { node: last, offset: last.textContent?.length ?? 0 };
 	}
 	return { node: container, offset: 0 };
+}
+
+function isLogicallyEmptyText(text: string): boolean {
+	return text.length === 0 || text === ZERO_WIDTH_SPACE;
+}
+
+function toEditContextText(text: string): string {
+	return text === ZERO_WIDTH_SPACE ? "" : text;
+}
+
+function shouldReplaceEditContextText(
+	delta: FieldEditorTextChangeEvent["delta"],
+	editContextTextLength: number,
+): boolean {
+	let offset = 0;
+	for (const entry of delta) {
+		if (entry.retain != null) {
+			offset += entry.retain;
+			if (offset > editContextTextLength) return true;
+		} else if (typeof entry.insert === "string") {
+			if (entry.insert === ZERO_WIDTH_SPACE) return true;
+			if (offset > editContextTextLength) return true;
+			offset += entry.insert.length;
+		} else if (entry.delete != null) {
+			if (offset + entry.delete > editContextTextLength) return true;
+		}
+	}
+	return false;
+}
+
+function collapsedSelectionOffset(
+	selection: EditContextSelection | null,
+	blockId: string,
+): number | null {
+	if (
+		selection?.blockId !== blockId ||
+		selection.anchorOffset !== selection.focusOffset
+	) {
+		return null;
+	}
+	return selection.focusOffset;
+}
+
+function selectionToRange(selection: EditContextSelection): EditContextRange {
+	return {
+		start: Math.min(selection.anchorOffset, selection.focusOffset),
+		end: Math.max(selection.anchorOffset, selection.focusOffset),
+	};
+}
+
+function directionalSelectionToRange(
+	selection: DirectionalSelectionOffsets,
+): EditContextRange {
+	return {
+		start: selection.start,
+		end: selection.end,
+	};
+}
+
+function rangeToSelection(
+	blockId: string,
+	range: EditContextRange,
+): EditContextSelection {
+	return {
+		blockId,
+		anchorOffset: range.start,
+		focusOffset: range.end,
+	};
+}
+
+function rangesEqual(left: EditContextRange, right: EditContextRange): boolean {
+	return left.start === right.start && left.end === right.end;
+}
+
+function isNavigationSelectionKey(event: KeyboardEvent): boolean {
+	return (
+		event.key === "ArrowLeft" ||
+		event.key === "ArrowRight" ||
+		event.key === "ArrowUp" ||
+		event.key === "ArrowDown" ||
+		event.key === "Home" ||
+		event.key === "End" ||
+		event.key === "PageUp" ||
+		event.key === "PageDown"
+	);
 }

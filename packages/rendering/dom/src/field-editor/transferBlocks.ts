@@ -55,34 +55,34 @@ export function pasteBlocks(
 		const insertBlockOp =
 			previousBlockId
 				? ({
-						type: "insert-block",
-						blockId,
-						blockType: block.type!,
-						props: block.props ?? {},
-						position: { after: previousBlockId } as Position,
-					} as DocumentOp)
+					type: "insert-block",
+					blockId,
+					blockType: block.type!,
+					props: block.props ?? {},
+					position: { after: previousBlockId } as Position,
+				} as DocumentOp)
 				: cursor
 					? shouldReplaceEmpty
 						? ({
-								type: "insert-block",
-								blockId,
-								blockType: block.type!,
-								props: block.props ?? {},
-								position: { before: cursor.blockId } as Position,
-							} as DocumentOp)
-						: getInsertSiblingBlockOp(editor, {
-								siblingBlockId: cursor.blockId,
-								blockId,
-								blockType: block.type!,
-								props: block.props ?? {},
-							})
-					: ({
 							type: "insert-block",
 							blockId,
 							blockType: block.type!,
 							props: block.props ?? {},
-							position: "last" as Position,
-						} as DocumentOp);
+							position: { before: cursor.blockId } as Position,
+						} as DocumentOp)
+						: getInsertSiblingBlockOp(editor, {
+							siblingBlockId: cursor.blockId,
+							blockId,
+							blockType: block.type!,
+							props: block.props ?? {},
+						})
+					: ({
+						type: "insert-block",
+						blockId,
+						blockType: block.type!,
+						props: block.props ?? {},
+						position: "last" as Position,
+					} as DocumentOp);
 
 		ops.push(insertBlockOp);
 
@@ -179,18 +179,18 @@ export function pasteInlineText(
 		ops.push({
 			...(previousBlockId === blockId
 				? getInsertSiblingBlockOp(editor, {
-						siblingBlockId: previousBlockId,
-						blockId: newId,
-						blockType,
-						props: {},
-					})
+					siblingBlockId: previousBlockId,
+					blockId: newId,
+					blockType,
+					props: {},
+				})
 				: {
-						type: "insert-block",
-						blockId: newId,
-						blockType,
-						props: {},
-						position: { after: previousBlockId },
-					}),
+					type: "insert-block",
+					blockId: newId,
+					blockType,
+					props: {},
+					position: { after: previousBlockId },
+				}),
 		});
 
 		if (lineText) {

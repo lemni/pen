@@ -1,7 +1,4 @@
-import {
-	INPUT_RULES_ENGINE_SLOT_KEY,
-	generateId,
-} from "@pen/types";
+import { INPUT_RULES_ENGINE_SLOT_KEY, generateId } from "@pen/types";
 import type { DocumentOp, Editor } from "@pen/types";
 import {
 	toggleInlineMark as toggleInlineMarkCommand,
@@ -12,7 +9,10 @@ import {
 	getAdjacentVisibleBlockId,
 	isInsideParentIdContainer,
 } from "../utils/parentIdTree";
-import { getEditorFlowCapability, isContinuousTextFlowCapability } from "../utils/flowCapabilities";
+import {
+	getEditorFlowCapability,
+	isContinuousTextFlowCapability,
+} from "../utils/flowCapabilities";
 
 const ZERO_WIDTH_SPACE = "\u200B";
 
@@ -140,6 +140,56 @@ function isCollapsedRange(range: SelectionRange | null): boolean {
 	return !range || range.start === range.end;
 }
 
+function getInlineNodeSelectionTarget(
+	editor: Editor,
+	options: {
+		blockId: string;
+		offset: number;
+		direction: DeleteDirection;
+	},
+): SelectionTarget | null {
+	const block = editor.getBlock(options.blockId);
+	if (!block) {
+		return null;
+	}
+
+	let currentOffset = 0;
+	for (const delta of block.inlineDeltas()) {
+		const length =
+			typeof delta.insert === "string" ? delta.insert.length : 1;
+		const nextOffset = currentOffset + length;
+		const isInlineNode = typeof delta.insert !== "string";
+
+		if (
+			isInlineNode &&
+			options.direction === "backward" &&
+			options.offset === nextOffset
+		) {
+			return {
+				blockId: options.blockId,
+				anchorOffset: currentOffset,
+				focusOffset: nextOffset,
+			};
+		}
+
+		if (
+			isInlineNode &&
+			options.direction === "forward" &&
+			options.offset === currentOffset
+		) {
+			return {
+				blockId: options.blockId,
+				anchorOffset: currentOffset,
+				focusOffset: nextOffset,
+			};
+		}
+
+		currentOffset = nextOffset;
+	}
+
+	return null;
+}
+
 function getListIndent(
 	block: NonNullable<ReturnType<Editor["getBlock"]>>,
 ): number {
@@ -222,7 +272,11 @@ export function applyListTabBehavior(
 	if (shiftKey) {
 		nextIndent = Math.max(0, currentIndent - 1);
 	} else {
-		const previousBlockId = getAdjacentVisibleBlockId(editor, blockId, "previous");
+		const previousBlockId = getAdjacentVisibleBlockId(
+			editor,
+			blockId,
+			"previous",
+		);
 		const previousBlock = previousBlockId
 			? editor.getBlock(previousBlockId)
 			: null;
@@ -271,7 +325,9 @@ export function resolveBackspaceAction(
 	if (!isCollapsedRange(range)) return null;
 	if ((range?.start ?? 0) !== 0) return null;
 	if (
-		!isContinuousTextFlowCapability(getEditorFlowCapability(editor, blockId))
+		!isContinuousTextFlowCapability(
+			getEditorFlowCapability(editor, blockId),
+		)
 	) {
 		return null;
 	}
@@ -279,8 +335,16 @@ export function resolveBackspaceAction(
 	const block = editor.getBlock(blockId);
 	if (!block) return null;
 
-	if (isBlockEmpty(ytext) && block.type === "toggle" && block.children.length === 0) {
-		const previousBlock = getAdjacentEditableBlock(editor, blockId, "previous");
+	if (
+		isBlockEmpty(ytext) &&
+		block.type === "toggle" &&
+		block.children.length === 0
+	) {
+		const previousBlock = getAdjacentEditableBlock(
+			editor,
+			blockId,
+			"previous",
+		);
 		if (previousBlock) {
 			return {
 				action: "delete",
@@ -294,7 +358,11 @@ export function resolveBackspaceAction(
 		return { action: "convert", newType: "paragraph" };
 	}
 
-	const immediateBlockId = getAdjacentVisibleBlockId(editor, blockId, "previous");
+	const immediateBlockId = getAdjacentVisibleBlockId(
+		editor,
+		blockId,
+		"previous",
+	);
 	if (
 		immediateBlockId &&
 		!isContinuousTextFlowCapability(
@@ -372,7 +440,9 @@ export function applyBackspaceBehavior(
 	};
 }
 
-function getCollapsedTextSelectionTarget(editor: Editor): SelectionTarget | null {
+function getCollapsedTextSelectionTarget(
+	editor: Editor,
+): SelectionTarget | null {
 	const selection = editor.selection;
 	if (!selection || selection.type !== "text") {
 		return null;
@@ -408,6 +478,15 @@ export function applyDeleteBehavior(
 				focusOffset: range.start,
 			}
 		);
+	}
+
+	const inlineNodeTarget = getInlineNodeSelectionTarget(editor, {
+		blockId,
+		offset: range.start,
+		direction,
+	});
+	if (inlineNodeTarget) {
+		return inlineNodeTarget;
 	}
 
 	if (direction === "backward") {
@@ -630,8 +709,9 @@ export function applyListInputRule(
 	}
 
 	const inputRuleEngine =
-		editor.internals.getSlot<BlockInputRuleEngine>(INPUT_RULES_ENGINE_SLOT_KEY) ??
-		null;
+		editor.internals.getSlot<BlockInputRuleEngine>(
+			INPUT_RULES_ENGINE_SLOT_KEY,
+		) ?? null;
 	if (inputRuleEngine) {
 		const ops = inputRuleEngine.tryMatch(editor, blockId, text, {
 			offset: range.start,

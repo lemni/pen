@@ -10,6 +10,7 @@ const EMPTY_FIELD_EDITOR_STATE: FieldEditorStoreSnapshot = {
 	isEditing: false,
 	isFocused: false,
 	isComposing: false,
+	domSyncVersion: 0,
 	inputMode: "none",
 	mode: "inactive",
 	activeCellCoord: null,
@@ -18,7 +19,9 @@ const EMPTY_FIELD_EDITOR_STATE: FieldEditorStoreSnapshot = {
 export function useFieldEditorState(
 	fieldEditor: FieldEditorStore | null,
 ): FieldEditorStoreSnapshot {
-	const snapshotRef = useRef<FieldEditorStoreSnapshot>(EMPTY_FIELD_EDITOR_STATE);
+	const snapshotRef = useRef<FieldEditorStoreSnapshot>(
+		EMPTY_FIELD_EDITOR_STATE,
+	);
 
 	return useSyncExternalStore(
 		(callback) => {
@@ -40,6 +43,7 @@ export function useFieldEditorState(
 				prevSnapshot.isEditing === nextSnapshot.isEditing &&
 				prevSnapshot.isFocused === nextSnapshot.isFocused &&
 				prevSnapshot.isComposing === nextSnapshot.isComposing &&
+				prevSnapshot.domSyncVersion === nextSnapshot.domSyncVersion &&
 				prevSnapshot.inputMode === nextSnapshot.inputMode &&
 				prevSnapshot.mode === nextSnapshot.mode &&
 				prevSnapshot.activeCellCoord === nextSnapshot.activeCellCoord

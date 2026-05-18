@@ -46,6 +46,7 @@
   "dependencies": {
     "@pen/core": "workspace:*",
     "@pen/crdt-yjs": "workspace:*",
+    "@pen/export-json": "workspace:*",
     "@pen/schema-default": "workspace:*",
     "@pen/types": "workspace:*",
     "yjs": "^13.6.29"

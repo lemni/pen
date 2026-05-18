@@ -153,6 +153,12 @@ function buildPrompt(
 		"cursor_here=true",
 		`suffix=${JSON.stringify(context.suffixText)}`,
 	];
+	if (context.previousBlockText.trim().length > 0) {
+		sections.push(`previous_block=${JSON.stringify(context.previousBlockText)}`);
+	}
+	if (context.nextBlockText.trim().length > 0) {
+		sections.push(`next_block=${JSON.stringify(context.nextBlockText)}`);
+	}
 
 	if (mode === "continuation") {
 		sections.push(

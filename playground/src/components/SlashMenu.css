@@ -1,156 +1,151 @@
-[data-pen-slash-menu] {
-  display: none;
-}
-
-[data-pen-slash-menu][data-open] {
-  display: flex;
-  flex-direction: column;
-  position: fixed;
-  z-index: 60;
-  width: min(300px, calc(100vw - 24px));
-  padding: 4px;
-  background: color-mix(in srgb, var(--surface) 94%, var(--bg));
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow:
-    0 12px 28px rgba(15, 23, 42, 0.14),
-    0 2px 6px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(14px);
+[data-pen-slash-menu-content] {
+	display: flex;
+	flex-direction: column;
+	width: min(300px, calc(100vw - 24px));
+	padding: 4px;
+	background: color-mix(in srgb, var(--surface) 94%, var(--bg));
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	box-shadow:
+		0 12px 28px rgba(15, 23, 42, 0.14),
+		0 2px 6px rgba(15, 23, 42, 0.08);
+	backdrop-filter: blur(14px);
+	overflow: hidden;
 }
 
 [data-pen-slash-menu-list] {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  padding: 2px 1px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	overflow-y: auto;
+	padding: 2px 1px;
 }
 
 [data-pen-slash-menu-group] {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
 }
 
 [data-pen-slash-menu-group-heading] {
-  padding: 4px 8px 1px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  opacity: 0.82;
+	padding: 4px 8px 1px;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+	opacity: 0.82;
 }
 
 [data-pen-slash-menu-item] {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  font-family: inherit;
-  color: var(--text);
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-  transition:
-    background 0.12s ease,
-    box-shadow 0.12s ease;
+	display: grid;
+	grid-template-columns: 24px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 6px 8px;
+	font-family: inherit;
+	color: var(--text);
+	background: transparent;
+	border: 0;
+	border-radius: 8px;
+	cursor: pointer;
+	text-align: left;
+	transition:
+		background 0.12s ease,
+		box-shadow 0.12s ease;
 }
 
 [data-pen-slash-menu-item]:hover,
 [data-pen-slash-menu-item][data-selected] {
-  background: color-mix(in srgb, var(--bg) 76%, transparent);
+	background: color-mix(in srgb, var(--bg) 76%, transparent);
 }
 
 [data-pen-slash-menu-item]:focus-visible {
-  outline: none;
-  background: color-mix(in srgb, var(--bg) 76%, transparent);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--border) 80%, transparent),
-    0 0 0 3px rgba(113, 113, 122, 0.08);
+	outline: none;
+	background: color-mix(in srgb, var(--bg) 76%, transparent);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in srgb, var(--border) 80%, transparent),
+		0 0 0 3px rgba(113, 113, 122, 0.08);
 }
 
 .slash-menu-item-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 650;
-  line-height: 1;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--bg) 92%, transparent);
+	border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: 9px;
+	font-weight: 650;
+	line-height: 1;
 }
 
 [data-pen-slash-menu-item][data-selected] .slash-menu-item-icon {
-  color: color-mix(in srgb, var(--accent-fg) 92%, var(--text));
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+	color: color-mix(in srgb, var(--accent-fg) 92%, var(--text));
+	background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+	border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 
 .slash-menu-item-content {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 1px;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	gap: 1px;
 }
 
 .slash-menu-item-title {
-  font-size: 11px;
-  font-weight: 550;
-  line-height: 1.2;
-  color: var(--text);
+	font-size: 11px;
+	font-weight: 550;
+	line-height: 1.2;
+	color: var(--text);
 }
 
 .slash-menu-item-description {
-  font-size: 10px;
-  line-height: 1.2;
-  color: var(--text-muted);
-  opacity: 0.9;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+	font-size: 10px;
+	line-height: 1.2;
+	color: var(--text-muted);
+	opacity: 0.9;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .slash-menu-item-alias {
-  flex-shrink: 0;
-  padding-left: 6px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 500;
-  opacity: 0.72;
+	flex-shrink: 0;
+	padding-left: 6px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: 9px;
+	font-weight: 500;
+	opacity: 0.72;
 }
 
 [data-pen-slash-menu-empty] {
-  padding: 12px 10px;
-  color: var(--text-muted);
-  text-align: center;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  font-size: 11px;
+	padding: 12px 10px;
+	color: var(--text-muted);
+	text-align: center;
+	border: 1px dashed var(--border);
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--bg) 80%, transparent);
+	font-size: 11px;
 }
 
 @media (prefers-color-scheme: dark) {
-  [data-pen-slash-menu][data-open] {
-    background: color-mix(in srgb, var(--surface) 94%, black);
-    box-shadow:
-      0 14px 32px rgba(0, 0, 0, 0.34),
-      0 2px 8px rgba(0, 0, 0, 0.22);
-  }
+	[data-pen-slash-menu-content] {
+		background: color-mix(in srgb, var(--surface) 94%, black);
+		box-shadow:
+			0 14px 32px rgba(0, 0, 0, 0.34),
+			0 2px 8px rgba(0, 0, 0, 0.22);
+	}
 
-  [data-pen-slash-menu-item]:focus-visible {
-    box-shadow:
-      inset 0 0 0 1px var(--border),
-      0 0 0 3px rgba(161, 161, 170, 0.12);
-  }
+	[data-pen-slash-menu-item]:focus-visible {
+		box-shadow:
+			inset 0 0 0 1px var(--border),
+			0 0 0 3px rgba(161, 161, 170, 0.12);
+	}
 }

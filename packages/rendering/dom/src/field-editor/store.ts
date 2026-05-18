@@ -6,6 +6,7 @@ export interface FieldEditorStoreSnapshot {
 	isEditing: boolean;
 	isFocused: boolean;
 	isComposing: boolean;
+	domSyncVersion: number;
 	inputMode: "richtext" | "code" | "table" | "none";
 	mode: "inactive" | "single" | "expanded" | "block";
 	activeCellCoord: { blockId: string; row: number; col: number } | null;
@@ -26,4 +27,5 @@ export interface FieldEditorStore extends FieldEditor {
 		},
 	): void;
 	collapseSelectionToPoint(point: { blockId: string; offset: number }): void;
+	notifyDomReconciled(blockId?: string): void;
 }

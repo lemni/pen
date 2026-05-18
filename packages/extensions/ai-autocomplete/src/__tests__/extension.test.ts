@@ -580,6 +580,53 @@ describe("@pen/ai-autocomplete", () => {
 		editor.destroy();
 	});
 
+	it("does not split a short partial word when normalizing prose suggestions", async () => {
+		let activeEditor: ReturnType<typeof createEditor> | null = null;
+		const fieldEditor = {
+			focusBlockId: null as string | null,
+			isEditing: true,
+			isFocused: true,
+			isComposing: false,
+		};
+		const editor = createEditor({
+			extensions: [
+				autocompleteExtension({
+					debounceMs: 0,
+					model: {
+						async *stream() {
+							yield { type: "text-delta" as const, delta: "nd timeline" };
+							yield { type: "done" as const };
+						},
+					},
+				}),
+				defineExtension({
+					name: "test-field-editor-slot",
+					activateClient: async ({ editor: nextEditor }) => {
+						activeEditor = nextEditor;
+						nextEditor.internals.setSlot(FIELD_EDITOR_SLOT_KEY, fieldEditor);
+					},
+					deactivateClient: async () => {
+						activeEditor?.internals.setSlot(FIELD_EDITOR_SLOT_KEY, null);
+						activeEditor = null;
+					},
+				}),
+			],
+		});
+		const blockId = editor.firstBlock()!.id;
+		fieldEditor.focusBlockId = blockId;
+		editor.apply([{ type: "insert-text", blockId, offset: 0, text: "a" }]);
+		editor.selectText(blockId, 1, 1);
+
+		const controller = getAutocompleteController(editor);
+		const inlineCompletion = getInlineCompletionController(editor);
+		expect(controller?.request({ explicit: true })).toBe(true);
+		await waitForCondition(
+			() => inlineCompletion?.getState().visibleSuggestion?.text === "nd timeline",
+		);
+
+		editor.destroy();
+	});
+
 	it("rejects tiny single-word prose suggestions", async () => {
 		let activeEditor: ReturnType<typeof createEditor> | null = null;
 		const fieldEditor = {

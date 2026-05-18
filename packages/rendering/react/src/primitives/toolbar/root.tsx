@@ -39,6 +39,9 @@ export function ToolbarRoot(props: ToolbarRootProps) {
 		blockDragAndDrop: editorContext?.blockDragAndDrop ?? {
 			enabled: false,
 		},
+		blockSelection: editorContext?.blockSelection ?? {
+			enabled: true,
+		},
 		blockControls: editorContext?.blockControls,
 		importers: editorContext?.importers,
 		assets: editorContext?.assets,

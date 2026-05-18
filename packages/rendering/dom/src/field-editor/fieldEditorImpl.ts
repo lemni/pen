@@ -7,9 +7,7 @@ import type {
 	Unsubscribe,
 	InputBackend,
 } from "@pen/types";
-import {
-	DocumentRangeImpl,
-} from "@pen/core";
+import { DocumentRangeImpl } from "@pen/core";
 import {
 	hasFieldEditorSurface,
 	resolveFieldEditorInputMode,
@@ -33,7 +31,11 @@ import {
 	resolveCellInlineElement,
 } from "./contentResolution";
 import type { FieldEditorTextLike } from "./crdt";
-import { domSelectionToEditor, queryBlockElement, queryInlineElement } from "./selectionBridge";
+import {
+	domSelectionToEditor,
+	queryBlockElement,
+	queryInlineElement,
+} from "./selectionBridge";
 import {
 	getEditorBlockSelectionLength,
 	getEditorBlockSelectionRole,
@@ -50,6 +52,7 @@ import {
 
 type FieldEditorOptions = {
 	selectAllBehavior?: EditorSelectAllBehavior;
+	inputBackend?: "contenteditable" | "edit-context";
 };
 
 export class FieldEditorImpl implements FieldEditorSession {
@@ -71,23 +74,37 @@ export class FieldEditorImpl implements FieldEditorSession {
 	private _unsubscribeHistoryApplied: Unsubscribe | null = null;
 	private _pendingMarks: Record<string, unknown | null> = {};
 	private _syncDomVersion = 0;
+	private _domSyncVersion = 0;
 	private _suppressNextDomSelectionProjection = false;
 	private _pointerSelectionDepth = 0;
 	private _pendingSelectionProjectionVersion: number | null = null;
 	private readonly _sessionReconciler: SessionReconciler;
 	private readonly _historySelectionCoordinator: HistorySelectionCoordinator;
 	private _selectAllBehavior: EditorSelectAllBehavior;
+	private _inputBackend: "contenteditable" | "edit-context";
 	private _selectAllCycle: {
 		blockId: string;
 		scope: "cell" | "block" | "document";
 	} | null = null;
 	private _preserveSelectAllCycle = false;
+	private _programmaticTextSelection: {
+		blockId: string;
+		anchorOffset: number;
+		focusOffset: number;
+	} | null = null;
+	private _pendingProgrammaticTextSelection: {
+		blockId: string;
+		anchorOffset: number;
+		focusOffset: number;
+	} | null = null;
 	private _activeCellCoord: ActiveCellCoord | null = null;
 
 	constructor(editor: Editor, options?: FieldEditorOptions) {
 		this._editor = editor;
 		this._selectAllBehavior =
-			options?.selectAllBehavior ?? resolveSelectAllBehavior("content-first");
+			options?.selectAllBehavior ??
+			resolveSelectAllBehavior("content-first");
+		this._inputBackend = options?.inputBackend ?? "edit-context";
 		this._historySelectionCoordinator = new HistorySelectionCoordinator(
 			this._editor,
 		);
@@ -115,9 +132,11 @@ export class FieldEditorImpl implements FieldEditorSession {
 				});
 			},
 		);
-		this._unsubscribeHistoryApplied = this._editor.onHistoryApplied((event) => {
-			this._handleHistoryApplied(event);
-		});
+		this._unsubscribeHistoryApplied = this._editor.onHistoryApplied(
+			(event) => {
+				this._handleHistoryApplied(event);
+			},
+		);
 		this._sessionReconciler = new SessionReconciler(this._editor, {
 			getSnapshot: () => this.getSnapshot(),
 			getAttachedElement: () => this._attachedElement,
@@ -128,6 +147,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 			shouldProjectSelection: () =>
 				this._shouldProjectSelectionAfterReconcile(),
 			projectSelection: () => this._syncDomSelectionOnce(),
+			notifyDomReconciled: (blockId) => this.notifyDomReconciled(blockId),
 		});
 	}
 
@@ -166,6 +186,14 @@ export class FieldEditorImpl implements FieldEditorSession {
 		}
 		this._selectAllBehavior = behavior;
 		this.resetSelectAllCycle();
+	}
+
+	setInputBackend(inputBackend: "contenteditable" | "edit-context"): void {
+		if (this._inputBackend === inputBackend) {
+			return;
+		}
+		this._inputBackend = inputBackend;
+		this._syncBackendForSurfaceMode();
 	}
 
 	// ── Lifecycle ─────────────────────────────────────────────
@@ -212,7 +240,11 @@ export class FieldEditorImpl implements FieldEditorSession {
 		const coord = this._activeCellCoord;
 		if (!coord) return;
 
-		const ytext = this._getYTextForCell(coord.blockId, coord.row, coord.col);
+		const ytext = this._getYTextForCell(
+			coord.blockId,
+			coord.row,
+			coord.col,
+		);
 		if (!ytext) return;
 
 		const root = this._findEditorRoot();
@@ -295,14 +327,19 @@ export class FieldEditorImpl implements FieldEditorSession {
 
 		const blockId = this._resolveSelectAllBlockId(rootElement);
 		if (blockId) {
-			const blockLength = getEditorBlockSelectionLength(this._editor, blockId);
-			const blockRole = getEditorBlockSelectionRole(this._editor, blockId);
+			const blockLength = getEditorBlockSelectionLength(
+				this._editor,
+				blockId,
+			);
+			const blockRole = getEditorBlockSelectionRole(
+				this._editor,
+				blockId,
+			);
 			const shouldSelectDocument =
 				blockLength === 0 ||
 				(this._selectAllCycle?.blockId === blockId &&
 					this._selectAllCycle.scope === "block");
-			const nextScope =
-				shouldSelectDocument ? "document" : "block";
+			const nextScope = shouldSelectDocument ? "document" : "block";
 			if (nextScope === "block") {
 				if (blockRole && blockRole !== "editable-inline") {
 					this.deactivate();
@@ -331,7 +368,10 @@ export class FieldEditorImpl implements FieldEditorSession {
 		this._editor.selectTextRange(range.start, range.end);
 		this._recomputeSurfaceFromSelection();
 		if (this._selectAllBehavior === "block-first") {
-			this._recordSelectAllScope(blockId ?? range.focusBlockId, "document");
+			this._recordSelectAllScope(
+				blockId ?? range.focusBlockId,
+				"document",
+			);
 		}
 		this._syncSelectionToDOM();
 		return true;
@@ -343,6 +383,8 @@ export class FieldEditorImpl implements FieldEditorSession {
 	}
 
 	beginPointerSelection(): void {
+		this._programmaticTextSelection = null;
+		this._pendingProgrammaticTextSelection = null;
 		this._pointerSelectionDepth += 1;
 	}
 
@@ -375,6 +417,8 @@ export class FieldEditorImpl implements FieldEditorSession {
 		this._isComposing = false;
 		this._historySelectionCoordinator.reset();
 		this._suppressNextDomSelectionProjection = false;
+		this._programmaticTextSelection = null;
+		this._pendingProgrammaticTextSelection = null;
 		this._pointerSelectionDepth = 0;
 		this._inputMode = "none";
 		this._mode = "inactive";
@@ -400,17 +444,27 @@ export class FieldEditorImpl implements FieldEditorSession {
 
 		if (!inlineEl) return;
 
+		const selection = this._editor.selection;
 		inlineEl.focus({ preventScroll: false });
 
-		const selection = root.ownerDocument?.getSelection();
-		if (!selection) return;
+		if (
+			selection?.type === "text" &&
+			selection.anchor.blockId === this._focusBlockId &&
+			selection.focus.blockId === this._focusBlockId
+		) {
+			this._backend?.updateSelection(null);
+			return;
+		}
+
+		const nativeSelection = root.ownerDocument?.getSelection();
+		if (!nativeSelection) return;
 
 		const range = root.ownerDocument.createRange();
 		range.selectNodeContents(inlineEl);
 		range.collapse(false);
 
-		selection.removeAllRanges();
-		selection.addRange(range);
+		nativeSelection.removeAllRanges();
+		nativeSelection.addRange(range);
 	}
 
 	blur(): void {
@@ -470,6 +524,16 @@ export class FieldEditorImpl implements FieldEditorSession {
 		if (this._focusBlockId !== blockId) return;
 
 		this.setTextSelection(blockId, anchorOffset, focusOffset);
+		const pendingProgrammaticSelection =
+			this._pendingProgrammaticTextSelection;
+		if (
+			pendingProgrammaticSelection &&
+			(pendingProgrammaticSelection.blockId !== blockId ||
+				pendingProgrammaticSelection.anchorOffset !== anchorOffset ||
+				pendingProgrammaticSelection.focusOffset !== focusOffset)
+		) {
+			this._pendingProgrammaticTextSelection = null;
+		}
 	}
 
 	applyDocumentTextSelection(
@@ -540,8 +604,58 @@ export class FieldEditorImpl implements FieldEditorSession {
 		return (
 			isApplyingSelection === 0 &&
 			this._pointerSelectionDepth === 0 &&
+			this._pendingProgrammaticTextSelection === null &&
 			!this._shouldSuppressSelectionSync()
 		);
+	}
+
+	resolveProgrammaticInputRange(
+		blockId: string | null,
+		liveRange: { start: number; end: number } | null,
+	): { start: number; end: number } | null {
+		const programmaticSelection =
+			this._getActiveProgrammaticTextSelection(blockId);
+		if (!programmaticSelection) {
+			return null;
+		}
+		if (!liveRange) {
+			this._programmaticTextSelection = null;
+			return {
+				start: programmaticSelection.anchorOffset,
+				end: programmaticSelection.focusOffset,
+			};
+		}
+		if (
+			liveRange.start === liveRange.end &&
+			(liveRange.start !== programmaticSelection.anchorOffset ||
+				liveRange.end !== programmaticSelection.focusOffset)
+		) {
+			this._programmaticTextSelection = null;
+			return {
+				start: programmaticSelection.anchorOffset,
+				end: programmaticSelection.focusOffset,
+			};
+		}
+		return null;
+	}
+
+	shouldIgnoreDomTextSelection(
+		anchor: { blockId: string; offset: number },
+		focus: { blockId: string; offset: number },
+	): boolean {
+		const programmaticSelection = this._getActiveProgrammaticTextSelection(
+			anchor.blockId,
+		);
+		if (!programmaticSelection || anchor.blockId !== focus.blockId) {
+			return false;
+		}
+		if (
+			anchor.offset === programmaticSelection.anchorOffset &&
+			focus.offset === programmaticSelection.focusOffset
+		) {
+			return false;
+		}
+		return anchor.offset === focus.offset;
 	}
 
 	setTextSelection(
@@ -553,6 +667,15 @@ export class FieldEditorImpl implements FieldEditorSession {
 			this._clearPendingMarks(true);
 		}
 		this._editor.selectText(blockId, anchorOffset, focusOffset);
+		const programmaticSelection = this._programmaticTextSelection;
+		if (
+			programmaticSelection &&
+			(programmaticSelection.blockId !== blockId ||
+				programmaticSelection.anchorOffset !== anchorOffset ||
+				programmaticSelection.focusOffset !== focusOffset)
+		) {
+			this._programmaticTextSelection = null;
+		}
 		this._emitStateChange();
 	}
 
@@ -561,7 +684,29 @@ export class FieldEditorImpl implements FieldEditorSession {
 		anchorOffset: number,
 		focusOffset: number,
 	): void {
+		this._programmaticTextSelection = null;
+		this._pendingProgrammaticTextSelection = null;
 		this._projectTextSelection(blockId, anchorOffset, focusOffset);
+	}
+
+	commitProgrammaticTextSelection(
+		blockId: string,
+		anchorOffset: number,
+		focusOffset: number,
+	): void {
+		this._programmaticTextSelection = {
+			blockId,
+			anchorOffset,
+			focusOffset,
+		};
+		this._pendingProgrammaticTextSelection = {
+			blockId,
+			anchorOffset,
+			focusOffset,
+		};
+		this._projectTextSelection(blockId, anchorOffset, focusOffset, {
+			syncBackendImmediately: true,
+		});
 	}
 
 	collapseSelectionToFocus(): void {
@@ -692,7 +837,10 @@ export class FieldEditorImpl implements FieldEditorSession {
 				this._editor,
 				cycle.blockId,
 			);
-			const blockRole = getEditorBlockSelectionRole(this._editor, cycle.blockId);
+			const blockRole = getEditorBlockSelectionRole(
+				this._editor,
+				cycle.blockId,
+			);
 			if (blockRole && blockRole !== "editable-inline") {
 				return (
 					selection?.type === "block" &&
@@ -709,9 +857,9 @@ export class FieldEditorImpl implements FieldEditorSession {
 				selection.anchor.blockId === cycle.blockId &&
 				selection.focus.blockId === cycle.blockId &&
 				Math.min(selection.anchor.offset, selection.focus.offset) ===
-				0 &&
+					0 &&
 				Math.max(selection.anchor.offset, selection.focus.offset) ===
-				blockLength
+					blockLength
 			);
 		}
 
@@ -779,7 +927,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 		const selection = this._editor.selection;
 		const anchor =
 			selection?.type === "text" &&
-				selection.blockRange.includes(this._focusBlockId)
+			selection.blockRange.includes(this._focusBlockId)
 				? selection.anchor
 				: { blockId: this._focusBlockId, offset: 0 };
 		const doc = this._editor.documentState;
@@ -789,7 +937,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 
 		const targetOffset =
 			targetIdx >= activeIdx
-				? (this._editor.getBlock(blockId)?.textContent().length ?? 0)
+				? (this._editor.getBlock(blockId)?.length() ?? 0)
 				: 0;
 
 		this._editor.selectTextRange(anchor, {
@@ -830,10 +978,16 @@ export class FieldEditorImpl implements FieldEditorSession {
 			isEditing: this._isEditing,
 			isFocused: this._isFocused,
 			isComposing: this._isComposing,
+			domSyncVersion: this._domSyncVersion,
 			inputMode: this._inputMode,
 			mode: this._mode,
 			activeCellCoord: this._activeCellCoord,
 		};
+	}
+
+	notifyDomReconciled(_blockId?: string): void {
+		this._domSyncVersion += 1;
+		this._emitStateChange();
 	}
 
 	subscribe(callback: () => void): Unsubscribe {
@@ -874,6 +1028,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 			return ContentEditableBackend;
 		}
 		if (
+			this._inputBackend === "edit-context" &&
 			"EditContext" in globalThis &&
 			typeof (globalThis as typeof globalThis & { EditContext?: unknown })
 				.EditContext === "function"
@@ -1076,9 +1231,7 @@ export class FieldEditorImpl implements FieldEditorSession {
 		return true;
 	}
 
-	private _handleHistoryApplied(
-		event: HistoryAppliedEvent,
-	): void {
+	private _handleHistoryApplied(event: HistoryAppliedEvent): void {
 		const selection = event.selection;
 		const nextFocusBlockId =
 			event.focusBlockId ??
@@ -1098,7 +1251,9 @@ export class FieldEditorImpl implements FieldEditorSession {
 			this._focusBlockId = nextFocusBlockId;
 		}
 
-		this._historySelectionCoordinator.beginDeferredProjection(event.requestId);
+		this._historySelectionCoordinator.beginDeferredProjection(
+			event.requestId,
+		);
 
 		this._recomputeSurfaceFromSelection({
 			syncSelectionToBackend: false,
@@ -1109,7 +1264,8 @@ export class FieldEditorImpl implements FieldEditorSession {
 		if (!this._attachedElement) {
 			return false;
 		}
-		const activeElement = this._attachedElement.ownerDocument?.activeElement;
+		const activeElement =
+			this._attachedElement.ownerDocument?.activeElement;
 		return activeElement instanceof Node
 			? this._attachedElement.contains(activeElement)
 			: false;
@@ -1156,6 +1312,9 @@ export class FieldEditorImpl implements FieldEditorSession {
 		blockId: string,
 		anchorOffset: number,
 		focusOffset: number,
+		options?: {
+			syncBackendImmediately?: boolean;
+		},
 	): void {
 		this.setTextSelection(blockId, anchorOffset, focusOffset);
 
@@ -1163,6 +1322,9 @@ export class FieldEditorImpl implements FieldEditorSession {
 			this.activate(blockId);
 		}
 
+		if (options?.syncBackendImmediately) {
+			this._backend?.updateSelection(null);
+		}
 		this._syncDomSelectionOnce();
 	}
 
@@ -1235,6 +1397,20 @@ export class FieldEditorImpl implements FieldEditorSession {
 		});
 	}
 
+	private _getActiveProgrammaticTextSelection(blockId: string | null): {
+		blockId: string;
+		anchorOffset: number;
+		focusOffset: number;
+	} | null {
+		const programmaticSelection =
+			this._programmaticTextSelection ??
+			this._pendingProgrammaticTextSelection;
+		if (!blockId || programmaticSelection?.blockId !== blockId) {
+			return null;
+		}
+		return programmaticSelection;
+	}
+
 	private _shouldSuppressSelectionSync(): boolean {
 		return (
 			this._historySelectionCoordinator.shouldSuppressSelectionSync() ||
@@ -1260,7 +1436,12 @@ export class FieldEditorImpl implements FieldEditorSession {
 		col: number,
 		root?: HTMLElement | null,
 	): HTMLElement | null {
-		return resolveCellInlineElement(blockId, row, col, root ?? this._findEditorRoot());
+		return resolveCellInlineElement(
+			blockId,
+			row,
+			col,
+			root ?? this._findEditorRoot(),
+		);
 	}
 
 	private _resolveActiveCellElement(

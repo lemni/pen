@@ -1,14 +1,10 @@
 import type { AppPlacement } from "./block";
 import type { SelectionState } from "./selection";
 import type { LayoutProps } from "./layout";
-import type {
-	ColumnType,
-	DatabaseViewState,
-	SelectOption,
-} from "./database";
+import type { ColumnType, DatabaseViewState, SelectOption } from "./database";
 import type { TableColumnSchema } from "./handles";
 
-export type OpOrigin =
+export type OpOriginType =
 	| "user"
 	| "ai"
 	| "ai-session"
@@ -21,10 +17,65 @@ export type OpOrigin =
 	| "import"
 	| "system";
 
+export interface StructuredOpOrigin {
+	type: OpOriginType | (string & {});
+	groupId?: string;
+	requestId?: string;
+	actorId?: string;
+	source?: string;
+}
+
+export type OpOrigin = OpOriginType | StructuredOpOrigin;
+
+export interface MutationGroupMetadata {
+	groupId: string;
+	originType: string;
+	requestId?: string;
+	actorId?: string;
+	source?: string;
+}
+
 export interface ApplyOptions {
 	origin?: OpOrigin;
 	undoGroup?: boolean;
+	groupId?: string;
 	undoGroupId?: string;
+}
+
+export const MUTATION_GROUP_METADATA_KEY = "mutation-group";
+
+export function getOpOriginType(origin: OpOrigin): string {
+	return typeof origin === "string" ? origin : origin.type;
+}
+
+export function getOpOriginGroupId(origin: OpOrigin): string | undefined {
+	return typeof origin === "string" ? undefined : origin.groupId;
+}
+
+export function getApplyOptionsGroupId(
+	origin: OpOrigin,
+	options?: Pick<ApplyOptions, "groupId" | "undoGroupId">,
+): string | undefined {
+	return (
+		options?.undoGroupId ?? options?.groupId ?? getOpOriginGroupId(origin)
+	);
+}
+
+export function createMutationGroupMetadata(
+	origin: OpOrigin,
+	groupId: string,
+): MutationGroupMetadata {
+	if (typeof origin === "string") {
+		return { groupId, originType: origin };
+	}
+
+	return {
+		groupId,
+		originType: origin.type,
+		requestId: origin.requestId,
+		actorId: origin.actorId,
+		source: origin.source,
+	};
 }
 
 export type Position =

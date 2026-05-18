@@ -24,6 +24,7 @@ Then read package specs by layer:
 - `charter/` contains cross-cutting architectural invariants.
 - `packages/` mirrors the workspace package and app layout.
 - Package specs stay close to real package boundaries instead of grouping work by milestone or wave.
+- `roadmap/` contains explicit forward-looking plans that have not yet been folded into package specs.
 
 ## Core Conventions
 
@@ -40,3 +41,7 @@ Then read package specs by layer:
 - Historical wave docs and planning notes were removed.
 - Specs now describe the workspace as shipped today.
 - The highest-value packages now have deeper runtime notes, boundaries, and architecture diagrams rather than just metadata summaries.
+
+## Roadmap Specs
+
+- `roadmap/headless-collaboration-ai-waves.md`: generic Pen primitives for CRDT state barriers, structured mutation groups, headless server editors, export hooks, field adapters, and deterministic fixtures.

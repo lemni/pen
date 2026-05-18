@@ -1,6 +1,4 @@
-import {
-	getInlineCompletionController,
-} from "@pen/core";
+import { getInlineCompletionController } from "@pen/core";
 import type { Editor, KeyBindingContext } from "@pen/types";
 import {
 	COLLECT_KEY_BINDINGS_SLOT_KEY,
@@ -12,6 +10,7 @@ import {
 	applyEnterBehavior,
 	applyListTabBehavior,
 	moveCaretAcrossBlocks,
+	normalizeInlineRange,
 	type SelectionRange,
 } from "./commands";
 import { getEditorBlockSelectionLength } from "../utils/blockSelectionSemantics";
@@ -24,6 +23,7 @@ export function handleFieldEditorKeyDown(options: {
 	ytext: {
 		length: number;
 		toString(): string;
+		toDelta(): Array<{ insert?: string | Record<string, unknown> }>;
 		insert(offset: number, text: string): void;
 		delete(offset: number, length: number): void;
 	};
@@ -38,10 +38,7 @@ export function handleFieldEditorKeyDown(options: {
 		autocomplete?.dismiss("typing");
 	}
 
-	if (
-		!event.defaultPrevented &&
-		handleHistoryShortcut(editor, event)
-	) {
+	if (!event.defaultPrevented && handleHistoryShortcut(editor, event)) {
 		return true;
 	}
 
@@ -152,7 +149,11 @@ export function handleFieldEditorKeyDown(options: {
 			if (autocomplete?.hasVisibleSuggestion()) {
 				return autocomplete.acceptVisibleSuggestion();
 			}
-			return inlineCompletion.acceptSuggestion();
+			const accepted = inlineCompletion.acceptSuggestion();
+			if (accepted) {
+				syncAcceptedInlineCompletionSelection(editor, fieldEditor);
+			}
+			return accepted;
 		}
 
 		if (!event.shiftKey) {
@@ -215,6 +216,19 @@ export function handleFieldEditorKeyDown(options: {
 		!event.ctrlKey &&
 		!event.altKey
 	) {
+		if (
+			event.key === "ArrowLeft" &&
+			selectInlineAtomWithArrowKey({
+				blockId,
+				event,
+				fieldEditor,
+				range,
+				ytext,
+			})
+		) {
+			return true;
+		}
+
 		const target = moveCaretAcrossBlocks(editor, {
 			blockId,
 			ytext,
@@ -243,6 +257,19 @@ export function handleFieldEditorKeyDown(options: {
 		!event.ctrlKey &&
 		!event.altKey
 	) {
+		if (
+			event.key === "ArrowRight" &&
+			selectInlineAtomWithArrowKey({
+				blockId,
+				event,
+				fieldEditor,
+				range,
+				ytext,
+			})
+		) {
+			return true;
+		}
+
 		const target = moveCaretAcrossBlocks(editor, {
 			blockId,
 			ytext,
@@ -265,6 +292,103 @@ export function handleFieldEditorKeyDown(options: {
 	}
 
 	return handleEditorKeyBindings(editor, event, { includeSelectAll: false });
+}
+
+function selectInlineAtomWithArrowKey(options: {
+	blockId: string;
+	event: KeyboardEvent;
+	fieldEditor: FieldEditorKeyboardController;
+	range: SelectionRange | null;
+	ytext: {
+		length: number;
+		toString(): string;
+		toDelta(): Array<{ insert?: string | Record<string, unknown> }>;
+	};
+}): boolean {
+	const { blockId, event, fieldEditor, ytext } = options;
+	const range = normalizeInlineRange(ytext, options.range);
+	if (!range) {
+		return false;
+	}
+
+	const direction = event.key === "ArrowLeft" ? "previous" : "next";
+	if (range.start !== range.end) {
+		if (!isInlineAtomRange(ytext, range.start, range.end)) {
+			return false;
+		}
+		const offset = direction === "previous" ? range.start : range.end;
+		fieldEditor.activateTextSelection(blockId, offset, offset);
+		return true;
+	}
+
+	const atomOffset = direction === "previous" ? range.start - 1 : range.start;
+	const atomRange = getInlineAtomRangeAtOffset(ytext, atomOffset);
+	if (!atomRange) {
+		return false;
+	}
+
+	fieldEditor.activateTextSelection(blockId, atomRange.start, atomRange.end);
+	return true;
+}
+
+function isInlineAtomRange(
+	ytext: { toDelta(): Array<{ insert?: string | Record<string, unknown> }> },
+	start: number,
+	end: number,
+): boolean {
+	const atomRange = getInlineAtomRangeAtOffset(ytext, start);
+	return atomRange?.end === end;
+}
+
+function getInlineAtomRangeAtOffset(
+	ytext: { toDelta(): Array<{ insert?: string | Record<string, unknown> }> },
+	targetOffset: number,
+): SelectionRange | null {
+	if (targetOffset < 0) {
+		return null;
+	}
+
+	let offset = 0;
+	for (const delta of ytext.toDelta()) {
+		if (delta.insert == null) {
+			continue;
+		}
+
+		if (typeof delta.insert === "string") {
+			offset += delta.insert.length;
+			continue;
+		}
+
+		if (offset === targetOffset) {
+			return { start: offset, end: offset + 1 };
+		}
+		offset += 1;
+	}
+
+	return null;
+}
+
+function syncAcceptedInlineCompletionSelection(
+	editor: Editor,
+	fieldEditor: FieldEditorKeyboardController,
+): void {
+	const selection = editor.selection;
+	if (
+		selection?.type !== "text" ||
+		!selection.isCollapsed ||
+		selection.isMultiBlock
+	) {
+		return;
+	}
+
+	const blockId = selection.focus.blockId;
+	const offset = selection.focus.offset;
+	if (typeof fieldEditor.commitProgrammaticTextSelection === "function") {
+		fieldEditor.commitProgrammaticTextSelection(blockId, offset, offset);
+		return;
+	}
+
+	fieldEditor.activateTextSelection(blockId, offset, offset);
 }
 
 function shouldDismissAutocompleteOnKeyDown(

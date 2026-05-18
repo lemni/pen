@@ -29,7 +29,7 @@ import type {
 	SetSelectionOp,
 	UpdateTableColumnsOp,
 } from "@pen/types";
-import { generateId } from "@pen/types";
+import { generateId, getOpOriginType } from "@pen/types";
 import { resolveRuntimeContentType } from "../schema/contentType";
 import type { SchemaEngineImpl } from "../schema/normalize";
 import {
@@ -114,10 +114,7 @@ export class ApplyPipeline {
 		priority: number;
 	}> = [];
 	private _finalBeforeApplyHook:
-		| ((
-				ops: DocumentOp[],
-				options: { origin?: OpOrigin },
-		  ) => DocumentOp[])
+		| ((ops: DocumentOp[], options: { origin?: OpOrigin }) => DocumentOp[])
 		| null = null;
 
 	get suppressObserver(): boolean {
@@ -265,7 +262,9 @@ export class ApplyPipeline {
 		}
 		if (this._finalBeforeApplyHook) {
 			try {
-				transformedOps = this._finalBeforeApplyHook(transformedOps, { origin });
+				transformedOps = this._finalBeforeApplyHook(transformedOps, {
+					origin,
+				});
 			} catch (err) {
 				this._emitter.emit("diagnostic", {
 					code: "PEN_APPLY_007",
@@ -345,7 +344,7 @@ export class ApplyPipeline {
 
 					this._engine.normalizeDirty();
 				},
-				origin,
+				getOpOriginType(origin),
 			);
 		} finally {
 			this._suppressObserver = false;
@@ -589,7 +588,10 @@ export class ApplyPipeline {
 		if (typeof op.position === "object" && "parent" in op.position) {
 			const parentMap = this._getMutableBlockMap(op.position.parent);
 			if (parentMap) {
-				const children = this._getOrCreateStringArrayProp(parentMap, "children");
+				const children = this._getOrCreateStringArrayProp(
+					parentMap,
+					"children",
+				);
 				const idx = Math.min(op.position.index, children.length);
 				children.insert(idx, [op.blockId]);
 			}
@@ -638,7 +640,10 @@ export class ApplyPipeline {
 		if (typeof op.position === "object" && "parent" in op.position) {
 			const parentMap = this._getMutableBlockMap(op.position.parent);
 			if (parentMap) {
-				const children = this._getOrCreateStringArrayProp(parentMap, "children");
+				const children = this._getOrCreateStringArrayProp(
+					parentMap,
+					"children",
+				);
 				const idx = Math.min(op.position.index, children.length);
 				children.insert(idx, [op.blockId]);
 			}
@@ -741,14 +746,17 @@ export class ApplyPipeline {
 		const hasHeaderRow = propsMap?.get("hasHeaderRow") !== false;
 		const existingColumns = getTableColumns(blockMap);
 		if (!existingColumns || existingColumns.length === 0) {
-			const columnCount = this._tableGrid.resolveGridColumnCount(blockMap);
+			const columnCount =
+				this._tableGrid.resolveGridColumnCount(blockMap);
 			const columns = Array.from({ length: columnCount }, (_, index) => {
 				const title =
 					hasHeaderRow && tableContent.length > 0
-						? this._tableGrid.readTableCellText(
-								tableContent.get(0) as CRDTUnknownMap,
-								index,
-						  ).trim() || `Column ${index + 1}`
+						? this._tableGrid
+								.readTableCellText(
+									tableContent.get(0) as CRDTUnknownMap,
+									index,
+								)
+								.trim() || `Column ${index + 1}`
 						: `Column ${index + 1}`;
 				return {
 					id: `column-${index + 1}`,
@@ -1137,9 +1145,7 @@ export class ApplyPipeline {
 		);
 	}
 
-	private _getPreservedInlineDeltas(
-		content: CRDTText | undefined,
-	): Array<{
+	private _getPreservedInlineDeltas(content: CRDTText | undefined): Array<{
 		insert: string;
 		attributes?: Record<string, unknown>;
 	}> {
@@ -1147,15 +1153,16 @@ export class ApplyPipeline {
 			return [];
 		}
 
-		return content
-			.toDelta()
-			.filter(
-				(delta): delta is {
-					insert: string;
-					attributes?: Record<string, unknown>;
-				} =>
-					typeof delta.insert === "string" && delta.insert !== ZERO_WIDTH_SPACE,
-			);
+		return content.toDelta().filter(
+			(
+				delta,
+			): delta is {
+				insert: string;
+				attributes?: Record<string, unknown>;
+			} =>
+				typeof delta.insert === "string" &&
+				delta.insert !== ZERO_WIDTH_SPACE,
+		);
 	}
 
 	// ── Meta Op ──────────────────────────────────────────────
@@ -1187,14 +1194,22 @@ export class ApplyPipeline {
 	}
 
 	private _getMutableBlockMap(blockId: string): MutableMap | null {
-		return (this.blocks.get(blockId) as unknown as MutableMap | undefined) ?? null;
+		return (
+			(this.blocks.get(blockId) as unknown as MutableMap | undefined) ??
+			null
+		);
 	}
 
 	private _getMutableAppMap(appId: string): MutableMap | null {
-		return (this.apps.get(appId) as unknown as MutableMap | undefined) ?? null;
+		return (
+			(this.apps.get(appId) as unknown as MutableMap | undefined) ?? null
+		);
 	}
 
-	private _getOrCreateMapProp(container: CRDTUnknownMap, key: string): MutableMap {
+	private _getOrCreateMapProp(
+		container: CRDTUnknownMap,
+		key: string,
+	): MutableMap {
 		const existing = getMapProp(container, key);
 		if (existing) {
 			return existing as MutableMap;
@@ -1242,7 +1257,10 @@ export class ApplyPipeline {
 			if (!children) {
 				continue;
 			}
-			this._removeBlockIdFromArray(children as MutableStringArray, blockId);
+			this._removeBlockIdFromArray(
+				children as MutableStringArray,
+				blockId,
+			);
 		}
 	}
 
@@ -1254,16 +1272,20 @@ export class ApplyPipeline {
 			typeof (content as { delete?: unknown }).delete === "function" &&
 			typeof (content as { format?: unknown }).format === "function" &&
 			typeof (content as { toDelta?: unknown }).toDelta === "function" &&
-			typeof (content as { toString?: unknown }).toString === "function" &&
+			typeof (content as { toString?: unknown }).toString ===
+				"function" &&
 			typeof (content as { length?: unknown }).length === "number"
 			? (content as CRDTText)
 			: undefined;
 	}
 
-	private _getInlineTextContent(blockMap: CRDTUnknownMap): CRDTInlineText | undefined {
+	private _getInlineTextContent(
+		blockMap: CRDTUnknownMap,
+	): CRDTInlineText | undefined {
 		const content = this._getTextContent(blockMap);
 		return content &&
-			typeof (content as { insertEmbed?: unknown }).insertEmbed === "function"
+			typeof (content as { insertEmbed?: unknown }).insertEmbed ===
+				"function"
 			? (content as CRDTInlineText)
 			: undefined;
 	}

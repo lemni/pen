@@ -3,7 +3,7 @@ import type { InlineDecoration } from "@pen/types";
 const INLINE_DECORATION_ATTRIBUTE_KEY = "__penInlineDecoration";
 
 interface TextDelta {
-	insert: string;
+	insert: string | Record<string, unknown>;
 	attributes?: Readonly<Record<string, unknown>>;
 }
 
@@ -18,7 +18,9 @@ export function applyInlineDecorationsToDeltas(
 	const normalizedDecorations = decorations
 		.filter((decoration) => decoration.to > decoration.from)
 		.sort((left, right) =>
-			left.from === right.from ? left.to - right.to : left.from - right.from,
+			left.from === right.from
+				? left.to - right.to
+				: left.from - right.from,
 		);
 	if (normalizedDecorations.length === 0) {
 		return [...deltas];
@@ -28,6 +30,12 @@ export function applyInlineDecorationsToDeltas(
 	let offset = 0;
 
 	for (const delta of deltas) {
+		if (typeof delta.insert !== "string") {
+			result.push({ ...delta });
+			offset += 1;
+			continue;
+		}
+
 		const text = delta.insert;
 		const textLength = text.length;
 		if (textLength === 0) {
@@ -39,14 +47,19 @@ export function applyInlineDecorationsToDeltas(
 		const boundaries = new Set<number>([segmentStart, segmentEnd]);
 
 		for (const decoration of normalizedDecorations) {
-			if (decoration.to <= segmentStart || decoration.from >= segmentEnd) {
+			if (
+				decoration.to <= segmentStart ||
+				decoration.from >= segmentEnd
+			) {
 				continue;
 			}
 			boundaries.add(Math.max(decoration.from, segmentStart));
 			boundaries.add(Math.min(decoration.to, segmentEnd));
 		}
 
-		const sortedBoundaries = [...boundaries].sort((left, right) => left - right);
+		const sortedBoundaries = [...boundaries].sort(
+			(left, right) => left - right,
+		);
 		for (let index = 0; index < sortedBoundaries.length - 1; index += 1) {
 			const from = sortedBoundaries[index];
 			const to = sortedBoundaries[index + 1];
@@ -64,7 +77,10 @@ export function applyInlineDecorationsToDeltas(
 				from,
 				to,
 			);
-			const attributes = mergeDeltaAttributes(delta.attributes, decorationAttributes);
+			const attributes = mergeDeltaAttributes(
+				delta.attributes,
+				decorationAttributes,
+			);
 			appendDelta(result, {
 				insert: slice,
 				...(attributes ? { attributes } : {}),
@@ -120,6 +136,8 @@ function appendDelta(target: TextDelta[], nextDelta: TextDelta): void {
 	const previousDelta = target[target.length - 1];
 	if (
 		previousDelta &&
+		typeof previousDelta.insert === "string" &&
+		typeof nextDelta.insert === "string" &&
 		attributesEqual(previousDelta.attributes, nextDelta.attributes)
 	) {
 		previousDelta.insert += nextDelta.insert;

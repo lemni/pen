@@ -3,7 +3,7 @@
 import { FIELD_EDITOR_SLOT_KEY } from "@pen/types";
 import { createTestEditor } from "@pen/test";
 import { mount } from "@vue/test-utils";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { h, nextTick } from "vue";
 import { PenEditor } from "../components/PenEditor";
 
@@ -142,6 +142,32 @@ describe("@pen/vue", () => {
     expect(wrapper.text()).toContain("Hello Vue");
     expect(editor.internals.getSlot(FIELD_EDITOR_SLOT_KEY)).toBeTruthy();
 
+    wrapper.unmount();
+    editor.destroy();
+  });
+
+  it("routes document delete shortcuts through the shared DOM handler", async () => {
+    const editor = createParagraphEditor();
+    const deleteSelection = vi.spyOn(editor, "deleteSelection").mockImplementation(() => undefined);
+
+    const wrapper = mount(PenEditor, {
+      attachTo: document.body,
+      props: { editor },
+    });
+    await nextTick();
+
+    editor.selectBlock("paragraph-1");
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Backspace",
+      }),
+    );
+
+    expect(deleteSelection).toHaveBeenCalledWith({ origin: "user" });
+
+    deleteSelection.mockRestore();
     wrapper.unmount();
     editor.destroy();
   });
@@ -349,8 +375,9 @@ describe("@pen/vue", () => {
 
     const wrapper = mount(PenEditor, {
       attachTo: document.body,
-      props: { editor },
+      props: { editor, interactionModel: "block-first" },
     });
+    await nextTick();
 
     document.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -378,6 +405,7 @@ describe("@pen/vue", () => {
       attachTo: document.body,
       props: { editor },
     });
+    await nextTick();
 
     document.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -404,6 +432,7 @@ describe("@pen/vue", () => {
       attachTo: document.body,
       props: { editor },
     });
+    await nextTick();
 
     const firstInline = wrapper.findAll("[data-pen-inline-content]")[0]!;
     await firstInline.trigger("mousedown");

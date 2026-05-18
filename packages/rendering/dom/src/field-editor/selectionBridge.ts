@@ -8,6 +8,12 @@ import {
 	getBlockSelectionRoleFromType,
 	getSelectionLengthForRole,
 } from "../utils/blockSelectionSemantics";
+import {
+	domPointToLogicalOffset,
+	findLogicalDOMPoint,
+	getLogicalNodeLength,
+	getLogicalTextContent,
+} from "./inlineAtomDom";
 
 /**
  * Safely query a block element by ID, escaping special characters to prevent
@@ -86,7 +92,7 @@ export function computeTextDiff(
 }
 
 export function extractTextFromDOM(element: HTMLElement): string {
-	return element.textContent ?? "";
+	return getLogicalTextContent(element);
 }
 
 export interface SelectionPoint {
@@ -126,35 +132,7 @@ function fallbackCharacterOffset(
 	targetNode: Node,
 	targetOffset: number,
 ): number {
-	let charOffset = 0;
-
-	const walker = document.createTreeWalker(
-		container,
-		NodeFilter.SHOW_TEXT,
-		null,
-	);
-
-	let textNode: Text | null;
-	while ((textNode = walker.nextNode() as Text | null)) {
-		if (textNode === targetNode) {
-			return charOffset + Math.min(targetOffset, textNode.length);
-		}
-		charOffset += textNode.textContent?.length ?? 0;
-	}
-
-	if (targetNode === container) {
-		let counted = 0;
-		for (
-			let i = 0;
-			i < targetOffset && i < container.childNodes.length;
-			i++
-		) {
-			counted += container.childNodes[i].textContent?.length ?? 0;
-		}
-		return counted;
-	}
-
-	return charOffset;
+	return domPointToLogicalOffset(container, targetNode, targetOffset);
 }
 
 /**
@@ -171,14 +149,7 @@ export function domPointToOffset(
 		return fallbackCharacterOffset(container, targetNode, targetOffset);
 	}
 
-	try {
-		const range = container.ownerDocument.createRange();
-		range.setStart(container, 0);
-		range.setEnd(targetNode, targetOffset);
-		return range.toString().length;
-	} catch {
-		return fallbackCharacterOffset(container, targetNode, targetOffset);
-	}
+	return domPointToLogicalOffset(container, targetNode, targetOffset);
 }
 
 /**
@@ -230,32 +201,22 @@ function getCharacterRectAtOffset(
 	container: HTMLElement,
 	charOffset: number,
 ): DOMRect | null {
-	const walker = document.createTreeWalker(
-		container,
-		NodeFilter.SHOW_TEXT,
-		null,
-	);
-	let remaining = charOffset;
-	let textNode: Text | null;
-
-	while ((textNode = walker.nextNode() as Text | null)) {
-		const len = textNode.textContent?.length ?? 0;
-		if (remaining < len) {
-			const range = document.createRange();
-			range.setStart(textNode, remaining);
-			range.setEnd(textNode, remaining + 1);
-			const rangeRectGetter = (
-				range as Range & { getBoundingClientRect?: () => DOMRect }
-			).getBoundingClientRect;
-			if (typeof rangeRectGetter === "function") {
-				const rect = rangeRectGetter.call(range);
-				if (rect.width > 0 || rect.height > 0) {
-					return rect;
-				}
-			}
-			return null;
+	const domPoint = findLogicalDOMPoint(container, charOffset);
+	const range = document.createRange();
+	try {
+		range.setStart(domPoint.node, domPoint.offset);
+		range.setEnd(domPoint.node, domPoint.offset);
+	} catch {
+		return null;
+	}
+	const rangeRectGetter = (
+		range as Range & { getBoundingClientRect?: () => DOMRect }
+	).getBoundingClientRect;
+	if (typeof rangeRectGetter === "function") {
+		const rect = rangeRectGetter.call(range);
+		if (rect.width > 0 || rect.height > 0) {
+			return rect;
 		}
-		remaining -= len;
 	}
 
 	return null;
@@ -265,7 +226,7 @@ function getInlineCaretRectFromOffset(
 	inlineEl: HTMLElement,
 	offset: number,
 ): DOMRect {
-	const textLength = inlineEl.textContent?.length ?? 0;
+	const textLength = getLogicalNodeLength(inlineEl);
 	const inlineRect = inlineEl.getBoundingClientRect();
 	if (textLength <= 0) {
 		return {
@@ -326,17 +287,13 @@ function getInlineCaretRectFromOffset(
 	const previousRect = getCharacterRectAtOffset(inlineEl, offset - 1);
 	const nextRect = getCharacterRectAtOffset(inlineEl, offset);
 	const useNextRect =
-		previousRect &&
-		nextRect &&
-		nextRect.top > previousRect.top + 1;
+		previousRect && nextRect && nextRect.top > previousRect.top + 1;
 	const sourceRect = useNextRect
 		? nextRect
 		: (previousRect ?? nextRect ?? inlineRect);
 	const left = useNextRect
 		? (nextRect?.left ?? inlineRect.left)
-		: (previousRect?.right ??
-			nextRect?.left ??
-			inlineRect.left);
+		: (previousRect?.right ?? nextRect?.left ?? inlineRect.left);
 
 	return {
 		x: left,
@@ -384,13 +341,26 @@ function stabilizeWrappedLineOffset(
 	}
 
 	const previousRect = getInlineCaretRectFromOffset(inlineEl, previousOffset);
-	const candidateRect = getInlineCaretRectFromOffset(inlineEl, candidateOffset);
-	if (Math.abs(previousRect.top - candidateRect.top) <= WRAPPED_LINE_DELTA_PX) {
+	const candidateRect = getInlineCaretRectFromOffset(
+		inlineEl,
+		candidateOffset,
+	);
+	if (
+		Math.abs(previousRect.top - candidateRect.top) <= WRAPPED_LINE_DELTA_PX
+	) {
 		return candidateOffset;
 	}
 
-	const previousMetrics = getCaretDistanceMetrics(previousRect, clientX, clientY);
-	const candidateMetrics = getCaretDistanceMetrics(candidateRect, clientX, clientY);
+	const previousMetrics = getCaretDistanceMetrics(
+		previousRect,
+		clientX,
+		clientY,
+	);
+	const candidateMetrics = getCaretDistanceMetrics(
+		candidateRect,
+		clientX,
+		clientY,
+	);
 	const isNearWrappedBoundary =
 		previousMetrics.dy <= WRAPPED_LINE_HYSTERESIS_PX &&
 		candidateMetrics.dy <= WRAPPED_LINE_HYSTERESIS_PX;
@@ -411,7 +381,7 @@ function approximateInlineOffsetFromPoint(
 	clientY: number,
 	previousOffset?: number | null,
 ): number {
-	const textLength = inlineEl.textContent?.length ?? 0;
+	const textLength = getLogicalNodeLength(inlineEl);
 	if (textLength <= 0) return 0;
 
 	let bestOffset = 0;
@@ -452,7 +422,7 @@ function getBlockSurfaceRole(
 function getBlockTextLength(blockEl: HTMLElement): number {
 	const inlineEl = findInlineContentElement(blockEl);
 	if (inlineEl) {
-		return inlineEl.textContent?.length ?? 0;
+		return getLogicalNodeLength(inlineEl);
 	}
 	return blockEl.textContent?.length ?? 0;
 }
@@ -522,9 +492,7 @@ export function getClosestBlockElementFromPoint(
 		return hitBlockEl;
 	}
 
-	const blockElements = root.querySelectorAll(
-		`[${DATA_ATTRS.editorBlock}]`,
-	);
+	const blockElements = root.querySelectorAll(`[${DATA_ATTRS.editorBlock}]`);
 	let closestBlockEl: HTMLElement | null = null;
 	let bestScore = Number.POSITIVE_INFINITY;
 
@@ -664,7 +632,11 @@ export function pointToEditorSelectionPoint(
 		if (resolved) return resolved;
 	}
 
-	const hoveredBlockEl = getClosestBlockElementFromPoint(root, clientX, clientY);
+	const hoveredBlockEl = getClosestBlockElementFromPoint(
+		root,
+		clientX,
+		clientY,
+	);
 	if (!hoveredBlockEl) return null;
 	return getSelectionPointForBlockAtPointer(
 		hoveredBlockEl,
@@ -821,43 +793,7 @@ function findDOMPoint(
 	) as HTMLElement | null;
 	if (!inlineEl) return null;
 
-	const walker = document.createTreeWalker(
-		inlineEl,
-		NodeFilter.SHOW_TEXT,
-		null,
-	);
-
-	let remaining = charOffset;
-	let textNode: Text | null;
-	while ((textNode = walker.nextNode() as Text | null)) {
-		const len = textNode.textContent?.length ?? 0;
-		if (remaining <= len) {
-			return { node: textNode, offset: remaining };
-		}
-		remaining -= len;
-	}
-
-	// Past end — position at end of the last text node. Using the last child
-	// element here is incorrect because element offsets are child indices, not
-	// character positions.
-	const lastText = getLastTextNode(inlineEl);
-	if (lastText) {
-		return {
-			node: lastText,
-			offset: lastText.textContent?.length ?? 0,
-		};
-	}
-	return { node: inlineEl, offset: 0 };
-}
-
-function getLastTextNode(root: HTMLElement): Text | null {
-	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-	let lastText: Text | null = null;
-	let current: Text | null;
-	while ((current = walker.nextNode() as Text | null)) {
-		lastText = current;
-	}
-	return lastText;
+	return findLogicalDOMPoint(inlineEl, charOffset);
 }
 
 /**
@@ -988,4 +924,3 @@ function compareDOMPoints(
 
 	return leftRange.compareBoundaryPoints(Range.START_TO_START, rightRange);
 }
-

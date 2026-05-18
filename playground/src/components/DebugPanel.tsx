@@ -1,7 +1,9 @@
 import "./DebugPanel.css";
 import type { Editor } from "@pen/types";
 import { useAIDebugLog, useAISuggestionsMetrics } from "@pen/react";
+import { useEffect, useState } from "react";
 import { PLAYGROUND_AI_SESSION_ID_PREVIEW_LENGTH } from "../constants/playgroundAI";
+import { PLAYGROUND_AI_SESSION_DIAGNOSTICS_ENDPOINT } from "../constants/playgroundAI";
 import { usePlaygroundAIState } from "../hooks/usePlaygroundAISession";
 
 type DebugPanelProps = {
@@ -13,6 +15,22 @@ type DebugPanelProps = {
 	onCustomCaretEnabledChange?: (enabled: boolean) => void;
 	variant?: "sidebar" | "dock";
 };
+
+interface PlaygroundSessionDiagnostics {
+	sessionId: string;
+	headless: boolean;
+	blockCount: number;
+	generation: number;
+	plainText: string;
+	stateVector: string;
+	extensionRoot: {
+		namespace: string;
+		version: number;
+		requestCount: number;
+		lastRequestMode: string | null;
+		lastSyncedRevision: number | null;
+	};
+}
 
 export function DebugPanel({
 	editor,
@@ -26,23 +44,74 @@ export function DebugPanel({
 	const debugLog = useAIDebugLog(editor, { sessionId });
 	const aiSuggestionsMetrics = useAISuggestionsMetrics(editor);
 	const playgroundAIState = usePlaygroundAIState();
+	const [sessionDiagnostics, setSessionDiagnostics] =
+		useState<PlaygroundSessionDiagnostics | null>(null);
 
 	const sessionLabel = playgroundAIState.sessionId
 		? playgroundAIState.sessionId.slice(
-			0,
-			PLAYGROUND_AI_SESSION_ID_PREVIEW_LENGTH,
-		)
+				0,
+				PLAYGROUND_AI_SESSION_ID_PREVIEW_LENGTH,
+			)
 		: "None";
 	const syncLabel = formatMetricMs(playgroundAIState.lastSyncMs);
 	const backendPhaseLabel = formatPhaseLabel(playgroundAIState.phase);
 	const lastRequest = playgroundAIState.lastRequest;
-	const requestModeLabel = formatRequestMode(lastRequest?.requestMode ?? null);
-	const requestModelLabel = formatRequestModel(lastRequest?.requestModel ?? null);
-	const contextFormatLabel = formatContextFormat(lastRequest?.contextFormat ?? null);
+	const requestModeLabel = formatRequestMode(
+		lastRequest?.requestMode ?? null,
+	);
+	const requestModelLabel = formatRequestModel(
+		lastRequest?.requestModel ?? null,
+	);
+	const contextFormatLabel = formatContextFormat(
+		lastRequest?.contextFormat ?? null,
+	);
 	const contextTokensLabel = formatContextTokens(
 		lastRequest?.contextEstimatedTokensJson ?? null,
 		lastRequest?.contextFormat ?? null,
 	);
+	const lastRequestId = lastRequest?.requestId ?? null;
+	useEffect(() => {
+		const currentSessionId = playgroundAIState.sessionId;
+		if (!currentSessionId) {
+			setSessionDiagnostics(null);
+			return;
+		}
+
+		const abortController = new AbortController();
+		void fetch(
+			`${PLAYGROUND_AI_SESSION_DIAGNOSTICS_ENDPOINT}?sessionId=${encodeURIComponent(currentSessionId)}`,
+			{ signal: abortController.signal },
+		)
+			.then(async (response) => {
+				if (!response.ok) {
+					throw new Error(
+						`Diagnostics request failed: ${response.status}`,
+					);
+				}
+				return (await response.json()) as PlaygroundSessionDiagnostics;
+			})
+			.then((diagnostics) => {
+				setSessionDiagnostics(diagnostics);
+			})
+			.catch((error: unknown) => {
+				if (
+					error instanceof DOMException &&
+					error.name === "AbortError"
+				) {
+					return;
+				}
+				setSessionDiagnostics(null);
+			});
+
+		return () => {
+			abortController.abort();
+		};
+	}, [
+		playgroundAIState.lastSyncAt,
+		playgroundAIState.sessionId,
+		lastRequestId,
+	]);
+
 	const aggregateFastApply = debugLog.aggregateFastApply;
 	const performanceMetricItems = [
 		{
@@ -64,6 +133,34 @@ export function DebugPanel({
 		{
 			label: "Session",
 			value: sessionLabel,
+		},
+		{
+			label: "Headless backend",
+			value: sessionDiagnostics?.headless ? "Yes" : "Pending",
+		},
+		{
+			label: "Yjs state vector",
+			value: sessionDiagnostics
+				? truncateDebugValue(sessionDiagnostics.stateVector)
+				: "Pending",
+		},
+		{
+			label: "Plain text chars",
+			value: sessionDiagnostics
+				? `${sessionDiagnostics.plainText.length}`
+				: "Pending",
+		},
+		{
+			label: "Extension root",
+			value: sessionDiagnostics
+				? `${sessionDiagnostics.extensionRoot.namespace}@${sessionDiagnostics.extensionRoot.version}`
+				: "Pending",
+		},
+		{
+			label: "Extension requests",
+			value: sessionDiagnostics
+				? `${sessionDiagnostics.extensionRoot.requestCount}`
+				: "Pending",
 		},
 		{
 			label: "Last sync",
@@ -91,15 +188,21 @@ export function DebugPanel({
 		},
 		{
 			label: "Fast apply native",
-			value: formatFastApplyMetricCount(aggregateFastApply.nativeFastApplyCount),
+			value: formatFastApplyMetricCount(
+				aggregateFastApply.nativeFastApplyCount,
+			),
 		},
 		{
 			label: "Fast apply scoped",
-			value: formatFastApplyMetricCount(aggregateFastApply.scopedReplacementCount),
+			value: formatFastApplyMetricCount(
+				aggregateFastApply.scopedReplacementCount,
+			),
 		},
 		{
 			label: "Fast apply plain",
-			value: formatFastApplyMetricCount(aggregateFastApply.plainMarkdownCount),
+			value: formatFastApplyMetricCount(
+				aggregateFastApply.plainMarkdownCount,
+			),
 		},
 		{
 			label: "Fast apply failed",
@@ -183,7 +286,9 @@ export function DebugPanel({
 					<div className="playground-debug-section-header">
 						<h4>Debug</h4>
 					</div>
-					<div className="playground-debug-summary">{performanceMetricRows}</div>
+					<div className="playground-debug-summary">
+						{performanceMetricRows}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -258,6 +363,14 @@ function formatRequestModel(value: string | null): string {
 	}
 
 	return value;
+}
+
+function truncateDebugValue(value: string, limit = 12): string {
+	if (value.length <= limit) {
+		return value;
+	}
+
+	return `${value.slice(0, limit)}...`;
 }
 
 function formatContextFormat(value: string | null): string {

@@ -6,12 +6,12 @@
 
 ## Public Role
 
-This package gives Vue applications a lean but real renderer surface: core editor components, composables for editor-derived state, and a simple plugin for global component registration. Its strategic role is broader than its API size, because it validates the cross-framework architecture.
+This package gives Vue applications a lean but real renderer surface: core editor components, composables for editor-derived state, shared DOM field-editor integration, and a simple plugin for global component registration. Its strategic role is broader than its API size, because it validates the cross-framework architecture.
 
 ## Key Exports / Entrypoints
 
 - Export map: `.`, `./plugin`
-- Root exports such as `PenEditor`, `PenContent`, `PenBlock`, `PenInlineContent`, `PenFieldEditor`
+- Root exports such as `PenEditor`, `PenContent`, `PenBlock`, `PenInlineContent`, `PenFieldEditor`, and `PenEditorProps`
 - Composables such as `useEditor`, `useSelection`, `useBlockList`, and `useDecorations`
 - Plugin export: `PenVuePlugin`
 - Public renderer and paste-importer types such as `RendererOverrides` and `PasteImporters`
@@ -46,14 +46,15 @@ Important responsibilities:
 
 - Mount the editor and shared field-editor engine in a Vue host
 - Expose key editor-derived state through composables instead of duplicating state inside components
+- Register the shared field-editor slots, paste importer/assets slots, focused/read-only/empty root attributes, and captured document-keyboard handling from `@pen/dom`
 - Support renderer overrides so host apps can customize block rendering without forking the runtime
-- Validate that keyboard, selection, clipboard, and table-editing behavior stay portable across frameworks
+- Validate that keyboard routing, Escape selection transitions, select-all behavior, clipboard, and table-editing behavior stay portable across frameworks
 
 ## Integration Notes
 
 - Path in workspace: `packages/rendering/vue`
 - Spec path mirrors workspace path: `packages/rendering/vue.md`
-- `PenEditor` is the main integration entrypoint; `PenVuePlugin` is optional convenience for global registration
+- `PenEditor` is the main integration entrypoint; it renders default `PenContent` when no default slot is provided, and `PenVuePlugin` is optional convenience for global registration
 - The package intentionally exposes fewer primitives than `@pen/react`; that is a design choice, not necessarily a gap
 - Use this package when a Vue host needs Pen without rebuilding the editing engine
 

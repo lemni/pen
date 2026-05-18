@@ -17,6 +17,7 @@ interface SessionReconcilerOptions {
 	shouldPreserveSelection: () => boolean;
 	shouldProjectSelection: () => boolean;
 	projectSelection: () => void;
+	notifyDomReconciled?: (blockId: string) => void;
 }
 
 export class SessionReconciler {
@@ -160,7 +161,10 @@ export class SessionReconciler {
 				}
 				this.reconcileBlock(blockId, preserveSelection);
 			}
-			if (shouldProjectSelection && this.options.shouldProjectSelection()) {
+			if (
+				shouldProjectSelection &&
+				this.options.shouldProjectSelection()
+			) {
 				this.options.projectSelection();
 			}
 			return;
@@ -183,6 +187,7 @@ export class SessionReconciler {
 					preserveSelection,
 					inlineDecorations: this.getInlineDecorations(blockId),
 				});
+				this.options.notifyDomReconciled?.(blockId);
 				continue;
 			}
 			this.reconcileBlock(blockId, preserveSelection);
@@ -202,6 +207,7 @@ export class SessionReconciler {
 			preserveSelection,
 			inlineDecorations: this.getInlineDecorations(blockId),
 		});
+		this.options.notifyDomReconciled?.(blockId);
 	}
 
 	private getInlineDecorations(blockId: string): readonly InlineDecoration[] {
@@ -209,7 +215,8 @@ export class SessionReconciler {
 			.getDecorations()
 			.forBlock(blockId)
 			.filter(
-				(decoration): decoration is InlineDecoration => decoration.type === "inline",
+				(decoration): decoration is InlineDecoration =>
+					decoration.type === "inline",
 			);
 	}
 }

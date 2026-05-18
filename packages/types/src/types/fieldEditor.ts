@@ -37,6 +37,11 @@ export interface FieldEditor {
 		anchorOffset: number,
 		focusOffset: number,
 	): void;
+	commitProgrammaticTextSelection?(
+		blockId: string,
+		anchorOffset: number,
+		focusOffset: number,
+	): void;
 
 	expandTo(blockId: string): void;
 	contractToFocused(): void;

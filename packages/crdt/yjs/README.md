@@ -7,8 +7,73 @@ This package provides:
 - the Pen Yjs CRDT adapter via `yjsAdapter()`
 - Yjs awareness helpers
 - a thin provider wrapper for multiplayer sessions
+- Yjs state-vector helpers for sync/workflow barriers
+- generic Yjs text and array field adapters for host-owned CRDT fields
+- generic extension-root helpers for app-owned Yjs maps under `apps`
 
 It does **not** implement WebSocket transport or a custom Yjs sync provider.
+
+## State barriers
+
+```ts
+import {
+  encodeYjsStateVectorBase64,
+  isYjsStateVectorBase64Satisfied,
+} from "@pen/crdt-yjs";
+
+const required = encodeYjsStateVectorBase64(ydoc);
+const ready = isYjsStateVectorBase64Satisfied(currentStateVector, required);
+```
+
+Use state-vector helpers when a host workflow needs to wait until a synced document includes a known local edit.
+
+## Field adapters
+
+```ts
+import {
+  createYArrayFieldAdapter,
+  createYTextFieldAdapter,
+} from "@pen/crdt-yjs";
+
+const title = createYTextFieldAdapter({
+  doc: ydoc,
+  root: ydoc.getMap("app"),
+  key: "title",
+  normalize: (value) => value.trim(),
+});
+
+const tags = createYArrayFieldAdapter({
+  doc: ydoc,
+  root: ydoc.getMap("app"),
+  key: "tags",
+  getId: (tag) => tag.id,
+});
+```
+
+Adapters are storage helpers only. Product validation, labels, contacts, auth, and delivery semantics belong in the host app.
+
+## Extension roots
+
+```ts
+import { ensureExtensionRoot, readExtensionRoot } from "@pen/crdt-yjs";
+
+const root = ensureExtensionRoot({
+  doc: ydoc,
+  namespace: "com.example.workflow",
+  version: 1,
+  shape: {
+    title: "text",
+    requests: "array",
+  },
+});
+
+const existing = readExtensionRoot({
+  doc: ydoc,
+  namespace: "com.example.workflow",
+});
+```
+
+Extension roots give host apps a predictable place for CRDT-backed data that travels with the Pen document while staying outside Pen's core block model.
 
 ## Collaboration boundary
 

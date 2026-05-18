@@ -37,3 +37,40 @@ export type {
   DocumentValidationResult,
   DocumentValidationError,
 } from "./document";
+export {
+  compareYjsStateVectorBase64,
+  compareYjsStateVectors,
+  decodeYjsStateVectorBase64,
+  encodeYjsStateVector,
+  encodeYjsStateVectorBase64,
+  isYjsStateVectorBase64Satisfied,
+  isYjsStateVectorSatisfied,
+} from "./stateVector";
+export type {
+  YjsStateVectorComparison,
+  YjsStateVectorMissingClient,
+} from "./stateVector";
+export {
+  createYArrayFieldAdapter,
+  createYTextFieldAdapter,
+} from "./fieldAdapters";
+export type {
+  CreateYArrayFieldAdapterOptions,
+  CreateYTextFieldAdapterOptions,
+  YArrayFieldAdapter,
+  YTextFieldAdapter,
+  YjsFieldObserver,
+  YjsFieldUnsubscribe,
+} from "./fieldAdapters";
+export {
+  YjsExtensionRootError,
+  ensureExtensionRoot,
+  readExtensionRoot,
+} from "./extensionRoots";
+export type {
+  YjsExtensionRoot,
+  YjsExtensionRootFieldType,
+  YjsExtensionRootOptions,
+  YjsExtensionRootReadOptions,
+  YjsExtensionRootShape,
+} from "./extensionRoots";

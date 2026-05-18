@@ -59,11 +59,18 @@ const AI_AUTOCOMPLETE_LOG_PREFIX = "[ai-autocomplete]";
 const AUTOCOMPLETE_DEBUG_ENABLED =
 	typeof globalThis === "object" &&
 	"process" in globalThis &&
-	(globalThis as {
-		process?: { env?: Record<string, string | undefined> };
-	}).process?.env?.PEN_AUTOCOMPLETE_DEBUG === "true";
+	(
+		globalThis as {
+			process?: { env?: Record<string, string | undefined> };
+		}
+	).process?.env?.PEN_AUTOCOMPLETE_DEBUG === "true";
 const AUTOCOMPLETE_REQUEST_MODE = "inline-autocomplete";
-const PROSE_BLOCK_TYPES = new Set(["paragraph", "heading", "blockquote", "callout"]);
+const PROSE_BLOCK_TYPES = new Set([
+	"paragraph",
+	"heading",
+	"blockquote",
+	"callout",
+]);
 const MIN_PROSE_SINGLE_WORD_COMPLETION_CHARS = 3;
 
 class AutocompleteControllerImpl implements AutocompleteController {
@@ -164,10 +171,14 @@ class AutocompleteControllerImpl implements AutocompleteController {
 			deniedBlockTypes: ["database"],
 			...config.blockPolicy,
 		};
-		this._maxPrefixChars = config.maxPrefixChars ?? DEFAULT_MAX_PREFIX_CHARS;
-		this._maxSuffixChars = config.maxSuffixChars ?? DEFAULT_MAX_SUFFIX_CHARS;
-		this._maxNeighborChars = config.maxNeighborChars ?? DEFAULT_MAX_NEIGHBOR_CHARS;
-		this._maxProviderChars = config.maxProviderChars ?? DEFAULT_MAX_PROVIDER_CHARS;
+		this._maxPrefixChars =
+			config.maxPrefixChars ?? DEFAULT_MAX_PREFIX_CHARS;
+		this._maxSuffixChars =
+			config.maxSuffixChars ?? DEFAULT_MAX_SUFFIX_CHARS;
+		this._maxNeighborChars =
+			config.maxNeighborChars ?? DEFAULT_MAX_NEIGHBOR_CHARS;
+		this._maxProviderChars =
+			config.maxProviderChars ?? DEFAULT_MAX_PROVIDER_CHARS;
 		this._maxProviderTimeMs =
 			config.maxProviderTimeMs ?? DEFAULT_MAX_PROVIDER_TIME_MS;
 		this._prefetchAfterAccept =
@@ -198,7 +209,9 @@ class AutocompleteControllerImpl implements AutocompleteController {
 				return;
 			}
 			if (event.origin !== "user" && event.origin !== "input-rule") {
-				if (this._shouldDismissForExternalCommit(event.affectedBlocks)) {
+				if (
+					this._shouldDismissForExternalCommit(event.affectedBlocks)
+				) {
 					this.dismiss("external-edit");
 				}
 				return;
@@ -310,7 +323,9 @@ class AutocompleteControllerImpl implements AutocompleteController {
 		if (!this._sequence || !this.hasVisibleSuggestion()) {
 			return false;
 		}
-		const policyFailure = this._resolveCurrentBlockFailure(this._sequence.blockId);
+		const policyFailure = this._resolveCurrentBlockFailure(
+			this._sequence.blockId,
+		);
 		if (policyFailure) {
 			this._recordPolicyInvalidation(policyFailure, "showing");
 			return false;
@@ -349,13 +364,18 @@ class AutocompleteControllerImpl implements AutocompleteController {
 			inlineLength: candidate.inlineText.length,
 			inlinePreview: previewAutocompleteTextForLog(candidate.inlineText),
 			appendedBlockCount: candidate.appendedBlocks.length,
-			appendedBlockTypes: candidate.appendedBlocks.map((block) => block.type),
+			appendedBlockTypes: candidate.appendedBlocks.map(
+				(block) => block.type,
+			),
 			opTypes: acceptanceResult.ops.map((op) => op.type),
 			nextCaretBlockId: acceptanceResult.selection.blockId,
 			nextCaretOffset: acceptanceResult.selection.offset,
 		});
 		this._isAcceptingSequenceSegment = true;
-		this._editor.apply(acceptanceResult.ops, { origin: "ai", undoGroup: true });
+		this._editor.apply(acceptanceResult.ops, {
+			origin: "ai",
+			undoGroup: true,
+		});
 		const acceptedBlock = this._editor.getBlock(blockId);
 		const firstNextBlock = acceptedBlock?.next ?? null;
 		const secondNextBlock = firstNextBlock?.next ?? null;
@@ -377,7 +397,26 @@ class AutocompleteControllerImpl implements AutocompleteController {
 			nextCaretOffset,
 		);
 		if (fieldEditor) {
-			if (typeof fieldEditor.activateTextSelection === "function") {
+			const programmaticFieldEditor =
+				fieldEditor as typeof fieldEditor & {
+					commitProgrammaticTextSelection?: (
+						blockId: string,
+						anchorOffset: number,
+						focusOffset: number,
+					) => void;
+				};
+			if (
+				typeof programmaticFieldEditor.commitProgrammaticTextSelection ===
+				"function"
+			) {
+				programmaticFieldEditor.commitProgrammaticTextSelection(
+					nextCaretBlockId,
+					nextCaretOffset,
+					nextCaretOffset,
+				);
+			} else if (
+				typeof fieldEditor.activateTextSelection === "function"
+			) {
 				fieldEditor.activateTextSelection(
 					nextCaretBlockId,
 					nextCaretOffset,
@@ -412,7 +451,9 @@ class AutocompleteControllerImpl implements AutocompleteController {
 	}
 
 	hasVisibleSuggestion(): boolean {
-		return this._sequence !== null && this._state.visibleSuggestionId !== null;
+		return (
+			this._sequence !== null && this._state.visibleSuggestionId !== null
+		);
 	}
 
 	registerProvider(provider: AutocompleteContextProvider): () => void {
@@ -512,7 +553,8 @@ class AutocompleteControllerImpl implements AutocompleteController {
 	dismiss(reason: AutocompleteDismissReason = "external-edit"): void {
 		this._clearDebounceTimer();
 		const cancelledRequest =
-			this._state.status === "scheduled" || this._state.status === "requesting";
+			this._state.status === "scheduled" ||
+			this._state.status === "requesting";
 		this._abortController?.abort();
 		this._abortController = null;
 		this._prefetchAbortController?.abort();
@@ -527,7 +569,8 @@ class AutocompleteControllerImpl implements AutocompleteController {
 			metrics: {
 				...this._state.metrics,
 				cancelCount:
-					this._state.metrics.cancelCount + (cancelledRequest ? 1 : 0),
+					this._state.metrics.cancelCount +
+					(cancelledRequest ? 1 : 0),
 			},
 			diagnostics: {
 				...this._state.diagnostics,
@@ -607,7 +650,8 @@ class AutocompleteControllerImpl implements AutocompleteController {
 					logAutocompleteEvent("request cancelled during stream", {
 						requestId,
 						activeRequestId: this._state.activeRequestId,
-						lastBlockedReason: this._state.diagnostics.lastBlockedReason,
+						lastBlockedReason:
+							this._state.diagnostics.lastBlockedReason,
 					});
 					abortController.abort();
 					return;
@@ -616,9 +660,11 @@ class AutocompleteControllerImpl implements AutocompleteController {
 					requestId,
 					type: event.type,
 				});
-				if (!handleModelEvent(event, (delta) => {
-					text += delta;
-				})) {
+				if (
+					!handleModelEvent(event, (delta) => {
+						text += delta;
+					})
+				) {
 					break;
 				}
 			}
@@ -713,7 +759,9 @@ class AutocompleteControllerImpl implements AutocompleteController {
 			inlineLength: candidate.inlineText.length,
 			inlinePreview: previewAutocompleteTextForLog(candidate.inlineText),
 			appendedBlockCount: candidate.appendedBlocks.length,
-			appendedBlockTypes: candidate.appendedBlocks.map((block) => block.type),
+			appendedBlockTypes: candidate.appendedBlocks.map(
+				(block) => block.type,
+			),
 			previewBlockCount: candidate.previewBlocks.length,
 		});
 		this._showSequenceSuggestion();
@@ -785,8 +833,14 @@ class AutocompleteControllerImpl implements AutocompleteController {
 			offset,
 			prefixText: tail(blockText.slice(0, offset), this._maxPrefixChars),
 			suffixText: head(blockText.slice(offset), this._maxSuffixChars),
-			previousBlockText: tail(block.prev?.textContent() ?? "", this._maxNeighborChars),
-			nextBlockText: head(block.next?.textContent() ?? "", this._maxNeighborChars),
+			previousBlockText: tail(
+				block.prev?.textContent() ?? "",
+				this._maxNeighborChars,
+			),
+			nextBlockText: head(
+				block.next?.textContent() ?? "",
+				this._maxNeighborChars,
+			),
 		};
 	}
 
@@ -809,38 +863,48 @@ class AutocompleteControllerImpl implements AutocompleteController {
 			selection.focus.blockId !== context.blockId ||
 			selection.focus.offset !== context.offset
 		) {
-			logAutocompleteEvent("request continuation blocked: selection changed", {
-				requestId,
-				expected: {
-					blockId: context.blockId,
-					offset: context.offset,
+			logAutocompleteEvent(
+				"request continuation blocked: selection changed",
+				{
+					requestId,
+					expected: {
+						blockId: context.blockId,
+						offset: context.offset,
+					},
+					actual:
+						selection?.type === "text"
+							? {
+									type: selection.type,
+									blockId: selection.focus.blockId,
+									offset: selection.focus.offset,
+									isCollapsed: selection.isCollapsed,
+									isMultiBlock: selection.isMultiBlock,
+								}
+							: selection,
 				},
-				actual:
-					selection?.type === "text"
-						? {
-							type: selection.type,
-							blockId: selection.focus.blockId,
-							offset: selection.focus.offset,
-							isCollapsed: selection.isCollapsed,
-							isMultiBlock: selection.isMultiBlock,
-						}
-						: selection,
-			});
+			);
 			return false;
 		}
 		const fieldEditor = this._getFieldEditor();
-		if (!fieldEditor?.isEditing || !fieldEditor.isFocused || fieldEditor.isComposing) {
-			logAutocompleteEvent("request continuation blocked: field editor state", {
-				requestId,
-				fieldEditor: fieldEditor
-					? {
-						isEditing: fieldEditor.isEditing,
-						isFocused: fieldEditor.isFocused,
-						isComposing: fieldEditor.isComposing,
-						focusBlockId: fieldEditor.focusBlockId,
-					}
-					: null,
-			});
+		if (
+			!fieldEditor?.isEditing ||
+			!fieldEditor.isFocused ||
+			fieldEditor.isComposing
+		) {
+			logAutocompleteEvent(
+				"request continuation blocked: field editor state",
+				{
+					requestId,
+					fieldEditor: fieldEditor
+						? {
+								isEditing: fieldEditor.isEditing,
+								isFocused: fieldEditor.isFocused,
+								isComposing: fieldEditor.isComposing,
+								focusBlockId: fieldEditor.focusBlockId,
+							}
+						: null,
+				},
+			);
 			return false;
 		}
 		const block = this._editor.getBlock(context.blockId);
@@ -854,18 +918,29 @@ class AutocompleteControllerImpl implements AutocompleteController {
 		return true;
 	}
 
-	private _shouldDismissForExternalCommit(affectedBlocks: readonly string[]): boolean {
-		const visibleSuggestion = this._inlineCompletion.getState().visibleSuggestion;
-		return !!visibleSuggestion && affectedBlocks.includes(visibleSuggestion.blockId);
+	private _shouldDismissForExternalCommit(
+		affectedBlocks: readonly string[],
+	): boolean {
+		const visibleSuggestion =
+			this._inlineCompletion.getState().visibleSuggestion;
+		return (
+			!!visibleSuggestion &&
+			affectedBlocks.includes(visibleSuggestion.blockId)
+		);
 	}
 
 	private _shouldDismissForSelectionChange(): boolean {
-		const visibleSuggestion = this._inlineCompletion.getState().visibleSuggestion;
+		const visibleSuggestion =
+			this._inlineCompletion.getState().visibleSuggestion;
 		if (!visibleSuggestion || visibleSuggestion.type !== "inline") {
 			return false;
 		}
 		const selection = this._editor.selection;
-		if (selection?.type !== "text" || !selection.isCollapsed || selection.isMultiBlock) {
+		if (
+			selection?.type !== "text" ||
+			!selection.isCollapsed ||
+			selection.isMultiBlock
+		) {
 			return true;
 		}
 		return (
@@ -875,7 +950,11 @@ class AutocompleteControllerImpl implements AutocompleteController {
 	}
 
 	private _getFieldEditor(): FieldEditor | null {
-		return this._editor.internals.getSlot<FieldEditor>(FIELD_EDITOR_SLOT_KEY) ?? null;
+		return (
+			this._editor.internals.getSlot<FieldEditor>(
+				FIELD_EDITOR_SLOT_KEY,
+			) ?? null
+		);
 	}
 
 	private _showSequenceSuggestion(): void {
@@ -961,9 +1040,11 @@ class AutocompleteControllerImpl implements AutocompleteController {
 				if (abortController.signal.aborted) {
 					return;
 				}
-				if (!handleModelEvent(event, (delta) => {
-					text += delta;
-				})) {
+				if (
+					!handleModelEvent(event, (delta) => {
+						text += delta;
+					})
+				) {
 					break;
 				}
 			}
@@ -1004,7 +1085,9 @@ class AutocompleteControllerImpl implements AutocompleteController {
 			inlineLength: candidate.inlineText.length,
 			inlinePreview: previewAutocompleteTextForLog(candidate.inlineText),
 			appendedBlockCount: candidate.appendedBlocks.length,
-			appendedBlockTypes: candidate.appendedBlocks.map((block) => block.type),
+			appendedBlockTypes: candidate.appendedBlocks.map(
+				(block) => block.type,
+			),
 			previewBlockCount: candidate.previewBlocks.length,
 		});
 		this._prefetchedContinuation = {
@@ -1105,7 +1188,8 @@ class AutocompleteControllerImpl implements AutocompleteController {
 	}
 
 	private _invalidateForPolicyChange(): void {
-		const activeBlockId = this._sequence?.blockId ?? this._getActiveSelectionBlockId();
+		const activeBlockId =
+			this._sequence?.blockId ?? this._getActiveSelectionBlockId();
 		if (!activeBlockId) {
 			return;
 		}
@@ -1123,10 +1207,17 @@ class AutocompleteControllerImpl implements AutocompleteController {
 	}
 
 	private _getPolicyInvalidationStage(): AutocompletePolicyInvalidationStage | null {
-		if (this._state.status === "scheduled" || this._state.status === "requesting") {
+		if (
+			this._state.status === "scheduled" ||
+			this._state.status === "requesting"
+		) {
 			return this._state.status;
 		}
-		if (this._state.status === "showing" || this._sequence || this._prefetchedContinuation) {
+		if (
+			this._state.status === "showing" ||
+			this._sequence ||
+			this._prefetchedContinuation
+		) {
 			return "showing";
 		}
 		return null;
@@ -1187,7 +1278,10 @@ class AutocompleteControllerImpl implements AutocompleteController {
 		) {
 			return "code-block-disabled";
 		}
-		if (blockType === "table" && this._state.blockPolicy.allowInTables !== true) {
+		if (
+			blockType === "table" &&
+			this._state.blockPolicy.allowInTables !== true
+		) {
 			return "table-disabled";
 		}
 		return null;
@@ -1246,7 +1340,8 @@ export function autocompleteExtension(
 		name: AI_AUTOCOMPLETE_EXTENSION_NAME,
 		activateClient: async ({ editor }) => {
 			activeEditor = editor;
-			const inlineCompletionRegistration = ensureInlineCompletionController(editor);
+			const inlineCompletionRegistration =
+				ensureInlineCompletionController(editor);
 			inlineCompletion = inlineCompletionRegistration.controller;
 			releaseInlineCompletion = inlineCompletionRegistration.release;
 			controller = new AutocompleteControllerImpl(editor, config, {
@@ -1263,18 +1358,21 @@ export function autocompleteExtension(
 			releaseInlineCompletion = null;
 			activeEditor = null;
 		},
-		decorations: () => createDecorationSet([
-			...(inlineCompletion?.buildDecorations() ?? []),
-		]),
+		decorations: () =>
+			createDecorationSet([
+				...(inlineCompletion?.buildDecorations() ?? []),
+			]),
 	});
 }
 
 export function getAutocompleteController(
 	editor: Editor,
 ): AutocompleteController | null {
-	return editor.internals.getSlot<AutocompleteController>(
-		AUTOCOMPLETE_CONTROLLER_SLOT,
-	) ?? null;
+	return (
+		editor.internals.getSlot<AutocompleteController>(
+			AUTOCOMPLETE_CONTROLLER_SLOT,
+		) ?? null
+	);
 }
 
 function handleModelEvent(
@@ -1296,11 +1394,16 @@ function normalizeCompletionText(
 	text: string,
 ): string {
 	const normalized = text.replace(/\r/g, "");
-	const withoutFence = normalized.replace(/^```[a-zA-Z0-9_-]*\n?/, "").replace(/```$/, "");
-	const withoutWrappedQuotes = stripWrappedCompletionQuotes(context, withoutFence);
+	const withoutFence = normalized
+		.replace(/^```[a-zA-Z0-9_-]*\n?/, "")
+		.replace(/```$/, "");
+	const withoutWrappedQuotes = stripWrappedCompletionQuotes(
+		context,
+		withoutFence,
+	);
 	const trimmedLeading =
 		withoutWrappedQuotes.startsWith("\n\n") ||
-			startsWithStructuredBlockContinuation(withoutWrappedQuotes)
+		startsWithStructuredBlockContinuation(withoutWrappedQuotes)
 			? withoutWrappedQuotes
 			: withoutWrappedQuotes.replace(/^\s*\n/, "");
 	if (!trimmedLeading) {
@@ -1330,7 +1433,9 @@ function normalizeCompletionText(
 }
 
 function startsWithStructuredBlockContinuation(text: string): boolean {
-	return /^\s*\n(?=(?:#{1,6}\s|>\s|[-*+]\s|\d+[.)]\s|\[[ xX]\]\s|```))/.test(text);
+	return /^\s*\n(?=(?:#{1,6}\s|>\s|[-*+]\s|\d+[.)]\s|\[[ xX]\]\s|```))/.test(
+		text,
+	);
 }
 
 function longestCommonPrefix(left: string, right: string): string {
@@ -1366,7 +1471,10 @@ function maybeInsertMissingBoundarySpace(
 	}
 	const lastPrefixChar = context.prefixText.slice(-1);
 	const firstCompletionChar = completion[0];
-	if (!isWordLikeChar(lastPrefixChar) || !isWordLikeChar(firstCompletionChar)) {
+	if (
+		!isWordLikeChar(lastPrefixChar) ||
+		!isWordLikeChar(firstCompletionChar)
+	) {
 		return completion;
 	}
 	if (!hasLikelyWordBoundary(completion)) {
@@ -1447,7 +1555,8 @@ function maybeCapitalizeSentenceStart(
 	}
 	return completion.replace(
 		/^(\s*["'([{“‘-]*)([a-z])/u,
-		(_, prefix: string, character: string) => `${prefix}${character.toUpperCase()}`,
+		(_, prefix: string, character: string) =>
+			`${prefix}${character.toUpperCase()}`,
 	);
 }
 
@@ -1494,7 +1603,9 @@ function unwrapMatchingQuotes(value: string): string | null {
 	];
 	for (const [open, close] of quotePairs) {
 		if (value.startsWith(open) && value.endsWith(close)) {
-			const inner = value.slice(open.length, value.length - close.length).trim();
+			const inner = value
+				.slice(open.length, value.length - close.length)
+				.trim();
 			return inner.length > 0 ? inner : null;
 		}
 	}
@@ -1633,11 +1744,14 @@ function incrementPolicyInvalidationMetrics(
 	return {
 		...metrics,
 		policyInvalidationScheduledCount:
-			metrics.policyInvalidationScheduledCount + (stage === "scheduled" ? 1 : 0),
+			metrics.policyInvalidationScheduledCount +
+			(stage === "scheduled" ? 1 : 0),
 		policyInvalidationRequestingCount:
-			metrics.policyInvalidationRequestingCount + (stage === "requesting" ? 1 : 0),
+			metrics.policyInvalidationRequestingCount +
+			(stage === "requesting" ? 1 : 0),
 		policyInvalidationShowingCount:
-			metrics.policyInvalidationShowingCount + (stage === "showing" ? 1 : 0),
+			metrics.policyInvalidationShowingCount +
+			(stage === "showing" ? 1 : 0),
 	};
 }
 
@@ -1653,5 +1767,7 @@ function logAutocompleteEvent(message: string, details?: unknown): void {
 }
 
 function previewAutocompleteTextForLog(text: string): string {
-	return JSON.stringify(text.length > 160 ? `${text.slice(0, 160)}...` : text);
+	return JSON.stringify(
+		text.length > 160 ? `${text.slice(0, 160)}...` : text,
+	);
 }

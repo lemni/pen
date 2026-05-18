@@ -1,6 +1,6 @@
 import React, { createContext, useContext } from "react";
 import type { Editor } from "@pen/types";
-import { EditorContext } from "../../context/editorContext";
+import { useEditorContext } from "../../context/editorContext";
 import {
 	ToolbarContext,
 	type ToolbarContextValue,
@@ -36,23 +36,12 @@ export function useSelectionToolbarContext(): SelectionToolbarContextValue {
 }
 
 export interface SelectionToolbarRootProps extends AsChildProps {
-	editor?: Editor;
 	ref?: React.Ref<HTMLElement>;
 }
 
 export function SelectionToolbarRoot(props: SelectionToolbarRootProps) {
-	const { editor: editorProp, ...rest } = props;
-	const editorContext = useContext(EditorContext);
-	const editor = editorProp ?? editorContext?.editor;
-
-	if (!editor) {
-		if (isDevelopmentEnvironment()) {
-			console.error(
-				"Pen: <Pen.SelectionToolbar.Root> must be used within <Pen.Editor.Root> or receive an editor prop.",
-			);
-		}
-		throw new Error("Missing editor for Pen.SelectionToolbar.Root");
-	}
+	const { ...rest } = props;
+	const { editor } = useEditorContext();
 
 	const toolbarState = useToolbar(editor);
 	const selectionToolbar = useSelectionToolbar(editor);

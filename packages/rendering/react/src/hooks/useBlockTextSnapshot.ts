@@ -2,7 +2,7 @@ import { useRef, useSyncExternalStore } from "react";
 import type { Editor } from "@pen/types";
 
 interface BlockTextDelta {
-	insert: string;
+	insert: string | Record<string, unknown>;
 	attributes?: Readonly<Record<string, unknown>>;
 }
 
@@ -57,7 +57,13 @@ function getBlockTextSnapshot(
 	return {
 		exists: true,
 		text: block.textContent(),
-		deltas: block.textDeltas(),
+		deltas: block.inlineDeltas().map((delta) => ({
+			insert:
+				typeof delta.insert === "string"
+					? delta.insert
+					: { type: delta.insert.type, ...delta.insert.props },
+			...(delta.attributes ? { attributes: delta.attributes } : {}),
+		})),
 	};
 }
 
@@ -91,10 +97,21 @@ function blockTextDeltaEqual(
 	left: BlockTextDelta,
 	right: BlockTextDelta,
 ): boolean {
-	if (left.insert !== right.insert) {
+	if (!blockTextDeltaInsertEqual(left.insert, right.insert)) {
 		return false;
 	}
 	return shallowEqualAttributes(left.attributes, right.attributes);
+}
+
+function blockTextDeltaInsertEqual(
+	left: string | Record<string, unknown>,
+	right: string | Record<string, unknown>,
+): boolean {
+	if (typeof left === "string" || typeof right === "string") {
+		return left === right;
+	}
+
+	return shallowEqualAttributes(left, right);
 }
 
 function shallowEqualAttributes(

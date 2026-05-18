@@ -1,4 +1,5 @@
 export {
+	CARET,
 	EditorRoot,
 	EditorContent,
 	EditorBlock,
@@ -22,12 +23,21 @@ export {
 
 export {
 	SlashMenuRoot,
+	SlashMenuContent,
 	SlashMenuInput,
 	SlashMenuList,
 	SlashMenuGroup,
 	SlashMenuItem,
 	SlashMenuEmpty,
 } from "./slash-menu/index";
+export {
+	SuggestionMenuRoot,
+	SuggestionMenuContent,
+	SuggestionMenuList,
+	SuggestionMenuGroup,
+	SuggestionMenuItem,
+	SuggestionMenuEmpty,
+} from "./suggestion-menu/index";
 
 export {
 	SelectionToolbarRoot,
@@ -81,10 +91,7 @@ export {
 	AIInlineSession,
 	AIInlineSessionActions,
 } from "./ai/index";
-export {
-	AISuggestionsRoot,
-	AISuggestionsPopover,
-} from "./aiSuggestions/index";
+export { AISuggestionsRoot, AISuggestionsPopover } from "./aiSuggestions/index";
 export {
 	MultiplayerPresenceList,
 	MultiplayerRemoteCursors,
@@ -94,6 +101,7 @@ export {
 // ── Pen.* namespace for compound component API ──────────────
 
 import {
+	CARET,
 	EditorRoot,
 	EditorContent,
 	EditorBlock,
@@ -117,12 +125,21 @@ import {
 
 import {
 	SlashMenuRoot,
+	SlashMenuContent,
 	SlashMenuInput,
 	SlashMenuList,
 	SlashMenuGroup,
 	SlashMenuItem,
 	SlashMenuEmpty,
 } from "./slash-menu/index";
+import {
+	SuggestionMenuRoot,
+	SuggestionMenuContent,
+	SuggestionMenuList,
+	SuggestionMenuGroup,
+	SuggestionMenuItem,
+	SuggestionMenuEmpty,
+} from "./suggestion-menu/index";
 
 import {
 	SelectionToolbarRoot,
@@ -176,10 +193,7 @@ import {
 	AIInlineSession,
 	AIInlineSessionActions,
 } from "./ai/index";
-import {
-	AISuggestionsRoot,
-	AISuggestionsPopover,
-} from "./aiSuggestions/index";
+import { AISuggestionsRoot, AISuggestionsPopover } from "./aiSuggestions/index";
 import {
 	MultiplayerPresenceList,
 	MultiplayerRemoteCursors,
@@ -193,6 +207,7 @@ export const Pen = {
 		Block: EditorBlock,
 		InlineContent,
 		CaretOverlay: EditorCaretOverlay,
+		CARET,
 		BlockHandle: EditorBlockHandle,
 		DragOverlay: EditorDragOverlay,
 		RegionSelector: EditorRegionSelector,
@@ -209,11 +224,20 @@ export const Pen = {
 	},
 	SlashMenu: {
 		Root: SlashMenuRoot,
+		Content: SlashMenuContent,
 		Input: SlashMenuInput,
 		List: SlashMenuList,
 		Group: SlashMenuGroup,
 		Item: SlashMenuItem,
 		Empty: SlashMenuEmpty,
+	},
+	SuggestionMenu: {
+		Root: SuggestionMenuRoot,
+		Content: SuggestionMenuContent,
+		List: SuggestionMenuList,
+		Group: SuggestionMenuGroup,
+		Item: SuggestionMenuItem,
+		Empty: SuggestionMenuEmpty,
 	},
 	SelectionToolbar: {
 		Root: SelectionToolbarRoot,

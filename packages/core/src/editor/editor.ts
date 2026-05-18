@@ -17,6 +17,8 @@ import type {
 	Extension,
 	DocumentOp,
 	ApplyOptions,
+	OpOrigin,
+	MutationGroupMetadata,
 	SelectionState,
 	TextSelection,
 	DocumentRange,
@@ -35,6 +37,10 @@ import {
 	AWAIT_EXTENSION_LIFECYCLE_SLOT_KEY,
 	COLLECT_KEY_BINDINGS_SLOT_KEY,
 	usesInlineTextSelection,
+	createMutationGroupMetadata,
+	getApplyOptionsGroupId,
+	MUTATION_GROUP_METADATA_KEY,
+	UNDO_HISTORY_METADATA_CONTROLLER_SLOT_KEY,
 } from "@pen/types";
 import { yjsAdapter } from "@pen/crdt-yjs";
 import { undoExtension } from "@pen/undo";
@@ -49,7 +55,12 @@ import { ApplyPipeline } from "./apply";
 import { resolveCellSelectionMatrix } from "./cellSelection";
 import { filterOpsForDocumentProfile } from "./profilePolicy";
 import type { CRDTUnknownMap } from "./crdtShapes";
-import { getTextProp, getTableContent, getCellText as getCellTextFromRow, isCRDTMap } from "./crdtShapes";
+import {
+	getTextProp,
+	getTableContent,
+	getCellText as getCellTextFromRow,
+	isCRDTMap,
+} from "./crdtShapes";
 import { ExtensionManagerImpl } from "./extensionManager";
 import { SelectionManagerImpl } from "./selection";
 import { DocumentStateImpl } from "./documentState";
@@ -84,11 +95,11 @@ const NOOP_UNDO: UndoManager = {
 	redo: () => false,
 	canUndo: () => false,
 	canRedo: () => false,
-	stopCapturing: () => { },
-	syncExplicitUndoGroup: () => { },
-	setGroupTimeout: () => { },
-	registerTrackedOrigins: () => () => { },
-	onStackChange: () => () => { },
+	stopCapturing: () => {},
+	syncExplicitUndoGroup: () => {},
+	setGroupTimeout: () => {},
+	registerTrackedOrigins: () => () => {},
+	onStackChange: () => () => {},
 };
 
 class EditorImpl implements Editor {
@@ -124,7 +135,8 @@ class EditorImpl implements Editor {
 	constructor(options: CreateEditorOptions = {}) {
 		this._registry = options.schema ?? builtInDefaultSchema;
 		this._explicitEditorViewMode = options.editorViewMode ?? null;
-		this._adapter = options.documentSession?.adapter ?? options.crdt ?? yjsAdapter();
+		this._adapter =
+			options.documentSession?.adapter ?? options.crdt ?? yjsAdapter();
 		const documentSession =
 			options.documentSession ??
 			createDocumentSession({
@@ -134,7 +146,9 @@ class EditorImpl implements Editor {
 				ownsDocuments: options.document == null,
 			});
 		this._bindSession(documentSession, options.documentScopeId);
-		this._documentProfile = this._resolveDocumentProfile(options.documentProfile);
+		this._documentProfile = this._resolveDocumentProfile(
+			options.documentProfile,
+		);
 		this._editorViewMode =
 			this._explicitEditorViewMode ?? this._documentProfile;
 		this._clientId = this._adapter.getClientId(this._crdtDoc);
@@ -238,7 +252,8 @@ class EditorImpl implements Editor {
 			emit: (event, ...args) => {
 				this._emitter.emit(event, ...args);
 			},
-			onApplyBoundary: (hook) => this._pipeline.addApplyBoundaryHook(hook),
+			onApplyBoundary: (hook) =>
+				this._pipeline.addApplyBoundaryHook(hook),
 			getSlot: <T>(key: string): T | undefined =>
 				this._slots.get(key) as T | undefined,
 			setSlot: (key: string, value: unknown): void => {
@@ -252,11 +267,16 @@ class EditorImpl implements Editor {
 				if (!blockMap) return null;
 				return getTextProp(blockMap, "content");
 			},
-			getCellText: (blockId: string, row: number, col: number): unknown => {
+			getCellText: (
+				blockId: string,
+				row: number,
+				col: number,
+			): unknown => {
 				const blockMap = this._getRawBlockMap(blockId);
 				if (!blockMap) return null;
 				const tableContent = getTableContent(blockMap);
-				if (!tableContent || row < 0 || row >= tableContent.length) return null;
+				if (!tableContent || row < 0 || row >= tableContent.length)
+					return null;
 				const rowMap = tableContent.get(row);
 				if (!rowMap || !isCRDTMap(rowMap)) return null;
 				return getCellTextFromRow(rowMap, col);
@@ -268,17 +288,43 @@ class EditorImpl implements Editor {
 
 	apply(ops: DocumentOp[], options?: ApplyOptions): void {
 		const origin = options?.origin ?? "user";
-		const undo = this._slots.get("undo:manager") as
-			| UndoManager
-			| undefined;
+		const groupId = getApplyOptionsGroupId(origin, options);
+		const undo = this._slots.get("undo:manager") as UndoManager | undefined;
 
-		undo?.syncExplicitUndoGroup(options?.undoGroupId ?? null);
+		undo?.syncExplicitUndoGroup(groupId ?? null);
 
-		if (options?.undoGroup && !options?.undoGroupId) {
+		if (options?.undoGroup && !groupId) {
 			undo?.stopCapturing();
 		}
 
 		this._pipeline.apply(ops, origin);
+		this._recordMutationGroupMetadata(origin, groupId);
+	}
+
+	private _recordMutationGroupMetadata(
+		origin: OpOrigin,
+		groupId: string | undefined,
+	): void {
+		if (!groupId) {
+			return;
+		}
+		const controller = this._slots.get(
+			UNDO_HISTORY_METADATA_CONTROLLER_SLOT_KEY,
+		) as
+			| {
+					setCurrentEntryMetadata<T>(
+						key: string,
+						value: { before: T | null; after: T | null },
+					): boolean;
+			  }
+			| undefined;
+		controller?.setCurrentEntryMetadata<MutationGroupMetadata>(
+			MUTATION_GROUP_METADATA_KEY,
+			{
+				before: null,
+				after: createMutationGroupMetadata(origin, groupId),
+			},
+		);
 	}
 
 	loadDocument(doc: CRDTDocument): void {
@@ -477,10 +523,10 @@ class EditorImpl implements Editor {
 				firstIndex === 0
 					? "first"
 					: {
-						after: (
-							this._doc.blockOrder as CRDTArray<string>
-						).get(firstIndex - 1) as string,
-					};
+							after: (
+								this._doc.blockOrder as CRDTArray<string>
+							).get(firstIndex - 1) as string,
+						};
 
 			if (typeof content === "string") {
 				const newId = createGeneratedBlockId();
@@ -728,20 +774,21 @@ class EditorImpl implements Editor {
 		if (without.size > 0 && !hasWarnedAboutWithoutOption) {
 			hasWarnedAboutWithoutOption = true;
 			console.warn(
-				'Pen: createEditor({ without }) is deprecated. Prefer createEditor({ preset: defaultPreset(...) }) for default feature composition.',
+				"Pen: createEditor({ without }) is deprecated. Prefer createEditor({ preset: defaultPreset(...) }) for default feature composition.",
 			);
 		}
-		const defaultExtensions =
-			options.preset?.resolve({
-				schema: this._registry,
-				documentProfile: this._documentProfile,
-			}).extensions ?? [
-				documentOpsExtension(),
-				deltaStreamExtension(),
-				undoExtension(),
-				richTextShortcutsExtension(),
-			];
-		const defaults = defaultExtensions.filter((ext) => !without.has(ext.name));
+		const defaultExtensions = options.preset?.resolve({
+			schema: this._registry,
+			documentProfile: this._documentProfile,
+		}).extensions ?? [
+			documentOpsExtension(),
+			deltaStreamExtension(),
+			undoExtension(),
+			richTextShortcutsExtension(),
+		];
+		const defaults = defaultExtensions.filter(
+			(ext) => !without.has(ext.name),
+		);
 
 		const userExtensions = options.extensions ?? [];
 		return [...defaults, ...userExtensions];
@@ -788,14 +835,12 @@ class EditorImpl implements Editor {
 		);
 		this._slots.set(
 			COLLECT_KEY_BINDINGS_SLOT_KEY,
-			(registry: SchemaRegistry) => this._extensions.collectKeyBindings(registry),
+			(registry: SchemaRegistry) =>
+				this._extensions.collectKeyBindings(registry),
 		);
 	}
 
-	private _bindSession(
-		session: DocumentSession,
-		scopeId?: string,
-	): void {
+	private _bindSession(session: DocumentSession, scopeId?: string): void {
 		this._bindScope(session, scopeId);
 		this._releaseSession = session.attachEditor({
 			onScopeReplaced: (event) => {
@@ -804,10 +849,7 @@ class EditorImpl implements Editor {
 		});
 	}
 
-	private _bindScope(
-		session: DocumentSession,
-		scopeId?: string,
-	): void {
+	private _bindScope(session: DocumentSession, scopeId?: string): void {
 		this._documentSession = session;
 		const scope =
 			(scopeId ? session.getScope(scopeId) : null) ?? session.rootScope;
@@ -840,7 +882,8 @@ class EditorImpl implements Editor {
 	): DocumentProfile {
 		const persistedProfile =
 			this._adapter.getDocumentProfile?.(this._crdtDoc) ?? null;
-		const resolvedProfile = persistedProfile ?? requestedProfile ?? "structured";
+		const resolvedProfile =
+			persistedProfile ?? requestedProfile ?? "structured";
 		if (persistedProfile == null) {
 			this._adapter.setDocumentProfile?.(this._crdtDoc, resolvedProfile);
 		}
@@ -911,7 +954,10 @@ class EditorImpl implements Editor {
 			}
 		};
 
-		this._extensionLifecycle = this._extensionLifecycle.then(runTask, runTask);
+		this._extensionLifecycle = this._extensionLifecycle.then(
+			runTask,
+			runTask,
+		);
 	}
 
 	private _ensureInitialParagraph(): void {
@@ -991,10 +1037,13 @@ class EditorImpl implements Editor {
 			return;
 		}
 
-		this._unsubObserve = this._adapter.observe(this._crdtDoc, (event: CRDTEvent) => {
-			if (this._pipeline.suppressObserver) return;
-			this._dispatchCRDTEvent(event);
-		});
+		this._unsubObserve = this._adapter.observe(
+			this._crdtDoc,
+			(event: CRDTEvent) => {
+				if (this._pipeline.suppressObserver) return;
+				this._dispatchCRDTEvent(event);
+			},
+		);
 	}
 
 	private _teardownObservation(): void {
@@ -1192,7 +1241,10 @@ class EditorImpl implements Editor {
 		const startInline = this._usesInlineTextSelection(startId);
 		const endInline = this._usesInlineTextSelection(endId);
 		if (startInline && endInline) {
-			const { ops, caret } = this._buildMultiBlockTextReplacement(range, "");
+			const { ops, caret } = this._buildMultiBlockTextReplacement(
+				range,
+				"",
+			);
 			this.apply(ops, options);
 			this._collapseToPoint(caret);
 			return caret;
@@ -1240,13 +1292,7 @@ class EditorImpl implements Editor {
 					length: range.end.offset,
 				});
 			}
-		} else if (
-			this._isWholeBlockSelection(
-				endId,
-				0,
-				range.end.offset,
-			)
-		) {
+		} else if (this._isWholeBlockSelection(endId, 0, range.end.offset)) {
 			ops.push({
 				type: "delete-block",
 				blockId: endId,
@@ -1286,4 +1332,31 @@ class EditorImpl implements Editor {
 
 export function createEditor(options?: CreateEditorOptions): Editor {
 	return new EditorImpl(options);
+}
+
+const headlessPreset = {
+	resolve() {
+		return { extensions: [] };
+	},
+};
+
+export interface CreateHeadlessEditorOptions extends CreateEditorOptions {
+	/**
+	 * Headless server/workflow editors default to the core apply pipeline only.
+	 * Enable default extensions when a host explicitly needs undo, shortcuts, or
+	 * delta stream behavior in a non-rendered environment.
+	 */
+	useDefaultExtensions?: boolean;
+}
+
+export function createHeadlessEditor(
+	options: CreateHeadlessEditorOptions = {},
+): Editor {
+	const { useDefaultExtensions = false, ...editorOptions } = options;
+	return createEditor({
+		...editorOptions,
+		preset:
+			editorOptions.preset ??
+			(useDefaultExtensions ? undefined : headlessPreset),
+	});
 }

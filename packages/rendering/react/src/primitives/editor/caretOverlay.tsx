@@ -13,6 +13,13 @@ import { isDevelopmentEnvironment } from "../../utils/environment";
 type CaretStyle = React.CSSProperties & Record<string, string | number>;
 const CARET_BLINK_RESUME_DELAY_MS = 500;
 
+export const CARET = {
+	DEFAULT: "default",
+	MACOS: "macos",
+} as const;
+
+export type EditorCaretVariant = (typeof CARET)[keyof typeof CARET];
+
 export interface EditorCaretRenderProps {
 	selection: TextSelection;
 	point: {
@@ -25,12 +32,18 @@ export interface EditorCaretRenderProps {
 
 export interface EditorCaretOverlayProps extends AsChildProps {
 	editor?: Editor;
+	variant?: EditorCaretVariant;
 	renderCaret?: (props: EditorCaretRenderProps) => React.ReactNode;
 	ref?: React.Ref<HTMLElement>;
 }
 
 export function EditorCaretOverlay(props: EditorCaretOverlayProps) {
-	const { editor: editorProp, renderCaret, ...rest } = props;
+	const {
+		editor: editorProp,
+		variant = CARET.DEFAULT,
+		renderCaret,
+		...rest
+	} = props;
 	const editorContext = useContext(EditorContext);
 	const editor = editorProp ?? editorContext?.editor;
 	const fieldEditor = useFieldEditorContext();
@@ -46,14 +59,15 @@ export function EditorCaretOverlay(props: EditorCaretOverlayProps) {
 
 	const selection = useSelection(editor);
 	const fieldEditorState = useFieldEditorState(fieldEditor);
-	const { elementRef, rootElement, layoutVersion } = useOverlayLayout<HTMLElement>([
-		selection,
-		fieldEditorState.focusBlockId,
-		fieldEditorState.isEditing,
-		fieldEditorState.isFocused,
-		fieldEditorState.isComposing,
-		fieldEditorState.mode,
-	]);
+	const { elementRef, rootElement, layoutVersion } =
+		useOverlayLayout<HTMLElement>([
+			selection,
+			fieldEditorState.focusBlockId,
+			fieldEditorState.isEditing,
+			fieldEditorState.isFocused,
+			fieldEditorState.isComposing,
+			fieldEditorState.mode,
+		]);
 
 	const caretSelection = resolveCaretSelection(selection, fieldEditorState);
 	const rect =
@@ -109,12 +123,13 @@ export function EditorCaretOverlay(props: EditorCaretOverlayProps) {
 			caretSelection,
 			rect,
 			blinkPaused,
+			variant,
 		);
-		caretNode = renderCaret
-			? renderCaret(renderProps)
-			: (
-				<div {...renderProps.attributes} style={renderProps.caretStyle} />
-			);
+		caretNode = renderCaret ? (
+			renderCaret(renderProps)
+		) : (
+			<div {...renderProps.attributes} style={renderProps.caretStyle} />
+		);
 	}
 
 	return renderAsChild(
@@ -159,18 +174,24 @@ function createCaretRenderProps(
 	selection: TextSelection,
 	rect: DOMRect,
 	blinkPaused: boolean,
+	variant: EditorCaretVariant,
 ): EditorCaretRenderProps {
 	const height = Math.max(rect.height, 16);
 	const point = selection.focus;
+	const isMacOS = variant === CARET.MACOS;
+	const defaultCaretColor = isMacOS
+		? "var(--palette-blue, #0a84ff)"
+		: "var(--palette-b100, currentColor)";
+	const defaultCaretWidth = isMacOS ? "2px" : "1px";
+	const defaultCaretRadius = isMacOS ? "999px" : "0px";
 	const caretStyle: CaretStyle = {
 		position: "fixed",
 		left: `${rect.left}px`,
 		top: `${rect.top}px`,
 		height: `${height}px`,
-		width: "var(--pen-editor-caret-width, var(--pen-caret-width, 1px))",
-		borderRadius: "var(--pen-editor-caret-radius, 999px)",
-		background:
-			"var(--pen-editor-caret-color, var(--pen-caret-color, currentColor))",
+		width: `var(--pen-editor-caret-width, var(--pen-caret-width, ${defaultCaretWidth}))`,
+		borderRadius: `var(--pen-editor-caret-radius, var(--pen-caret-radius, ${defaultCaretRadius}))`,
+		background: `var(--pen-editor-caret-color, var(--pen-caret-color, ${defaultCaretColor}))`,
 		boxShadow: "var(--pen-editor-caret-shadow, none)",
 		animation: blinkPaused
 			? "none"
@@ -200,7 +221,8 @@ function useCaretBlinkPauseState(options: {
 	caretSelection: TextSelection | null;
 	isCaretVisible: boolean;
 }): boolean {
-	const { rootElement, layoutVersion, caretSelection, isCaretVisible } = options;
+	const { rootElement, layoutVersion, caretSelection, isCaretVisible } =
+		options;
 	const [blinkPaused, setBlinkPaused] = useState(false);
 	const resumeTimeoutRef = useRef<number | null>(null);
 

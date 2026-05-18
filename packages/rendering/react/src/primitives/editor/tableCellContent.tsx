@@ -5,6 +5,7 @@ import { useFieldEditorState } from "../../hooks/useFieldEditorState";
 import { fullReconcileDeltasToDOM } from "../../field-editor/reconciler";
 import { useCellTextSnapshot } from "../../hooks/useCellTextSnapshot";
 import { DATA_ATTRS } from "../../utils/dataAttributes";
+import { fieldEditorTextEntryAttrs } from "../../utils/fieldEditorTextEntryAttrs";
 
 const TABLE_CELL_MIN_WIDTH = "6rem";
 
@@ -85,7 +86,7 @@ function cellSurfaceAttrs(
 	return {
 		[DATA_ATTRS.inlineContent]: "",
 		[DATA_ATTRS.fieldEditorSurface]: "",
-		[DATA_ATTRS.fieldEditorActiveSurface]: isActiveCell ? "" : undefined,
+		...fieldEditorTextEntryAttrs(isActiveCell),
 		[DATA_ATTRS.ignorePointerGesture]: isActiveCell ? "" : undefined,
 		[DATA_ATTRS.placeholderVisible]: showPlaceholder ? "" : undefined,
 		[DATA_ATTRS.tableCellRow]: row,

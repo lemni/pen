@@ -1,4 +1,9 @@
-import type { DocumentOp, Editor, InlineDecoration, InputBackend } from "@pen/types";
+import type {
+	DocumentOp,
+	Editor,
+	InlineDecoration,
+	InputBackend,
+} from "@pen/types";
 import type { FieldEditorInputController } from "./controller";
 import { fullReconcileToDOM, applyDeltaToDOM } from "./reconciler";
 import {
@@ -37,6 +42,7 @@ export class ContentEditableBackend implements InputBackend {
 	private compositionStartTimestamp = 0;
 	private compositionStartText: string | null = null;
 	private deferredRemoteDeltas: Array<{ delta: FieldEditorDelta[] }> = [];
+	private pendingDomSyncFrame: number | null = null;
 	private pendingSelectionOverride: {
 		blockId: string;
 		anchorOffset: number;
@@ -93,6 +99,9 @@ export class ContentEditableBackend implements InputBackend {
 		fullReconcileToDOM(this.ytext, element, this.editor.schema, {
 			inlineDecorations: this.getInlineDecorationsForBlock(),
 		});
+		this.fieldEditor.notifyDomReconciled(
+			this.fieldEditor.focusBlockId ?? undefined,
+		);
 		this.restoreDOMSelectionFromEditor();
 		requestAnimationFrame(() => {
 			this.isApplyingSelection--;
@@ -127,6 +136,10 @@ export class ContentEditableBackend implements InputBackend {
 		if (this.mutationObserver) {
 			this.mutationObserver.disconnect();
 			this.mutationObserver = null;
+		}
+		if (this.pendingDomSyncFrame != null) {
+			cancelAnimationFrame(this.pendingDomSyncFrame);
+			this.pendingDomSyncFrame = null;
 		}
 		if (this.observer && this.ytext) {
 			this.ytext.unobserve(this.observer);
@@ -230,7 +243,9 @@ export class ContentEditableBackend implements InputBackend {
 		} else {
 			this.fieldEditor.syncTextSelection(blockId, nextOffset, nextOffset);
 		}
+		this.ensureActiveDOMMatchesYText();
 		this.restoreDOMSelectionFromEditor();
+		this.scheduleActiveDOMMatchCheck();
 		this.pendingSelectionOverride = null;
 	}
 
@@ -305,18 +320,18 @@ export class ContentEditableBackend implements InputBackend {
 		const anchor =
 			pendingSelection != null
 				? {
-					blockId: pendingSelection.blockId,
-					offset: pendingSelection.anchorOffset,
-				}
+						blockId: pendingSelection.blockId,
+						offset: pendingSelection.anchorOffset,
+					}
 				: selection?.type === "text"
 					? selection.anchor
 					: null;
 		const focus =
 			pendingSelection != null
 				? {
-					blockId: pendingSelection.blockId,
-					offset: pendingSelection.focusOffset,
-				}
+						blockId: pendingSelection.blockId,
+						offset: pendingSelection.focusOffset,
+					}
 				: selection?.type === "text"
 					? selection.focus
 					: null;
@@ -352,6 +367,13 @@ export class ContentEditableBackend implements InputBackend {
 
 		const handler = DIRECT_HANDLERS[event.inputType];
 		if (handler) {
+			if (
+				requiresResolvedInputRange(event.inputType) &&
+				!this.ensureResolvableInputRange(event)
+			) {
+				return;
+			}
+
 			event.preventDefault();
 			handler(
 				event,
@@ -366,6 +388,19 @@ export class ContentEditableBackend implements InputBackend {
 
 		// Let the mutation observer reconcile input types we do not handle directly.
 	};
+
+	private ensureResolvableInputRange(event: InputEvent): boolean {
+		if (!this.element) {
+			return false;
+		}
+		if (canResolveInputRange(event, this.element)) {
+			return true;
+		}
+
+		this.restoreDOMSelectionFromEditor();
+
+		return canResolveInputRange(event, this.element);
+	}
 
 	// ── Composition handling ──────────────────────────────────
 
@@ -422,6 +457,9 @@ export class ContentEditableBackend implements InputBackend {
 			fullReconcileToDOM(this.ytext, this.element!, this.editor.schema, {
 				inlineDecorations: this.getInlineDecorationsForBlock(),
 			});
+			this.fieldEditor.notifyDomReconciled(
+				this.fieldEditor.focusBlockId ?? undefined,
+			);
 		}
 
 		this.compositionStartText = null;
@@ -461,16 +499,27 @@ export class ContentEditableBackend implements InputBackend {
 		if (!this.element || !this.ytext) return;
 		const isHistory = isHistoryTransactionOrigin(event.transaction?.origin);
 		if (isHistory) {
+			fullReconcileToDOM(this.ytext, this.element, this.editor.schema, {
+				preserveSelection: true,
+				inlineDecorations: this.getInlineDecorationsForBlock(),
+			});
+			this.fieldEditor.notifyDomReconciled(
+				this.fieldEditor.focusBlockId ?? undefined,
+			);
+			this.restoreDOMSelectionFromEditor();
 			return;
 		}
 
 		const blockId = this.fieldEditor.focusBlockId;
-		const isActiveCell = blockId ? !!this._getActiveCellCoord(blockId) : false;
+		const isActiveCell = blockId
+			? !!this._getActiveCellCoord(blockId)
+			: false;
 		if (isActiveCell) {
 			fullReconcileToDOM(this.ytext, this.element, this.editor.schema, {
 				preserveSelection: true,
 				inlineDecorations: this.getInlineDecorationsForBlock(),
 			});
+			this.fieldEditor.notifyDomReconciled(blockId ?? undefined);
 			if (
 				this.pendingSelectionOverride != null ||
 				event.transaction?.origin === "remote" ||
@@ -491,6 +540,7 @@ export class ContentEditableBackend implements InputBackend {
 				preserveSelection: true,
 				inlineDecorations: this.getInlineDecorationsForBlock(),
 			});
+			this.fieldEditor.notifyDomReconciled(blockId ?? undefined);
 		}
 
 		if (
@@ -552,7 +602,10 @@ export class ContentEditableBackend implements InputBackend {
 					blockId,
 					offset: op.offset,
 					text: op.text,
-					marks: this.fieldEditor.resolveInsertMarks(ytext, op.offset),
+					marks: this.fieldEditor.resolveInsertMarks(
+						ytext,
+						op.offset,
+					),
 				});
 			}
 		}
@@ -565,7 +618,9 @@ export class ContentEditableBackend implements InputBackend {
 				blockId,
 				anchorOffset: range.start,
 				focusOffset: range.end,
-				cell: cellCoord ? { row: cellCoord.row, col: cellCoord.col } : undefined,
+				cell: cellCoord
+					? { row: cellCoord.row, col: cellCoord.col }
+					: undefined,
 			};
 		}
 
@@ -575,10 +630,46 @@ export class ContentEditableBackend implements InputBackend {
 			if (cellCoord) {
 				this.activeCellSelection = range;
 			} else {
-				this.fieldEditor.syncTextSelection(blockId, range.start, range.end);
+				this.fieldEditor.syncTextSelection(
+					blockId,
+					range.start,
+					range.end,
+				);
 			}
 		}
+		this.ensureActiveDOMMatchesYText();
+		this.restoreDOMSelectionFromEditor();
+		this.scheduleActiveDOMMatchCheck();
 		this.pendingSelectionOverride = null;
+	}
+
+	private ensureActiveDOMMatchesYText(): boolean {
+		if (!this.element || !this.ytext) return false;
+		if (extractTextFromDOM(this.element) === this.ytext.toString()) {
+			return false;
+		}
+
+		fullReconcileToDOM(this.ytext, this.element, this.editor.schema, {
+			preserveSelection: true,
+			inlineDecorations: this.getInlineDecorationsForBlock(),
+		});
+		this.fieldEditor.notifyDomReconciled(
+			this.fieldEditor.focusBlockId ?? undefined,
+		);
+		return true;
+	}
+
+	private scheduleActiveDOMMatchCheck(): void {
+		if (this.pendingDomSyncFrame != null) {
+			cancelAnimationFrame(this.pendingDomSyncFrame);
+		}
+
+		this.pendingDomSyncFrame = requestAnimationFrame(() => {
+			this.pendingDomSyncFrame = null;
+			if (this.ensureActiveDOMMatchesYText()) {
+				this.restoreDOMSelectionFromEditor();
+			}
+		});
 	}
 
 	private getInlineDecorationsForBlock(): readonly InlineDecoration[] {
@@ -590,7 +681,8 @@ export class ContentEditableBackend implements InputBackend {
 			.getDecorations()
 			.forBlock(blockId)
 			.filter(
-				(decoration): decoration is InlineDecoration => decoration.type === "inline",
+				(decoration): decoration is InlineDecoration =>
+					decoration.type === "inline",
 			);
 	}
 
@@ -612,9 +704,28 @@ export class ContentEditableBackend implements InputBackend {
 		}
 	};
 
+	resolveCurrentInputRange(): {
+		start: number;
+		end: number;
+	} | null {
+		const liveRange = this.element
+			? getSelectionOffsets(this.element)
+			: null;
+		return (
+			this.fieldEditor.resolveProgrammaticInputRange(
+				this.fieldEditor.focusBlockId,
+				liveRange,
+			) ?? liveRange
+		);
+	}
+
 	private handleSelectionChange = (): void => {
 		if (!this.element) return;
-		if (!this.fieldEditor.shouldHandleDomSelectionChange(this.isApplyingSelection)) {
+		if (
+			!this.fieldEditor.shouldHandleDomSelectionChange(
+				this.isApplyingSelection,
+			)
+		) {
 			return;
 		}
 
@@ -647,6 +758,16 @@ export class ContentEditableBackend implements InputBackend {
 				type: "block",
 				blockIds: normalizedSelection.blockIds,
 			});
+			return;
+		}
+
+		if (
+			this.fieldEditor.shouldIgnoreDomTextSelection(
+				normalizedSelection.anchor,
+				normalizedSelection.focus,
+			)
+		) {
+			this.restoreDOMSelectionFromEditor();
 			return;
 		}
 
@@ -698,7 +819,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 		}
 		const blockId = fe.focusBlockId;
 		if (!blockId) return;
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 		if (backend.applyListInputRule({ blockId, range, text })) {
 			return;
@@ -724,7 +845,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 		const targetRanges = event.getTargetRanges?.();
 		const range = targetRanges?.length
 			? staticRangeToOffsets(targetRanges[0], element)
-			: getSelectionOffsets(element);
+			: backend.resolveCurrentInputRange();
 		if (!range) return;
 		if (backend.applyListInputRule({ blockId, range, text })) {
 			return;
@@ -743,7 +864,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 			editor.deleteSelection();
 			return;
 		}
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 
 		const target = applyDeleteBehavior(editor, {
@@ -789,7 +910,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 			editor.deleteSelection();
 			return;
 		}
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 
 		const target = applyDeleteBehavior(editor, {
@@ -826,7 +947,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 			editor.deleteSelection();
 			return;
 		}
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range || range.start === range.end) return;
 
 		backend.applyInlineTextEdit({
@@ -837,7 +958,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 	},
 
 	deleteWordBackward: (_event, editor, ytext, fe, element, backend) => {
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 
 		if (range.start !== range.end) {
@@ -863,7 +984,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 	},
 
 	deleteWordForward: (_event, editor, ytext, fe, element, backend) => {
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 
 		if (range.start !== range.end) {
@@ -888,14 +1009,14 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 		}
 	},
 
-	insertParagraph: (_event, editor, ytext, fe, element) => {
+	insertParagraph: (_event, editor, ytext, fe, element, backend) => {
 		const blockId = fe.focusBlockId;
 		if (!blockId) return;
 		const target = applyEnterBehavior(editor, {
 			blockId,
 			inputMode: fe.inputMode,
 			ytext,
-			range: getSelectionOffsets(element),
+			range: backend.resolveCurrentInputRange(),
 		});
 		if (!target) return;
 
@@ -907,7 +1028,7 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 	},
 
 	insertLineBreak: (_event, _editor, ytext, fe, element, backend) => {
-		const range = getSelectionOffsets(element);
+		const range = backend.resolveCurrentInputRange();
 		if (!range) return;
 		const blockId = fe.focusBlockId;
 		if (!blockId) return;
@@ -953,6 +1074,33 @@ const DIRECT_HANDLERS: Record<string, DirectHandler> = {
 function hasMultiBlockTextSelection(editor: Editor): boolean {
 	const selection = editor.selection;
 	return selection?.type === "text" && selection.isMultiBlock;
+}
+
+function requiresResolvedInputRange(inputType: string): boolean {
+	return (
+		inputType === "insertText" ||
+		inputType === "insertReplacementText" ||
+		inputType === "deleteContentBackward" ||
+		inputType === "deleteContentForward" ||
+		inputType === "deleteByCut" ||
+		inputType === "deleteWordBackward" ||
+		inputType === "deleteWordForward" ||
+		inputType === "insertLineBreak"
+	);
+}
+
+function canResolveInputRange(
+	event: InputEvent,
+	element: HTMLElement,
+): boolean {
+	if (event.inputType === "insertReplacementText") {
+		const targetRanges = event.getTargetRanges?.();
+		if (targetRanges?.length) {
+			return staticRangeToOffsets(targetRanges[0], element) !== null;
+		}
+	}
+
+	return getSelectionOffsets(element) !== null;
 }
 
 /**
@@ -1034,7 +1182,8 @@ function setSelectionOffsets(
 	selection.addRange(collapseRange);
 
 	if (
-		(startPoint.node !== endPoint.node || startPoint.offset !== endPoint.offset) &&
+		(startPoint.node !== endPoint.node ||
+			startPoint.offset !== endPoint.offset) &&
 		typeof selection.extend === "function"
 	) {
 		selection.extend(endPoint.node, endPoint.offset);
@@ -1171,4 +1320,3 @@ function mapOffsetThroughRemoteDeltas(
 
 	return mappedOffset;
 }
-

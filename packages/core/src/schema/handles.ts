@@ -61,11 +61,15 @@ type TextDelta = {
 	attributes?: Record<string, unknown>;
 };
 
-function getMapEntries(map: CRDTUnknownMap | null): Iterable<[string, unknown]> {
+function getMapEntries(
+	map: CRDTUnknownMap | null,
+): Iterable<[string, unknown]> {
 	return map?.entries?.() ?? [];
 }
 
-function getChildrenArray(blockMap: CRDTUnknownMap): CRDTUnknownArray<string> | null {
+function getChildrenArray(
+	blockMap: CRDTUnknownMap,
+): CRDTUnknownArray<string> | null {
 	return getArrayProp<string>(blockMap, "children");
 }
 
@@ -110,14 +114,17 @@ function toInlineDeltas(content: CRDTTextLike | null): InlineDelta[] {
 }
 
 function arrayValues<T>(array: CRDTUnknownArray<T>): T[] {
-	return array.toArray?.() ?? Array.from({ length: array.length }, (_, index) => array.get(index));
+	return (
+		array.toArray?.() ??
+		Array.from({ length: array.length }, (_, index) => array.get(index))
+	);
 }
 
 class TableRowHandleImpl implements TableRowHandle {
 	constructor(
 		readonly id: string,
 		readonly index: number,
-	) { }
+	) {}
 }
 
 class BlockHandleImpl implements BlockHandle {
@@ -126,7 +133,7 @@ class BlockHandleImpl implements BlockHandle {
 		private readonly _doc: PenDocument,
 		private readonly _crdtDoc: CRDTDocument,
 		private readonly _registry: SchemaRegistry,
-	) { }
+	) {}
 
 	get id(): string {
 		return this._id;
@@ -181,8 +188,9 @@ class BlockHandleImpl implements BlockHandle {
 	}
 
 	get parent(): BlockHandle | null {
-		const parentId = (this.props as Record<string, unknown>)
-			.parentId as string | undefined;
+		const parentId = (this.props as Record<string, unknown>).parentId as
+			| string
+			| undefined;
 		if (parentId && this._doc.blocks.has(parentId)) {
 			return new BlockHandleImpl(
 				parentId,
@@ -333,8 +341,14 @@ class BlockHandleImpl implements BlockHandle {
 		const result: AppHandle[] = [];
 		for (const [appId, rawAppMap] of this._doc.apps.entries()) {
 			if (!isCRDTMap(rawAppMap)) continue;
-			const placement = rawAppMap.get("placement") as AppPlacement | undefined;
-			if (placement && "blockId" in placement && placement.blockId === this._id) {
+			const placement = rawAppMap.get("placement") as
+				| AppPlacement
+				| undefined;
+			if (
+				placement &&
+				"blockId" in placement &&
+				placement.blockId === this._id
+			) {
 				result.push(
 					new AppHandleImpl(
 						appId,
@@ -379,7 +393,15 @@ class BlockHandleImpl implements BlockHandle {
 	}
 
 	length(): number {
-		return this.textContent().length;
+		const content = getTextProp(this.blockMap, "content");
+		if (!content) {
+			return 0;
+		}
+		const text = content.toString();
+		if (!text || text === "\u200B") {
+			return 0;
+		}
+		return content.length;
 	}
 
 	// ── Metadata ──────────────────────────────────────────
@@ -485,7 +507,9 @@ class BlockHandleImpl implements BlockHandle {
 		if (!primaryViewId) {
 			return views[0] ?? null;
 		}
-		return views.find((view) => view.id === primaryViewId) ?? views[0] ?? null;
+		return (
+			views.find((view) => view.id === primaryViewId) ?? views[0] ?? null
+		);
 	}
 
 	// ── Internal ──────────────────────────────────────────
@@ -517,7 +541,11 @@ class BlockHandleImpl implements BlockHandle {
 		const id = mapLike.get?.("id");
 		const title = mapLike.get?.("title");
 		const type = mapLike.get?.("type");
-		if (typeof id !== "string" || typeof title !== "string" || typeof type !== "string") {
+		if (
+			typeof id !== "string" ||
+			typeof title !== "string" ||
+			typeof type !== "string"
+		) {
 			return null;
 		}
 		const options = this.toPlainArray(mapLike.get?.("options"));
@@ -529,7 +557,8 @@ class BlockHandleImpl implements BlockHandle {
 			hidden: this.toBoolean(mapLike.get?.("hidden")),
 			pinned: this.toPinned(mapLike.get?.("pinned")),
 			options,
-			format: (this.toPlainObject(mapLike.get?.("format")) ?? undefined) as TableColumnSchema["format"],
+			format: (this.toPlainObject(mapLike.get?.("format")) ??
+				undefined) as TableColumnSchema["format"],
 			readonly: this.toBoolean(mapLike.get?.("readonly")),
 		};
 	}
@@ -551,9 +580,13 @@ class BlockHandleImpl implements BlockHandle {
 			id,
 			title: this.toString(mapLike.get?.("title")),
 			type: type as DatabaseViewState["type"],
-			visibleColumnIds: this.toStringArray(mapLike.get?.("visibleColumnIds")),
+			visibleColumnIds: this.toStringArray(
+				mapLike.get?.("visibleColumnIds"),
+			),
 			columnOrder: this.toStringArray(mapLike.get?.("columnOrder")),
-			sort: this.toPlainArray(mapLike.get?.("sort")) as DatabaseViewState["sort"],
+			sort: this.toPlainArray(
+				mapLike.get?.("sort"),
+			) as DatabaseViewState["sort"],
 			filter: (filterValue as DatabaseViewState["filter"] | null) ?? null,
 			groupBy: this.toNullableString(mapLike.get?.("groupBy")),
 			rowPinning: this.toDatabaseRowPinning(mapLike.get?.("rowPinning")),
@@ -562,7 +595,9 @@ class BlockHandleImpl implements BlockHandle {
 		};
 	}
 
-	private toDatabaseRowPinning(value: unknown): DatabaseViewState["rowPinning"] {
+	private toDatabaseRowPinning(
+		value: unknown,
+	): DatabaseViewState["rowPinning"] {
 		if (!value || typeof value !== "object") {
 			return undefined;
 		}
@@ -572,7 +607,8 @@ class BlockHandleImpl implements BlockHandle {
 		const topValues = this.toStringArray(mapLike.get?.("top"));
 		const bottomValues = this.toStringArray(mapLike.get?.("bottom"));
 		const top = topValues && topValues.length > 0 ? topValues : undefined;
-		const bottom = bottomValues && bottomValues.length > 0 ? bottomValues : undefined;
+		const bottom =
+			bottomValues && bottomValues.length > 0 ? bottomValues : undefined;
 		if (!top && !bottom) {
 			return undefined;
 		}
@@ -583,14 +619,23 @@ class BlockHandleImpl implements BlockHandle {
 	}
 
 	private toPlainArray(value: unknown): TableColumnSchema["options"] {
-		if (!value || typeof (value as { toArray?: () => unknown[] }).toArray !== "function") {
+		if (
+			!value ||
+			typeof (value as { toArray?: () => unknown[] }).toArray !==
+				"function"
+		) {
 			return undefined;
 		}
 		const items = (value as { toArray: () => unknown[] }).toArray();
 		return items
 			.map((item) => this.toPlainValue(item))
 			.filter((item): item is Record<string, unknown> => item !== null)
-			.map((item) => item as unknown as NonNullable<TableColumnSchema["options"]>[number]);
+			.map(
+				(item) =>
+					item as unknown as NonNullable<
+						TableColumnSchema["options"]
+					>[number],
+			);
 	}
 
 	private toPlainObject(value: unknown): Record<string, unknown> | null {
@@ -615,7 +660,11 @@ class BlockHandleImpl implements BlockHandle {
 	}
 
 	private toStringArray(value: unknown): string[] | undefined {
-		if (!value || typeof (value as { toArray?: () => unknown[] }).toArray !== "function") {
+		if (
+			!value ||
+			typeof (value as { toArray?: () => unknown[] }).toArray !==
+				"function"
+		) {
 			return undefined;
 		}
 		return (value as { toArray: () => unknown[] })
@@ -646,7 +695,7 @@ class AppHandleImpl implements AppHandle {
 		private readonly _doc: PenDocument,
 		private readonly _crdtDoc: CRDTDocument,
 		private readonly _registry: SchemaRegistry,
-	) { }
+	) {}
 
 	get id(): string {
 		return this._id;
@@ -691,7 +740,7 @@ class TableCellHandleImpl implements TableCellHandle {
 		private readonly _cellMap: TableCellMap,
 		private readonly _row: number,
 		private readonly _col: number,
-	) { }
+	) {}
 
 	get id(): string {
 		return getStringProp(this._cellMap, "id") ?? "";
@@ -743,4 +792,3 @@ class TableCellHandleImpl implements TableCellHandle {
 		}));
 	}
 }
-

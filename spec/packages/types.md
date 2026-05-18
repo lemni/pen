@@ -14,6 +14,7 @@ This is the contract package for the monorepo. It is the place where packages ag
 - Root export of package-wide contracts via `./types/index`
 - Lightweight runtime helpers such as `defineBlock()`, `defineExtension()`, `prop()`, `resolveSchema()`, `generateId()`, and database/block-capability helpers
 - Shared slot keys such as `FIELD_EDITOR_SLOT_KEY`, `SEARCH_CONTROLLER_SLOT`, `MULTIPLAYER_CONTROLLER_SLOT`, `HISTORY_CONTROLLER_SLOT`, and AI/undo-related slots
+- Operation origin contracts such as `OpOriginType`, `StructuredOpOrigin`, `MutationGroupMetadata`, and helpers for resolving origin/group metadata
 - Shared AI operation contracts such as selection targets, scoped-range targets, requested-operation provenance, and low-level range helpers
 - Workspace scripts: `build`, `clean`, `test`, `typecheck`
 
@@ -46,7 +47,18 @@ Important rules:
 - Slot keys and interfaces defined here are cross-package contracts and should remain stable unless a real architectural change requires otherwise.
 - Lightweight helpers are acceptable when they support contract authoring or schema declarations, but heavier behavior belongs elsewhere.
 - Other packages should depend on this package to agree on shapes, not to inherit hidden runtime behavior.
+- Structured mutation metadata belongs here because `@pen/core`, undo/history packages, AI extensions, and host workflows all need to agree on attribution and grouping semantics.
 - If multiple packages need to agree on AI mutation target semantics, that target contract belongs here rather than being duplicated in package-local types.
+
+## Structured Mutation Origins
+
+`OpOrigin` accepts both legacy string origins and structured origins. Structured origins allow a host or extension to attach:
+
+- `type`: the stable origin type, such as `user`, `ai`, or a host-defined string.
+- `groupId`: a logical mutation group shared across one or more `editor.apply(...)` calls.
+- `requestId`, `actorId`, and `source`: optional attribution fields for workflow and diagnostics.
+
+`getOpOriginType()`, `getApplyOptionsGroupId()`, and `createMutationGroupMetadata()` keep this behavior consistent across runtime packages. Hosts should use structured origins for AI/workflow changes instead of encoding request metadata in ad hoc strings.
 
 ## Shared AI Target Contract
 

@@ -15,7 +15,7 @@ export interface SlashMenuListProps extends AsChildProps {
  */
 export function SlashMenuList(props: SlashMenuListProps) {
 	const { children, ...rest } = props;
-	const { items, selectedIndex, confirm } = useSlashMenuContext();
+	const { items } = useSlashMenuContext();
 
 	const hasManualChildren = React.Children.count(children) > 0;
 
@@ -40,8 +40,7 @@ export function SlashMenuList(props: SlashMenuListProps) {
 						<SlashMenuItem
 							key={item.type}
 							blockType={item.type}
-							data-selected={idx === selectedIndex || undefined}
-							onSelect={() => confirm(idx)}
+							index={idx}
 						>
 							{item.display.title}
 						</SlashMenuItem>

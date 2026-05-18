@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	createEditor,
-	getNumberedListItemValue,
-} from "@pen/core";
+import { createEditor, getNumberedListItemValue } from "@pen/core";
 import {
 	FIELD_EDITOR_SLOT_KEY as CORE_FIELD_EDITOR_SLOT_KEY,
 	INPUT_RULES_ENGINE_SLOT_KEY,
@@ -45,9 +42,10 @@ function getYText(
 	const adapter = editor.internals.adapter;
 	const doc = editor.internals.crdtDoc;
 	const ydoc = adapter.raw<RawDocLike>(doc);
-	const ytext = ydoc.getMap("blocks").get(blockId)?.get("content") as
-		| FieldEditorTextLike
-		| null;
+	const ytext = ydoc
+		.getMap("blocks")
+		.get(blockId)
+		?.get("content") as FieldEditorTextLike | null;
 	if (!ytext) {
 		throw new Error(`Missing test Y.Text for block ${blockId}`);
 	}
@@ -272,7 +270,9 @@ describe("@pen/react field-editor commands", () => {
 		editor.selectText(blockId, 0, 4);
 
 		expect(toggleInlineMark(editor, "bold")).toBe(false);
-		expect(editor.getBlock(blockId)!.textDeltas()).toEqual([{ insert: "code" }]);
+		expect(editor.getBlock(blockId)!.textDeltas()).toEqual([
+			{ insert: "code" },
+		]);
 
 		editor.destroy();
 	});
@@ -615,7 +615,9 @@ describe("resolveBackspaceAction – schema-aware Backspace", () => {
 		const editor = createEditor(editorOpts());
 		const blockId = editor.firstBlock()!.id;
 
-		editor.apply([{ type: "convert-block", blockId, newType: "bulletListItem" }]);
+		editor.apply([
+			{ type: "convert-block", blockId, newType: "bulletListItem" },
+		]);
 
 		const action = resolveBackspaceAction(editor, {
 			blockId,
@@ -632,7 +634,9 @@ describe("resolveBackspaceAction – schema-aware Backspace", () => {
 		const editor = createEditor(editorOpts());
 		const blockId = editor.firstBlock()!.id;
 
-		editor.apply([{ type: "convert-block", blockId, newType: "blockquote" }]);
+		editor.apply([
+			{ type: "convert-block", blockId, newType: "blockquote" },
+		]);
 
 		const action = resolveBackspaceAction(editor, {
 			blockId,
@@ -651,7 +655,12 @@ describe("resolveBackspaceAction – schema-aware Backspace", () => {
 		const secondBlockId = crypto.randomUUID();
 
 		editor.apply([
-			{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Hello" },
+			{
+				type: "insert-text",
+				blockId: firstBlockId,
+				offset: 0,
+				text: "Hello",
+			},
 			{
 				type: "insert-block",
 				blockId: secondBlockId,
@@ -681,7 +690,12 @@ describe("resolveBackspaceAction – schema-aware Backspace", () => {
 		const toggleBlockId = crypto.randomUUID();
 
 		editor.apply([
-			{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Hello" },
+			{
+				type: "insert-text",
+				blockId: firstBlockId,
+				offset: 0,
+				text: "Hello",
+			},
 			{
 				type: "insert-block",
 				blockId: toggleBlockId,
@@ -712,7 +726,12 @@ describe("resolveBackspaceAction – schema-aware Backspace", () => {
 		const childBlockId = crypto.randomUUID();
 
 		editor.apply([
-			{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Hello" },
+			{
+				type: "insert-text",
+				blockId: firstBlockId,
+				offset: 0,
+				text: "Hello",
+			},
 			{
 				type: "insert-block",
 				blockId: toggleBlockId,
@@ -777,6 +796,115 @@ describe("applyDeleteBehavior", () => {
 			focus: { blockId, offset: 1 },
 			isCollapsed: true,
 		});
+
+		editor.destroy();
+	});
+
+	it("selects the previous inline node before deleting it with Backspace", () => {
+		const editor = createEditor(editorOpts());
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "A" },
+			{
+				type: "insert-inline-node",
+				blockId,
+				offset: 1,
+				nodeType: "mention",
+				props: { id: "user-1", label: "Ada" },
+			},
+			{ type: "insert-text", blockId, offset: 2, text: "B" },
+		]);
+
+		const target = applyDeleteBehavior(editor, {
+			blockId,
+			ytext: getYText(editor, blockId),
+			range: { start: 2, end: 2 },
+			direction: "backward",
+		});
+
+		expect(target).toEqual({
+			blockId,
+			anchorOffset: 1,
+			focusOffset: 2,
+		});
+		expect(editor.getBlock(blockId)?.inlineDeltas()).toEqual([
+			{ insert: "A" },
+			{
+				insert: {
+					type: "mention",
+					props: { id: "user-1", label: "Ada" },
+				},
+			},
+			{ insert: "B" },
+		]);
+
+		editor.destroy();
+	});
+
+	it("selects the next inline node before deleting it with Delete", () => {
+		const editor = createEditor(editorOpts());
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "A" },
+			{
+				type: "insert-inline-node",
+				blockId,
+				offset: 1,
+				nodeType: "mention",
+				props: { id: "user-1", label: "Ada" },
+			},
+			{ type: "insert-text", blockId, offset: 2, text: "B" },
+		]);
+
+		const target = applyDeleteBehavior(editor, {
+			blockId,
+			ytext: getYText(editor, blockId),
+			range: { start: 1, end: 1 },
+			direction: "forward",
+		});
+
+		expect(target).toEqual({
+			blockId,
+			anchorOffset: 1,
+			focusOffset: 2,
+		});
+
+		editor.destroy();
+	});
+
+	it("deletes a selected inline node range", () => {
+		const editor = createEditor(editorOpts());
+		const blockId = editor.firstBlock()!.id;
+
+		editor.apply([
+			{ type: "insert-text", blockId, offset: 0, text: "A" },
+			{
+				type: "insert-inline-node",
+				blockId,
+				offset: 1,
+				nodeType: "mention",
+				props: { id: "user-1", label: "Ada" },
+			},
+			{ type: "insert-text", blockId, offset: 2, text: "B" },
+		]);
+
+		const target = applyDeleteBehavior(editor, {
+			blockId,
+			ytext: getYText(editor, blockId),
+			range: { start: 1, end: 2 },
+			direction: "backward",
+		});
+
+		expect(target).toEqual({
+			blockId,
+			anchorOffset: 1,
+			focusOffset: 1,
+		});
+		expect(editor.getBlock(blockId)?.inlineDeltas()).toEqual([
+			{ insert: "AB" },
+		]);
 
 		editor.destroy();
 	});
@@ -1039,7 +1167,11 @@ describe("resolveEnterAction – schema-aware Enter", () => {
 		const childBlockId = crypto.randomUUID();
 
 		editor.apply([
-			{ type: "convert-block", blockId: toggleBlockId, newType: "toggle" },
+			{
+				type: "convert-block",
+				blockId: toggleBlockId,
+				newType: "toggle",
+			},
 			{
 				type: "insert-block",
 				blockId: childBlockId,
@@ -1071,7 +1203,9 @@ describe("applyBackspaceBehavior – integration", () => {
 		const editor = createEditor(editorOpts());
 		const blockId = editor.firstBlock()!.id;
 
-		editor.apply([{ type: "convert-block", blockId, newType: "bulletListItem" }]);
+		editor.apply([
+			{ type: "convert-block", blockId, newType: "bulletListItem" },
+		]);
 
 		const target = applyBackspaceBehavior(editor, {
 			blockId,
@@ -1090,7 +1224,9 @@ describe("applyBackspaceBehavior – integration", () => {
 		const editor = createEditor(editorOpts());
 		const blockId = editor.firstBlock()!.id;
 
-		editor.apply([{ type: "convert-block", blockId, newType: "blockquote" }]);
+		editor.apply([
+			{ type: "convert-block", blockId, newType: "blockquote" },
+		]);
 
 		const target = applyBackspaceBehavior(editor, {
 			blockId,
@@ -1111,7 +1247,12 @@ describe("applyBackspaceBehavior – integration", () => {
 		const toggleBlockId = crypto.randomUUID();
 
 		editor.apply([
-			{ type: "insert-text", blockId: firstBlockId, offset: 0, text: "Hello" },
+			{
+				type: "insert-text",
+				blockId: firstBlockId,
+				offset: 0,
+				text: "Hello",
+			},
 			{
 				type: "insert-block",
 				blockId: toggleBlockId,
@@ -1143,7 +1284,11 @@ describe("applyListTabBehavior", () => {
 		const secondBlockId = crypto.randomUUID();
 
 		editor.apply([
-			{ type: "convert-block", blockId: firstBlockId, newType: "bulletListItem" },
+			{
+				type: "convert-block",
+				blockId: firstBlockId,
+				newType: "bulletListItem",
+			},
 			{
 				type: "insert-block",
 				blockId: secondBlockId,
@@ -1151,7 +1296,12 @@ describe("applyListTabBehavior", () => {
 				props: { indent: 0 },
 				position: { after: firstBlockId },
 			},
-			{ type: "insert-text", blockId: secondBlockId, offset: 0, text: "child" },
+			{
+				type: "insert-text",
+				blockId: secondBlockId,
+				offset: 0,
+				text: "child",
+			},
 		]);
 
 		const target = applyListTabBehavior(editor, {
@@ -1221,7 +1371,11 @@ describe("applyListTabBehavior", () => {
 		const secondBlockId = crypto.randomUUID();
 
 		editor.apply([
-			{ type: "convert-block", blockId: firstBlockId, newType: "bulletListItem" },
+			{
+				type: "convert-block",
+				blockId: firstBlockId,
+				newType: "bulletListItem",
+			},
 			{
 				type: "insert-block",
 				blockId: secondBlockId,
@@ -1229,7 +1383,12 @@ describe("applyListTabBehavior", () => {
 				props: { indent: 1 },
 				position: { after: firstBlockId },
 			},
-			{ type: "insert-text", blockId: secondBlockId, offset: 0, text: "child" },
+			{
+				type: "insert-text",
+				blockId: secondBlockId,
+				offset: 0,
+				text: "child",
+			},
 		]);
 
 		const target = applyListTabBehavior(editor, {

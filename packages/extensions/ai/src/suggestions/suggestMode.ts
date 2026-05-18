@@ -1,4 +1,5 @@
-import type { DocumentOp, Editor } from "@pen/types";
+import type { DocumentOp, Editor, OpOrigin } from "@pen/types";
+import { getOpOriginType } from "@pen/types";
 import { createSuggestionMark } from "./persistent";
 import type { BlockSuggestionMeta } from "../types";
 
@@ -15,8 +16,8 @@ const BYPASS_ORIGINS = new Set([
 	SUGGESTION_RESOLUTION_ORIGIN,
 ]);
 
-export function shouldBypassSuggestMode(origin?: string): boolean {
-	return origin != null && BYPASS_ORIGINS.has(origin);
+export function shouldBypassSuggestMode(origin?: OpOrigin): boolean {
+	return origin != null && BYPASS_ORIGINS.has(getOpOriginType(origin));
 }
 
 export function interceptApplyForSuggestMode(
@@ -152,7 +153,10 @@ export function interceptApplyForSuggestMode(
 						model,
 						{
 							position: layoutParent
-								? { parent: layoutParent.id, index: block?.index ?? 0 }
+								? {
+										parent: layoutParent.id,
+										index: block?.index ?? 0,
+									}
 								: block?.prev
 									? { after: block.prev.id }
 									: "first",
